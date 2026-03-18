@@ -1,0 +1,40 @@
+{
+  "generated_at": "2026-03-15T20:04:48.023489+00:00",
+  "report_date": "2026-03-15",
+  "action_count": 1,
+  "actions": [
+    {
+      "action_type": "adjust_budget",
+      "direction": "reduce",
+      "entity_type": "campaign",
+      "entity_id": "6890153502358",
+      "entity_name": "AJF - Prospecting - CBO - BC - 7DC - Cherry Plum - Scale",
+      "campaign_id": "6890153502358",
+      "campaign_name": "AJF - Prospecting - CBO - BC - 7DC - Cherry Plum - Scale",
+      "adset_id": null,
+      "adset_name": "",
+      "budget_level": "Campaign (CBO)",
+      "current_value": 2000.48,
+      "recommended_value": 1600.38,
+      "change_pct": -20,
+      "confidence": "HIGH",
+      "trigger": "CPA +304% vs prior week \u2014 serious efficiency drop",
+      "trigger_rule": {
+        "primary_metric": "cpa_change_pct",
+        "roas_change_pct": -75.9,
+        "cpa_change_pct": 304.4,
+        "ctr_change_pct": 3.8,
+        "min_spend_threshold": 75,
+        "impressions_threshold": null
+      },
+      "priority": "high",
+      "breakeven_roas": 1.4797937684240199,
+      "roas_floor": 1.183835014739216,
+      "profitability_status": "UNPROFITABLE",
+      "estimated_daily_profit": -283.9,
+      "cpa_target_7dc": 66.2817585978836,
+      "automation_safe": true,
+      "automation_safe_reason": null
+    }
+  ]
+}
