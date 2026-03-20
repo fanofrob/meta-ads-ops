@@ -321,7 +321,7 @@ def upsert_chunks(supabase: SupabaseClient, drive_file_id, file_name, label, chu
             "chunk_index":   i,
             "content":       chunk["content"],
             "token_count":   chunk["token_count"],
-            "embedding":     embedding,
+            "embedding":     "[" + ",".join(str(x) for x in embedding) + "]",
             "metadata": {
                 "file_name":    file_name,
                 "folder_label": label,
