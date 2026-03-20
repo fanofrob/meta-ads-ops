@@ -224,25 +224,44 @@ def _extract_sheet(sheets_svc, spreadsheet_id) -> str:
             # first row = header labels (dates/weeks), first col = metric names.
             # If so, transpose so each metric row becomes "Metric\nDate: Value\nDate: Value..."
             # This ensures column headers travel with each metric when the text is chunked.
-            first_row = [str(c).strip() for c in rows[0]] if rows else []
-            # Heuristic: if the sheet has many columns (>10) it's almost certainly a
-            # weekly time-series grid. We don't inspect values because early rows may
-            # be empty or contain formula errors.
+            #
+            # Some sheets have a title row at the top, so rows[0] may have only 1 cell.
+            # Find the header row by picking the row with the most columns in the first 5 rows.
+            header_row_idx = max(range(min(5, len(rows))), key=lambda i: len(rows[i]), default=0)
+            first_row = [str(c).strip() for c in rows[header_row_idx]]
             is_time_series = len(first_row) > 10
-            print(f"    Sheet '{name}': {len(rows)} rows x {len(first_row)} cols — time_series={is_time_series}")
+            print(f"    Sheet '{name}': {len(rows)} rows x {len(first_row)} cols (header at row {header_row_idx}) — time_series={is_time_series}")
 
             if is_time_series:
-                col_headers = first_row  # index 0 = blank, 1..N = date/week labels
+                # Find how many label columns come before the date columns.
+                # Date columns have values like "9/1 - 9/7", "Jan 2026", "W1", etc.
+                # Label columns have values like "Category", "Metric", "", "Week".
+                # Heuristic: a column is a date column if its header contains a digit
+                # or a "/" — otherwise it's a label column.
+                label_col_count = 0
+                for cell in first_row:
+                    if any(ch.isdigit() or ch == "/" for ch in cell):
+                        break
+                    label_col_count += 1
+                # Need at least 1 label column and at least 5 date columns to transpose
+                if label_col_count == 0:
+                    label_col_count = 1
+                date_headers = first_row[label_col_count:]
+                print(f"      → {label_col_count} label col(s), {len(date_headers)} date cols")
+
                 metric_blocks = []
-                for row in rows[1:]:
+                for row in rows[header_row_idx + 1:]:
                     if not row or not any(str(c).strip() for c in row):
                         continue
-                    metric_name = str(row[0]).strip() if row else ""
+                    # Join all label columns to form the full metric name
+                    labels = [str(row[i]).strip() for i in range(label_col_count) if i < len(row)]
+                    metric_name = " — ".join(l for l in labels if l)
                     if not metric_name:
                         continue
                     pairs = []
-                    for i, header in enumerate(col_headers[1:], start=1):
-                        val = str(row[i]).strip() if i < len(row) else ""
+                    for i, header in enumerate(date_headers):
+                        col_idx = label_col_count + i
+                        val = str(row[col_idx]).strip() if col_idx < len(row) else ""
                         if header and val and val not in ("#VALUE!", "#N/A", "#DIV/0!", "#REF!", ""):
                             pairs.append(f"  {header}: {val}")
                     if pairs:
