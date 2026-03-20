@@ -23,6 +23,7 @@ from googleapiclient.http import MediaInMemoryUpload
 RAW_DIR = Path("data/raw")
 ORACLE_SNAPSHOTS_FOLDER_ID = "1lZ6pYJBXrJi7iq6L9sCJEWiDcVD5kpI0"
 SNAPSHOT_FILENAME = "meta_ads.json"
+SNAPSHOT_FILE_ID = os.getenv("META_ADS_SNAPSHOT_FILE_ID", "")  # set this to avoid Drive quota issues
 CREDENTIALS_PATH = os.getenv("GOOGLE_SERVICE_ACCOUNT_PATH", "credentials/sheets_service_account.json")
 
 PURCHASE_ACTIONS = {"omni_purchase", "offsite_conversion.fb_pixel_purchase", "purchase"}
@@ -137,23 +138,16 @@ def upload_to_drive(snapshot: dict) -> None:
     content = json.dumps(snapshot, indent=2).encode("utf-8")
     media = MediaInMemoryUpload(content, mimetype="application/json", resumable=False)
 
-    # Check if file already exists in the folder
-    query = (
-        f"name='{SNAPSHOT_FILENAME}' and "
-        f"'{ORACLE_SNAPSHOTS_FOLDER_ID}' in parents and "
-        f"trashed=false"
-    )
-    existing = service.files().list(q=query, fields="files(id,name)").execute()
-    files = existing.get("files", [])
-
-    if files:
-        file_id = files[0]["id"]
-        service.files().update(fileId=file_id, media_body=media).execute()
-        print(f"  Updated existing snapshot: {SNAPSHOT_FILENAME} (id: {file_id})")
+    if SNAPSHOT_FILE_ID:
+        # Update the pre-created file directly (avoids service account quota issues)
+        service.files().update(fileId=SNAPSHOT_FILE_ID, media_body=media).execute()
+        print(f"  Updated snapshot (id: {SNAPSHOT_FILE_ID})")
     else:
-        meta = {"name": SNAPSHOT_FILENAME, "parents": [ORACLE_SNAPSHOTS_FOLDER_ID]}
-        result = service.files().create(body=meta, media_body=media, fields="id").execute()
-        print(f"  Created new snapshot: {SNAPSHOT_FILENAME} (id: {result['id']})")
+        raise RuntimeError(
+            "META_ADS_SNAPSHOT_FILE_ID is not set. "
+            "Create meta_ads.json manually in the Snapshots Drive folder, "
+            "copy its file ID, and add it as a GitHub secret."
+        )
 
 
 # ---------------------------------------------------------------------------
