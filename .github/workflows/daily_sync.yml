@@ -35,6 +35,7 @@ jobs:
           META_ACCESS_TOKEN=${{ secrets.META_ACCESS_TOKEN }}
           META_AD_ACCOUNT_ID=${{ secrets.META_AD_ACCOUNT_ID }}
           META_API_VERSION=${{ secrets.META_API_VERSION }}
+          META_ADS_SNAPSHOT_FILE_ID=${{ secrets.META_ADS_SNAPSHOT_FILE_ID }}
           EOF
 
       - name: Fetch campaigns
@@ -48,6 +49,10 @@ jobs:
       - name: Fetch insights (yesterday)
         working-directory: ${{ github.workspace }}
         run: python src/fetch_insights.py
+
+      - name: Fetch insights (7d)
+        working-directory: ${{ github.workspace }}
+        run: python src/fetch_insights.py --last7d
 
       - name: Export snapshot to GHF Oracle
         working-directory: ${{ github.workspace }}

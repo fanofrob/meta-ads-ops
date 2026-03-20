@@ -66,38 +66,47 @@ def _action_count(row: dict, keys: set) -> int:
 # Build snapshot
 # ---------------------------------------------------------------------------
 
+def _aggregate(rows: list) -> dict:
+    spend       = sum(float(r.get("spend", 0)) for r in rows)
+    impressions = sum(int(r.get("impressions", 0)) for r in rows)
+    clicks      = sum(int(r.get("clicks", 0)) for r in rows)
+    purchases   = sum(_action_count(r, PURCHASE_ACTIONS) for r in rows)
+    revenue     = sum(_action_value(r, PURCHASE_ACTIONS) for r in rows)
+    return {
+        "spend":       spend,
+        "impressions": impressions,
+        "clicks":      clicks,
+        "purchases":   purchases,
+        "revenue":     revenue,
+        "ctr":         (clicks / impressions * 100) if impressions > 0 else 0,
+        "cpc":         (spend / clicks) if clicks > 0 else 0,
+        "cpm":         (spend / impressions * 1000) if impressions > 0 else 0,
+        "roas":        (revenue / spend) if spend > 0 else 0,
+        "cpa":         (spend / purchases) if purchases > 0 else 0,
+    }
+
+
 def build_snapshot() -> dict:
     yesterday = (date.today() - timedelta(days=1)).isoformat()
 
-    # Load yesterday's insights (daily file, not 7d/30d)
-    insights = _load("insights")
+    # Yesterday (daily insights file)
+    insights_1d = _load("insights")
+    rows_1d = [r for r in insights_1d if r.get("date_start") == yesterday or not r.get("date_start")]
+    if not rows_1d:
+        rows_1d = insights_1d
+    d1 = _aggregate(rows_1d)
 
-    # Filter to yesterday only (file should already be yesterday-only, but guard anyway)
-    rows = [r for r in insights if r.get("date_start") == yesterday or not r.get("date_start")]
+    # Last 7 days (7d insights file)
+    insights_7d = _load("insights_7d")
+    d7 = _aggregate(insights_7d)
 
-    if not rows:
-        # Fall back to all rows in file if date filtering strips everything
-        rows = insights
-
-    spend = sum(float(r.get("spend", 0)) for r in rows)
-    impressions = sum(int(r.get("impressions", 0)) for r in rows)
-    clicks = sum(int(r.get("clicks", 0)) for r in rows)
-    purchases = sum(_action_count(r, PURCHASE_ACTIONS) for r in rows)
-    revenue = sum(_action_value(r, PURCHASE_ACTIONS) for r in rows)
-
-    ctr = (clicks / impressions * 100) if impressions > 0 else 0
-    cpc = (spend / clicks) if clicks > 0 else 0
-    cpm = (spend / impressions * 1000) if impressions > 0 else 0
-    roas = (revenue / spend) if spend > 0 else 0
-    cpa = (spend / purchases) if purchases > 0 else 0
-
-    # Campaign count from campaigns file
+    # Campaign count
     campaigns = _load("campaigns")
     active_campaigns = sum(1 for c in campaigns if c.get("status") == "ACTIVE")
 
     summary = (
-        f"Spend ${spend:,.2f} | ROAS {roas:.2f}x | CPA ${cpa:,.2f} | "
-        f"Purchases {purchases} | {active_campaigns} active campaigns"
+        f"Yesterday — Spend ${d1['spend']:,.2f} | ROAS {d1['roas']:.2f}x | CPA ${d1['cpa']:,.2f} | Purchases {d1['purchases']} | "
+        f"7d — Spend ${d7['spend']:,.2f} | ROAS {d7['roas']:.2f}x | {active_campaigns} active campaigns"
     )
 
     return {
@@ -105,17 +114,27 @@ def build_snapshot() -> dict:
         "date": yesterday,
         "summary": summary,
         "data": {
-            "Spend (yesterday)":    f"${spend:,.2f}",
-            "Revenue (attributed)": f"${revenue:,.2f}",
-            "ROAS":                 f"{roas:.2f}x",
-            "CPA":                  f"${cpa:,.2f}",
-            "Purchases":            str(purchases),
-            "Impressions":          f"{impressions:,}",
-            "Clicks":               f"{clicks:,}",
-            "CTR":                  f"{ctr:.2f}%",
-            "CPC":                  f"${cpc:.2f}",
-            "CPM":                  f"${cpm:.2f}",
-            "Active campaigns":     str(active_campaigns),
+            "--- YESTERDAY ---":          "",
+            "Spend":                      f"${d1['spend']:,.2f}",
+            "Revenue (attributed)":       f"${d1['revenue']:,.2f}",
+            "ROAS":                       f"{d1['roas']:.2f}x",
+            "CPA":                        f"${d1['cpa']:,.2f}",
+            "Purchases":                  str(d1['purchases']),
+            "Impressions":                f"{d1['impressions']:,}",
+            "Clicks":                     f"{d1['clicks']:,}",
+            "CTR":                        f"{d1['ctr']:.2f}%",
+            "CPC":                        f"${d1['cpc']:.2f}",
+            "CPM":                        f"${d1['cpm']:.2f}",
+            "--- LAST 7 DAYS ---":        "",
+            "Spend (7d)":                 f"${d7['spend']:,.2f}",
+            "Revenue (7d, attributed)":   f"${d7['revenue']:,.2f}",
+            "ROAS (7d)":                  f"{d7['roas']:.2f}x",
+            "CPA (7d)":                   f"${d7['cpa']:,.2f}",
+            "Purchases (7d)":             str(d7['purchases']),
+            "Impressions (7d)":           f"{d7['impressions']:,}",
+            "CTR (7d)":                   f"{d7['ctr']:.2f}%",
+            "CPC (7d)":                   f"${d7['cpc']:.2f}",
+            "Active campaigns":           str(active_campaigns),
         }
     }
 
