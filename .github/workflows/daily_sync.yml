@@ -2,9 +2,8 @@ name: Daily Meta Ads Sync
 
 on:
   schedule:
-    # 5:30am PT (13:30 UTC) — runs before the 7am Apps Script trigger
-    # Note: GitHub cron uses UTC. Adjust if needed for daylight saving time.
-    - cron: "30 13 * * *"
+    # 4:30am UTC = 4:30am WET (winter) / 5:30am WEST (summer) — runs before 6am Lisbon trigger
+    - cron: "30 4 * * *"
   workflow_dispatch:  # allow manual runs from GitHub UI
 
 jobs:
