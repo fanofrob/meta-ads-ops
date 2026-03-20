@@ -121,14 +121,6 @@ class SupabaseClient:
         r.raise_for_status()
 
 
-def build_clients():
-    creds   = load_google_credentials()
-    drive   = build("drive", "v3", credentials=creds, cache_discovery=False)
-    sheets  = build("sheets", "v4", credentials=creds, cache_discovery=False)
-    openai  = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    supabase = SupabaseClient(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
-    return drive, sheets, openai, supabase
-
 
 # ---------------------------------------------------------------------------
 # Drive file listing
@@ -250,27 +242,34 @@ def _extract_pdf(drive, file_id) -> str:
 # Chunking
 # ---------------------------------------------------------------------------
 
-_enc = tiktoken.get_encoding("cl100k_base")
+_enc = None
+
+def _get_enc():
+    global _enc
+    if _enc is None:
+        print("  Loading tiktoken encoding...")
+        _enc = tiktoken.get_encoding("cl100k_base")
+    return _enc
 
 def chunk_text(text: str, file_name: str) -> list[dict]:
     if not text.strip():
         return []
 
-    tokens = _enc.encode(text)
+    tokens = _get_enc().encode(text)
     chunks = []
     start  = 0
 
     while start < len(tokens):
         end    = min(start + CHUNK_SIZE, len(tokens))
         chunk_tokens = tokens[start:end]
-        chunk_text   = _enc.decode(chunk_tokens)
+        chunk_text   = _get_enc().decode(chunk_tokens)
 
         # Try to end on a paragraph boundary within the last 20% of the chunk
         if end < len(tokens):
             boundary = chunk_text.rfind("\n\n", len(chunk_text) // 5 * 4)
             if boundary > 0:
                 chunk_text = chunk_text[:boundary]
-                chunk_tokens = _enc.encode(chunk_text)
+                chunk_tokens = _get_enc().encode(chunk_text)
 
         chunks.append({
             "content":     chunk_text.strip(),
@@ -391,7 +390,17 @@ def process_file(drive, sheets, openai_client, supabase, file_meta, label):
 def main():
     print("GHF Oracle ingestion starting...\n")
 
-    drive, sheets, openai_client, supabase = build_clients()
+    print("Loading Google credentials...")
+    creds = load_google_credentials()
+    print("Building Drive client...")
+    drive = build("drive", "v3", credentials=creds, cache_discovery=False)
+    print("Building Sheets client...")
+    sheets = build("sheets", "v4", credentials=creds, cache_discovery=False)
+    print("Building OpenAI client...")
+    openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    print("Building Supabase client...")
+    supabase = SupabaseClient(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
+    print("All clients ready.\n")
 
     total_files = 0
     total_ingested = 0
