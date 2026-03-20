@@ -369,9 +369,11 @@ def process_file(drive, sheets, openai_client, supabase, file_meta, label):
         return
 
     print(f"    Chunked into {len(chunks)} chunks")
-
+    print(f"    Embedding...")
     embeddings = embed_chunks(openai_client, chunks)
+    print(f"    Upserting chunks...")
     upsert_chunks(supabase, fid, fname, label, chunks, embeddings)
+    print(f"    Upserting document...")
     upsert_document(supabase, file_meta, label, len(chunks))
 
     print(f"    [OK] {len(chunks)} chunks ingested")
