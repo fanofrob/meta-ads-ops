@@ -24,7 +24,8 @@ RAW_DIR = Path("data/raw")
 REPORTS_DIR = Path("outputs/reports")
 ORACLE_SNAPSHOTS_FOLDER_ID = "1lZ6pYJBXrJi7iq6L9sCJEWiDcVD5kpI0"
 SNAPSHOT_FILENAME = "meta_ads.json"
-SNAPSHOT_FILE_ID = os.getenv("META_ADS_SNAPSHOT_FILE_ID", "")  # set this to avoid Drive quota issues
+SNAPSHOT_FILE_ID = os.getenv("META_ADS_SNAPSHOT_FILE_ID", "")
+REPORT_PDF_FILE_ID = os.getenv("REPORT_PDF_FILE_ID", "")
 CREDENTIALS_PATH = os.getenv("GOOGLE_SERVICE_ACCOUNT_PATH", "credentials/sheets_service_account.json")
 
 # Use only omni_purchase — it's the unified Meta metric and avoids double-counting
@@ -160,16 +161,32 @@ def upload_to_drive(snapshot: dict) -> None:
     content = json.dumps(snapshot, indent=2).encode("utf-8")
     media = MediaInMemoryUpload(content, mimetype="application/json", resumable=False)
 
-    if SNAPSHOT_FILE_ID:
-        # Update the pre-created file directly (avoids service account quota issues)
-        service.files().update(fileId=SNAPSHOT_FILE_ID, media_body=media).execute()
-        print(f"  Updated snapshot (id: {SNAPSHOT_FILE_ID})")
-    else:
+    if not SNAPSHOT_FILE_ID:
         raise RuntimeError(
             "META_ADS_SNAPSHOT_FILE_ID is not set. "
-            "Create meta_ads.json manually in the Snapshots Drive folder, "
-            "copy its file ID, and add it as a GitHub secret."
+            "Run createMetaAdsSnapshotFile() in Apps Script, copy the file ID, "
+            "and add it as a GitHub secret."
         )
+    service.files().update(fileId=SNAPSHOT_FILE_ID, media_body=media).execute()
+    print(f"  Updated JSON snapshot (id: {SNAPSHOT_FILE_ID})")
+
+
+def upload_pdf_to_drive(pdf_path: Path) -> None:
+    if not REPORT_PDF_FILE_ID:
+        print("  [SKIP] REPORT_PDF_FILE_ID not set — skipping PDF upload.")
+        return
+    if not pdf_path.exists():
+        print(f"  [SKIP] PDF not found at {pdf_path}")
+        return
+
+    creds = service_account.Credentials.from_service_account_file(
+        CREDENTIALS_PATH,
+        scopes=["https://www.googleapis.com/auth/drive"]
+    )
+    service = build("drive", "v3", credentials=creds, cache_discovery=False)
+    media = MediaInMemoryUpload(pdf_path.read_bytes(), mimetype="application/pdf", resumable=False)
+    service.files().update(fileId=REPORT_PDF_FILE_ID, media_body=media).execute()
+    print(f"  Updated PDF report in Drive (id: {REPORT_PDF_FILE_ID})")
 
 
 # ---------------------------------------------------------------------------
@@ -187,8 +204,15 @@ def main():
         print(f"  Attached report: {reports[0].name}")
 
     print(f"\nSnapshot summary: {snapshot['summary']}")
-    print(f"Uploading to Drive folder: {ORACLE_SNAPSHOTS_FOLDER_ID}")
+    print("Uploading JSON snapshot to Drive...")
     upload_to_drive(snapshot)
+
+    # Upload PDF to Drive if available
+    pdfs = sorted(REPORTS_DIR.glob("????-??-??.pdf"), reverse=True)
+    if pdfs:
+        print("Uploading PDF report to Drive...")
+        upload_pdf_to_drive(pdfs[0])
+
     print("\n[OK] Meta Ads snapshot uploaded to GHF Oracle.")
 
 
