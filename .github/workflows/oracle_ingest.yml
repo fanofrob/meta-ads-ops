@@ -38,6 +38,20 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
+      - name: Test imports
+        run: |
+          echo "Testing imports one by one..."
+          python -c "print('python ok')"
+          python -c "import sys; print('sys ok')"
+          python -c "import requests; print('requests ok')"
+          python -c "import tiktoken; print('tiktoken import ok')"
+          python -c "import tiktoken; e=tiktoken.get_encoding('cl100k_base'); print('tiktoken encoding ok')"
+          python -c "from google.oauth2 import service_account; print('google auth ok')"
+          python -c "from googleapiclient.discovery import build; print('googleapi ok')"
+          python -c "from openai import OpenAI; print('openai ok')"
+          echo "All imports done"
+        timeout-minutes: 5
+
       - name: Run ingestion
         run: python -u src/oracle_ingest.py
         timeout-minutes: 10
