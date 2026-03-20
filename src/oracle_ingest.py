@@ -10,6 +10,7 @@ Skips files that haven't changed since last ingestion.
 
 import json
 import os
+import socket
 import sys
 import time
 from datetime import datetime, timezone
@@ -17,6 +18,8 @@ from io import BytesIO
 from pathlib import Path
 
 import requests
+
+socket.setdefaulttimeout(60)
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
@@ -354,7 +357,9 @@ def process_file(drive, sheets, openai_client, supabase, file_meta, label):
 
     print(f"  [INGEST] {fname} ({mime})")
 
+    print(f"    Extracting text...")
     text = extract_text(drive, sheets, file_meta)
+    print(f"    Extracted {len(text)} chars")
     if not text.strip():
         print(f"    [WARN] No text extracted from {fname}")
         return
