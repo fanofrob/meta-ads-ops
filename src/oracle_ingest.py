@@ -32,6 +32,7 @@ from openai import OpenAI
 DRIVE_SOURCES = [
     {"folder_id": "1wNgt_ZGdwiHfRx_L-QzBZpgN5RMTncUw", "label": "daily_brief"},
     {"folder_id": "1lZ6pYJBXrJi7iq6L9sCJEWiDcVD5kpI0", "label": "snapshots"},
+    {"folder_id": "1atrz7hBxvP2pPs22OtttcSRPPO6ZANxH", "label": "reports"},
 ]
 
 STANDALONE_FILES = [
