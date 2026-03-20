@@ -24,7 +24,7 @@ jobs:
         run: sudo apt-get install -y libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libfontconfig1 libcairo2
 
       - name: Install dependencies
-        run: pip install requests python-dotenv google-auth google-auth-httplib2 google-api-python-client weasyprint markdown sendgrid
+        run: pip install requests python-dotenv google-auth google-auth-httplib2 google-api-python-client weasyprint markdown
 
       - name: Write Google service account credentials
         run: |
@@ -74,7 +74,7 @@ jobs:
       - name: Email report to team
         working-directory: ${{ github.workspace }}
         env:
-          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
-          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: python src/send_email.py
