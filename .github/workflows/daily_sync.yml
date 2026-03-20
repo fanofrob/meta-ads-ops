@@ -40,29 +40,11 @@ jobs:
           META_ADS_SNAPSHOT_FILE_ID=${{ secrets.META_ADS_SNAPSHOT_FILE_ID }}
           EOF
 
-      - name: Fetch campaigns
+      - name: Run daily pipeline
         working-directory: ${{ github.workspace }}
-        run: python src/fetch_campaigns.py
-
-      - name: Fetch ad sets
-        working-directory: ${{ github.workspace }}
-        run: python src/fetch_adsets.py
-
-      - name: Fetch insights (yesterday)
-        working-directory: ${{ github.workspace }}
-        run: python src/fetch_insights.py
-
-      - name: Fetch insights (7d)
-        working-directory: ${{ github.workspace }}
-        run: python src/fetch_insights.py --last7d
-
-      - name: Generate daily report
-        working-directory: ${{ github.workspace }}
-        run: python src/report.py
-
-      - name: Generate PDF
-        working-directory: ${{ github.workspace }}
-        run: python src/generate_pdf.py
+        run: |
+          pip install weasyprint markdown
+          sed 's|\.venv/bin/python|python|g' run_daily.sh | bash
 
       - name: Export snapshot to GHF Oracle
         working-directory: ${{ github.workspace }}
