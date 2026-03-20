@@ -21,12 +21,15 @@ from googleapiclient.http import MediaInMemoryUpload
 # ---------------------------------------------------------------------------
 
 RAW_DIR = Path("data/raw")
+REPORTS_DIR = Path("outputs/reports")
 ORACLE_SNAPSHOTS_FOLDER_ID = "1lZ6pYJBXrJi7iq6L9sCJEWiDcVD5kpI0"
 SNAPSHOT_FILENAME = "meta_ads.json"
 SNAPSHOT_FILE_ID = os.getenv("META_ADS_SNAPSHOT_FILE_ID", "")  # set this to avoid Drive quota issues
 CREDENTIALS_PATH = os.getenv("GOOGLE_SERVICE_ACCOUNT_PATH", "credentials/sheets_service_account.json")
 
-PURCHASE_ACTIONS = {"omni_purchase", "offsite_conversion.fb_pixel_purchase", "purchase"}
+# Use only omni_purchase — it's the unified Meta metric and avoids double-counting
+# with offsite_conversion.fb_pixel_purchase and purchase which cover the same events
+PURCHASE_ACTIONS = {"omni_purchase"}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -176,6 +179,12 @@ def upload_to_drive(snapshot: dict) -> None:
 def main():
     print("Building Meta Ads Oracle snapshot...\n")
     snapshot = build_snapshot()
+
+    # Attach latest markdown report if available
+    reports = sorted(REPORTS_DIR.glob("????-??-??.md"), reverse=True)
+    if reports:
+        snapshot["report"] = reports[0].read_text()
+        print(f"  Attached report: {reports[0].name}")
 
     print(f"\nSnapshot summary: {snapshot['summary']}")
     print(f"Uploading to Drive folder: {ORACLE_SNAPSHOTS_FOLDER_ID}")

@@ -53,6 +53,10 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: python src/fetch_insights.py --last7d
 
+      - name: Generate daily report
+        working-directory: ${{ github.workspace }}
+        run: python src/report.py
+
       - name: Export snapshot to GHF Oracle
         working-directory: ${{ github.workspace }}
         env:
