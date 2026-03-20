@@ -167,7 +167,7 @@ def extract_text(drive, sheets, file_meta) -> str:
         return _export_as_text(drive, fid, "text/plain")
 
     if mime == "application/vnd.google-apps.spreadsheet":
-        return _extract_sheet(sheets, fid)
+        return ""  # spreadsheets are handled separately via extract_sheet_chunks
 
     if mime == "application/json":
         content = _download_bytes(drive, fid).decode("utf-8", errors="replace")
@@ -206,10 +206,18 @@ def _download_bytes(drive, file_id) -> bytes:
     return buf.getvalue()
 
 
-def _extract_sheet(sheets_svc, spreadsheet_id) -> str:
+def extract_sheet_chunks(sheets_svc, spreadsheet_id, file_name) -> list[dict]:
+    """
+    Returns one chunk dict per data row for every sheet tab.
+    Each chunk is self-contained: metric name + all its date:value pairs.
+    Works regardless of how many label columns exist or where the header row is.
+    """
+    SKIP_VALUES = {"#VALUE!", "#N/A", "#DIV/0!", "#REF!", "#NULL!", ""}
+
     meta = sheets_svc.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
     sheet_names = [s["properties"]["title"] for s in meta.get("sheets", [])]
-    parts = []
+    all_chunks = []
+
     for name in sheet_names:
         try:
             result = sheets_svc.spreadsheets().values().get(
@@ -220,62 +228,64 @@ def _extract_sheet(sheets_svc, spreadsheet_id) -> str:
             if not rows:
                 continue
 
-            # Detect if this looks like a time-series sheet:
-            # first row = header labels (dates/weeks), first col = metric names.
-            # If so, transpose so each metric row becomes "Metric\nDate: Value\nDate: Value..."
-            # This ensures column headers travel with each metric when the text is chunked.
-            #
-            # Some sheets have a title row at the top, so rows[0] may have only 1 cell.
-            # Find the header row by picking the row with the most columns in the first 5 rows.
-            header_row_idx = max(range(min(5, len(rows))), key=lambda i: len(rows[i]), default=0)
-            first_row = [str(c).strip() for c in rows[header_row_idx]]
-            is_time_series = len(first_row) > 10
-            print(f"    Sheet '{name}': {len(rows)} rows x {len(first_row)} cols (header at row {header_row_idx}) — time_series={is_time_series}")
+            # Find the header row: the one with the most non-empty cells in the first 10 rows
+            header_idx = max(range(min(10, len(rows))), key=lambda i: sum(1 for c in rows[i] if str(c).strip()))
+            headers = [str(c).strip() for c in rows[header_idx]]
 
-            if is_time_series:
-                # Find how many label columns come before the date columns.
-                # Date columns have values like "9/1 - 9/7", "Jan 2026", "W1", etc.
-                # Label columns have values like "Category", "Metric", "", "Week".
-                # Heuristic: a column is a date column if its header contains a digit
-                # or a "/" — otherwise it's a label column.
-                label_col_count = 0
-                for cell in first_row:
-                    if any(ch.isdigit() or ch == "/" for ch in cell):
-                        break
-                    label_col_count += 1
-                # Need at least 1 label column and at least 5 date columns to transpose
-                if label_col_count == 0:
-                    label_col_count = 1
-                date_headers = first_row[label_col_count:]
-                print(f"      → {label_col_count} label col(s), {len(date_headers)} date cols")
+            # Detect label columns: columns whose header doesn't contain a digit or "/"
+            # (these are row-label columns like "Category", "Metric", blank, "Week")
+            label_col_count = 0
+            for h in headers:
+                if any(ch.isdigit() or ch == "/" for ch in h):
+                    break
+                label_col_count += 1
+            if label_col_count == 0:
+                label_col_count = 1  # always at least one label column
 
-                metric_blocks = []
-                for row in rows[header_row_idx + 1:]:
-                    if not row or not any(str(c).strip() for c in row):
-                        continue
-                    # Join all label columns to form the full metric name
-                    labels = [str(row[i]).strip() for i in range(label_col_count) if i < len(row)]
-                    metric_name = " — ".join(l for l in labels if l)
-                    if not metric_name:
-                        continue
+            date_headers = headers[label_col_count:]
+            has_dates = len(date_headers) >= 3
+
+            print(f"    Sheet '{name}': {len(rows)} rows, header at row {header_idx}, "
+                  f"{label_col_count} label col(s), {len(date_headers)} date cols")
+
+            for row in rows[header_idx + 1:]:
+                if not row:
+                    continue
+
+                # Build metric name from all label columns
+                labels = [str(row[i]).strip() for i in range(label_col_count) if i < len(row)]
+                metric_name = " — ".join(l for l in labels if l)
+                if not metric_name:
+                    continue
+
+                if has_dates:
+                    # Time-series row: one chunk with all date:value pairs
                     pairs = []
                     for i, header in enumerate(date_headers):
                         col_idx = label_col_count + i
                         val = str(row[col_idx]).strip() if col_idx < len(row) else ""
-                        if header and val and val not in ("#VALUE!", "#N/A", "#DIV/0!", "#REF!", ""):
+                        if header and val and val not in SKIP_VALUES:
                             pairs.append(f"  {header}: {val}")
                     if pairs:
-                        metric_blocks.append(f"{metric_name}\n" + "\n".join(pairs))
-                if metric_blocks:
-                    parts.append(f"## Sheet: {name}\n\n" + "\n\n".join(metric_blocks))
-                    continue
+                        content = f"[{name}] {metric_name}\n" + "\n".join(pairs)
+                        all_chunks.append({"content": content, "token_count": len(content) // 4})
+                else:
+                    # Non-time-series: emit as key-value pairs using column headers
+                    pairs = []
+                    for i, header in enumerate(headers[label_col_count:]):
+                        col_idx = label_col_count + i
+                        val = str(row[col_idx]).strip() if col_idx < len(row) else ""
+                        if header and val and val not in SKIP_VALUES:
+                            pairs.append(f"  {header}: {val}")
+                    if pairs:
+                        content = f"[{name}] {metric_name}\n" + "\n".join(pairs)
+                        all_chunks.append({"content": content, "token_count": len(content) // 4})
 
-            # Fallback: plain pipe-delimited rows (non-time-series sheets)
-            text_rows = [" | ".join(str(c) for c in row) for row in rows if any(str(c).strip() for c in row)]
-            parts.append(f"## Sheet: {name}\n" + "\n".join(text_rows))
         except Exception as e:
-            parts.append(f"## Sheet: {name}\n[Error reading sheet: {e}]")
-    return "\n\n".join(parts)
+            print(f"    [WARN] Sheet '{name}' error: {e}")
+
+    print(f"    → {len(all_chunks)} row-chunks across {len(sheet_names)} sheet(s)")
+    return all_chunks
 
 
 def _extract_pdf(drive, file_id) -> str:
@@ -426,14 +436,19 @@ def process_file(drive, sheets, openai_client, supabase, file_meta, label, force
 
     print(f"  [INGEST] {fname} ({mime})")
 
-    print(f"    Extracting text...")
-    text = extract_text(drive, sheets, file_meta)
-    print(f"    Extracted {len(text)} chars")
-    if not text.strip():
-        print(f"    [WARN] No text extracted from {fname}")
-        return
+    if mime == "application/vnd.google-apps.spreadsheet":
+        # Spreadsheets: one chunk per data row (metric + all date:value pairs)
+        # This guarantees metric names always travel with their values, regardless of layout.
+        chunks = extract_sheet_chunks(sheets, fid, fname)
+    else:
+        print(f"    Extracting text...")
+        text = extract_text(drive, sheets, file_meta)
+        print(f"    Extracted {len(text)} chars")
+        if not text.strip():
+            print(f"    [WARN] No text extracted from {fname}")
+            return
+        chunks = chunk_text(text, fname)
 
-    chunks = chunk_text(text, fname)
     if not chunks:
         return
 
