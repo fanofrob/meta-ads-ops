@@ -396,7 +396,7 @@ def upsert_chunks(supabase: SupabaseClient, document_id, drive_file_id, file_nam
 # Process a single file
 # ---------------------------------------------------------------------------
 
-def process_file(drive, sheets, openai_client, supabase, file_meta, label):
+def process_file(drive, sheets, openai_client, supabase, file_meta, label, force=False):
     fid   = file_meta["id"]
     fname = file_meta["name"]
     mime  = file_meta["mimeType"]
@@ -409,7 +409,7 @@ def process_file(drive, sheets, openai_client, supabase, file_meta, label):
     )
     stored_modified = get_stored_modified(supabase, fid)
 
-    if stored_modified and stored_modified >= drive_modified:
+    if not force and stored_modified and stored_modified >= drive_modified:
         print(f"  [SKIP] {fname} — unchanged")
         return
 
@@ -442,6 +442,9 @@ def process_file(drive, sheets, openai_client, supabase, file_meta, label):
 # ---------------------------------------------------------------------------
 
 def main():
+    force = "--force" in sys.argv
+    if force:
+        print("⚡ Force mode: re-ingesting all files regardless of modifiedTime\n")
     print("GHF Oracle ingestion starting...\n")
 
     creds = load_google_credentials()
@@ -463,7 +466,7 @@ def main():
         for f in files:
             total_files += 1
             before = total_ingested
-            process_file(drive, sheets, openai_client, supabase, f, label)
+            process_file(drive, sheets, openai_client, supabase, f, label, force=force)
             if total_ingested > before:
                 total_ingested += 1
 
@@ -474,7 +477,7 @@ def main():
         print(f"\n[File: {label}]")
         file_meta = get_file_metadata(drive, file_id)
         total_files += 1
-        process_file(drive, sheets, openai_client, supabase, file_meta, label)
+        process_file(drive, sheets, openai_client, supabase, file_meta, label, force=force)
 
     print(f"\nDone. Processed {total_files} files.")
 
