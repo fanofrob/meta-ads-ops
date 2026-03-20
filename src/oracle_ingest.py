@@ -17,7 +17,6 @@ from io import BytesIO
 from pathlib import Path
 
 import requests
-import tiktoken
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
@@ -36,8 +35,8 @@ STANDALONE_FILES = [
     {"file_id": "18-WfxcnVOCpQ8rZRWzXlIKQVaom67x3zPbnUmTtakQI", "label": "org_context"},
 ]
 
-CHUNK_SIZE    = 500   # tokens
-CHUNK_OVERLAP = 50    # tokens
+CHUNK_CHARS   = 2000  # ~500 tokens (4 chars per token)
+OVERLAP_CHARS = 200   # ~50 tokens
 EMBED_MODEL   = "text-embedding-3-small"
 EMBED_BATCH   = 100   # chunks per OpenAI request
 CREDENTIALS_PATH = os.getenv("GOOGLE_SERVICE_ACCOUNT_PATH", "credentials/sheets_service_account.json")
@@ -242,40 +241,30 @@ def _extract_pdf(drive, file_id) -> str:
 # Chunking
 # ---------------------------------------------------------------------------
 
-_enc = None
-
-def _get_enc():
-    global _enc
-    if _enc is None:
-        print("  Loading tiktoken encoding...")
-        _enc = tiktoken.get_encoding("cl100k_base")
-    return _enc
-
 def chunk_text(text: str, file_name: str) -> list[dict]:
     if not text.strip():
         return []
 
-    tokens = _get_enc().encode(text)
     chunks = []
     start  = 0
 
-    while start < len(tokens):
-        end    = min(start + CHUNK_SIZE, len(tokens))
-        chunk_tokens = tokens[start:end]
-        chunk_text   = _get_enc().decode(chunk_tokens)
+    while start < len(text):
+        end = min(start + CHUNK_CHARS, len(text))
+        chunk = text[start:end]
 
-        # Try to end on a paragraph boundary within the last 20% of the chunk
-        if end < len(tokens):
-            boundary = chunk_text.rfind("\n\n", len(chunk_text) // 5 * 4)
+        # Try to end on a paragraph boundary in the last 20% of the chunk
+        if end < len(text):
+            boundary = chunk.rfind("\n\n", len(chunk) * 4 // 5)
             if boundary > 0:
-                chunk_text = chunk_text[:boundary]
-                chunk_tokens = _get_enc().encode(chunk_text)
+                chunk = chunk[:boundary]
 
-        chunks.append({
-            "content":     chunk_text.strip(),
-            "token_count": len(chunk_tokens),
-        })
-        start = end - CHUNK_OVERLAP
+        chunk = chunk.strip()
+        if chunk:
+            chunks.append({
+                "content":     chunk,
+                "token_count": len(chunk) // 4,  # rough estimate
+            })
+        start += len(chunk) - OVERLAP_CHARS if chunk else CHUNK_CHARS
 
     return chunks
 
@@ -390,17 +379,11 @@ def process_file(drive, sheets, openai_client, supabase, file_meta, label):
 def main():
     print("GHF Oracle ingestion starting...\n")
 
-    print("Loading Google credentials...")
     creds = load_google_credentials()
-    print("Building Drive client...")
     drive = build("drive", "v3", credentials=creds, cache_discovery=False)
-    print("Building Sheets client...")
     sheets = build("sheets", "v4", credentials=creds, cache_discovery=False)
-    print("Building OpenAI client...")
     openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    print("Building Supabase client...")
     supabase = SupabaseClient(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
-    print("All clients ready.\n")
 
     total_files = 0
     total_ingested = 0

@@ -22,8 +22,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install google-auth google-auth-httplib2 google-api-python-client tiktoken openai pypdf python-dotenv requests
-          python -c "import tiktoken; tiktoken.get_encoding('cl100k_base'); print('tiktoken encoding cached')"
+          pip install google-auth google-auth-httplib2 google-api-python-client openai pypdf python-dotenv requests
 
       - name: Write Google service account credentials
         run: |
