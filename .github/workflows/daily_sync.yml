@@ -38,6 +38,8 @@ jobs:
           META_AD_ACCOUNT_ID=${{ secrets.META_AD_ACCOUNT_ID }}
           META_API_VERSION=${{ secrets.META_API_VERSION }}
           META_ADS_SNAPSHOT_FILE_ID=${{ secrets.META_ADS_SNAPSHOT_FILE_ID }}
+          UNIT_ECONOMICS_SHEET_ID=1gsFEgk2o_gSyC7K8A1EVLe1Vb3HcLYzUNkNMogiz5H8
+          GOOGLE_SERVICE_ACCOUNT_PATH=credentials/sheets_service_account.json
           EOF
 
       - name: Run daily pipeline
