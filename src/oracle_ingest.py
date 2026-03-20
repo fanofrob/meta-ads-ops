@@ -16,12 +16,12 @@ from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 
+import requests
 import tiktoken
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from openai import OpenAI
-from supabase import create_client
 
 # ---------------------------------------------------------------------------
 # Config
@@ -71,15 +71,62 @@ def load_google_credentials():
     )
 
 
+class SupabaseClient:
+    """Minimal Supabase REST client — avoids the hanging websocket in the SDK."""
+    def __init__(self, url: str, key: str):
+        self.url = url.rstrip("/")
+        self.headers = {
+            "apikey": key,
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+        }
+
+    def _rest(self, path):
+        return f"{self.url}/rest/v1/{path}"
+
+    def select(self, table, columns="*", **filters):
+        params = {"select": columns}
+        for k, v in filters.items():
+            params[k] = f"eq.{v}"
+        r = requests.get(self._rest(table), headers=self.headers, params=params, timeout=30)
+        r.raise_for_status()
+        return r.json()
+
+    def upsert(self, table, rows, on_conflict):
+        headers = {**self.headers, "Prefer": f"resolution=merge-duplicates,return=minimal"}
+        r = requests.post(
+            self._rest(table),
+            headers=headers,
+            params={"on_conflict": on_conflict},
+            json=rows if isinstance(rows, list) else [rows],
+            timeout=30,
+        )
+        r.raise_for_status()
+
+    def delete(self, table, **filters):
+        params = {}
+        for k, v in filters.items():
+            params[k] = f"eq.{v}"
+        r = requests.delete(self._rest(table), headers=self.headers, params=params, timeout=30)
+        r.raise_for_status()
+
+    def insert(self, table, rows):
+        r = requests.post(
+            self._rest(table),
+            headers=self.headers,
+            json=rows if isinstance(rows, list) else [rows],
+            timeout=60,
+        )
+        r.raise_for_status()
+
+
 def build_clients():
     creds   = load_google_credentials()
     drive   = build("drive", "v3", credentials=creds, cache_discovery=False)
     sheets  = build("sheets", "v4", credentials=creds, cache_discovery=False)
     openai  = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    supabase = create_client(
-        os.environ["SUPABASE_URL"],
-        os.environ["SUPABASE_SERVICE_KEY"]
-    )
+    supabase = SupabaseClient(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
     return drive, sheets, openai, supabase
 
 
@@ -254,18 +301,15 @@ def embed_chunks(openai_client, chunks: list[dict]) -> list[list[float]]:
 # Supabase upsert
 # ---------------------------------------------------------------------------
 
-def get_stored_modified(supabase, drive_file_id) -> datetime | None:
-    result = supabase.table("ghf_documents") \
-        .select("modified_at") \
-        .eq("drive_file_id", drive_file_id) \
-        .execute()
-    if result.data:
-        return datetime.fromisoformat(result.data[0]["modified_at"])
+def get_stored_modified(supabase: SupabaseClient, drive_file_id) -> datetime | None:
+    data = supabase.select("ghf_documents", columns="modified_at", drive_file_id=drive_file_id)
+    if data:
+        return datetime.fromisoformat(data[0]["modified_at"])
     return None
 
 
-def upsert_document(supabase, file_meta, label, chunk_count):
-    supabase.table("ghf_documents").upsert({
+def upsert_document(supabase: SupabaseClient, file_meta, label, chunk_count):
+    supabase.upsert("ghf_documents", {
         "drive_file_id": file_meta["id"],
         "file_name":     file_meta["name"],
         "mime_type":     file_meta["mimeType"],
@@ -273,12 +317,11 @@ def upsert_document(supabase, file_meta, label, chunk_count):
         "modified_at":   file_meta["modifiedTime"],
         "ingested_at":   datetime.now(timezone.utc).isoformat(),
         "chunk_count":   chunk_count,
-    }, on_conflict="drive_file_id").execute()
+    }, on_conflict="drive_file_id")
 
 
-def upsert_chunks(supabase, drive_file_id, file_name, label, chunks, embeddings):
-    # Delete old chunks for this file
-    supabase.table("ghf_chunks").delete().eq("drive_file_id", drive_file_id).execute()
+def upsert_chunks(supabase: SupabaseClient, drive_file_id, file_name, label, chunks, embeddings):
+    supabase.delete("ghf_chunks", drive_file_id=drive_file_id)
 
     rows = []
     for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
@@ -296,9 +339,8 @@ def upsert_chunks(supabase, drive_file_id, file_name, label, chunks, embeddings)
             }
         })
 
-    # Batch insert
     for i in range(0, len(rows), 50):
-        supabase.table("ghf_chunks").insert(rows[i:i+50]).execute()
+        supabase.insert("ghf_chunks", rows[i:i+50])
 
 
 # ---------------------------------------------------------------------------

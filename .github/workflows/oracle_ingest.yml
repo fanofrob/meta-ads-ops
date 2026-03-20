@@ -21,7 +21,7 @@ jobs:
           cache: "pip"
 
       - name: Install dependencies
-        run: pip install google-auth google-auth-httplib2 google-api-python-client tiktoken openai supabase pypdf python-dotenv
+        run: pip install google-auth google-auth-httplib2 google-api-python-client tiktoken openai pypdf python-dotenv requests
 
       - name: Write Google service account credentials
         run: |
