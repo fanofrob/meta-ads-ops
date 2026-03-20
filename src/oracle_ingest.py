@@ -120,6 +120,8 @@ class SupabaseClient:
             json=rows if isinstance(rows, list) else [rows],
             timeout=60,
         )
+        if not r.ok:
+            print(f"  [ERROR] {r.status_code} inserting into {table}: {r.text[:500]}")
         r.raise_for_status()
 
 
