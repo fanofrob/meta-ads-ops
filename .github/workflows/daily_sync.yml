@@ -1,0 +1,54 @@
+name: Daily Meta Ads Sync
+
+on:
+  schedule:
+    # 5:30am PT (13:30 UTC) — runs before the 7am Apps Script trigger
+    # Note: GitHub cron uses UTC. Adjust if needed for daylight saving time.
+    - cron: "30 13 * * *"
+  workflow_dispatch:  # allow manual runs from GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install requests python-dotenv google-auth google-auth-httplib2 google-api-python-client
+
+      - name: Write Google service account credentials
+        run: |
+          mkdir -p credentials
+          echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > credentials/sheets_service_account.json
+
+      - name: Write .env
+        run: |
+          cat > .env <<EOF
+          META_ACCESS_TOKEN=${{ secrets.META_ACCESS_TOKEN }}
+          META_AD_ACCOUNT_ID=${{ secrets.META_AD_ACCOUNT_ID }}
+          META_API_VERSION=${{ secrets.META_API_VERSION }}
+          EOF
+
+      - name: Fetch campaigns
+        working-directory: ${{ github.workspace }}
+        run: python src/fetch_campaigns.py
+
+      - name: Fetch ad sets
+        working-directory: ${{ github.workspace }}
+        run: python src/fetch_adsets.py
+
+      - name: Fetch insights (yesterday)
+        working-directory: ${{ github.workspace }}
+        run: python src/fetch_insights.py
+
+      - name: Export snapshot to GHF Oracle
+        working-directory: ${{ github.workspace }}
+        run: python src/export_to_oracle.py
