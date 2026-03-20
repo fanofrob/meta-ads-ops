@@ -28,8 +28,19 @@ jobs:
           mkdir -p credentials
           echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > credentials/sheets_service_account.json
 
+      - name: Debug secrets
+        run: |
+          echo "SUPABASE_URL length: ${#SUPABASE_URL}"
+          echo "SUPABASE_URL starts with: ${SUPABASE_URL:0:10}"
+          echo "SUPABASE_SERVICE_KEY length: ${#SUPABASE_SERVICE_KEY}"
+          python -c "import urllib.request; urllib.request.urlopen('$SUPABASE_URL/rest/v1/', timeout=10)" && echo "Supabase reachable" || echo "Supabase NOT reachable"
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
       - name: Run ingestion
         run: python src/oracle_ingest.py
+        timeout-minutes: 10
         env:
           OPENAI_API_KEY:    ${{ secrets.OPENAI_API_KEY }}
           SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
