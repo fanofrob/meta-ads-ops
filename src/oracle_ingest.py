@@ -267,7 +267,7 @@ def chunk_text(text: str, file_name: str) -> list[dict]:
                 "content":     chunk,
                 "token_count": len(chunk) // 4,  # rough estimate
             })
-        start += len(chunk) - OVERLAP_CHARS if chunk else CHUNK_CHARS
+        start += max(CHUNK_CHARS // 2, len(chunk) - OVERLAP_CHARS) if chunk else CHUNK_CHARS
 
     return chunks
 
