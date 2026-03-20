@@ -225,10 +225,19 @@ def _extract_sheet(sheets_svc, spreadsheet_id) -> str:
             # If so, transpose so each metric row becomes "Metric\nDate: Value\nDate: Value..."
             # This ensures column headers travel with each metric when the text is chunked.
             first_row = [str(c).strip() for c in rows[0]] if rows else []
+            # Check if data rows have text in col 0 (metric names) and numbers elsewhere —
+            # works regardless of whether A1 is blank or has a label like "Metric".
+            sample_data_rows = [r for r in rows[1:6] if r and str(r[0]).strip()]
+            data_cols_numeric = sum(
+                1 for r in sample_data_rows
+                for v in (r[1:4] if len(r) > 1 else [])
+                if str(v).strip().replace(".", "").replace("-", "").replace("%", "").replace("$", "").replace(",", "").isdigit()
+            )
             is_time_series = (
-                len(first_row) > 2
-                and first_row[0] == ""  # top-left cell is blank (row label column)
-                and any(c for c in first_row[1:])  # rest are column headers
+                len(first_row) > 3
+                and any(c for c in first_row[1:])  # column headers present
+                and len(sample_data_rows) >= 2
+                and data_cols_numeric >= 2  # most data cells are numeric
             )
 
             if is_time_series:
