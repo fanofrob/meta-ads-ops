@@ -219,6 +219,39 @@ def _extract_sheet(sheets_svc, spreadsheet_id) -> str:
             rows = result.get("values", [])
             if not rows:
                 continue
+
+            # Detect if this looks like a time-series sheet:
+            # first row = header labels (dates/weeks), first col = metric names.
+            # If so, transpose so each metric row becomes "Metric\nDate: Value\nDate: Value..."
+            # This ensures column headers travel with each metric when the text is chunked.
+            first_row = [str(c).strip() for c in rows[0]] if rows else []
+            is_time_series = (
+                len(first_row) > 2
+                and first_row[0] == ""  # top-left cell is blank (row label column)
+                and any(c for c in first_row[1:])  # rest are column headers
+            )
+
+            if is_time_series:
+                col_headers = first_row  # index 0 = blank, 1..N = date/week labels
+                metric_blocks = []
+                for row in rows[1:]:
+                    if not row or not any(str(c).strip() for c in row):
+                        continue
+                    metric_name = str(row[0]).strip() if row else ""
+                    if not metric_name:
+                        continue
+                    pairs = []
+                    for i, header in enumerate(col_headers[1:], start=1):
+                        val = str(row[i]).strip() if i < len(row) else ""
+                        if header and val and val not in ("#VALUE!", "#N/A", "#DIV/0!", "#REF!", ""):
+                            pairs.append(f"  {header}: {val}")
+                    if pairs:
+                        metric_blocks.append(f"{metric_name}\n" + "\n".join(pairs))
+                if metric_blocks:
+                    parts.append(f"## Sheet: {name}\n\n" + "\n\n".join(metric_blocks))
+                    continue
+
+            # Fallback: plain pipe-delimited rows (non-time-series sheets)
             text_rows = [" | ".join(str(c) for c in row) for row in rows if any(str(c).strip() for c in row)]
             parts.append(f"## Sheet: {name}\n" + "\n".join(text_rows))
         except Exception as e:
