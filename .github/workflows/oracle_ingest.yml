@@ -1,0 +1,36 @@
+name: GHF Oracle Ingestion
+
+on:
+  schedule:
+    # 9:00am UTC — runs after the 4:30am meta ads pipeline
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install google-auth google-auth-httplib2 google-api-python-client tiktoken openai supabase pypdf python-dotenv
+
+      - name: Write Google service account credentials
+        run: |
+          mkdir -p credentials
+          echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > credentials/sheets_service_account.json
+
+      - name: Run ingestion
+        run: python src/oracle_ingest.py
+        env:
+          OPENAI_API_KEY:    ${{ secrets.OPENAI_API_KEY }}
+          SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
