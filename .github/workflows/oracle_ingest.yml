@@ -39,7 +39,7 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
       - name: Run ingestion
-        run: python src/oracle_ingest.py
+        run: python -u src/oracle_ingest.py
         timeout-minutes: 10
         env:
           OPENAI_API_KEY:    ${{ secrets.OPENAI_API_KEY }}
