@@ -56,4 +56,6 @@ jobs:
 
       - name: Export snapshot to GHF Oracle
         working-directory: ${{ github.workspace }}
+        env:
+          META_ADS_SNAPSHOT_FILE_ID: ${{ secrets.META_ADS_SNAPSHOT_FILE_ID }}
         run: python src/export_to_oracle.py
