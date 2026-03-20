@@ -301,24 +301,37 @@ def get_stored_modified(supabase: SupabaseClient, drive_file_id) -> datetime | N
     return None
 
 
-def upsert_document(supabase: SupabaseClient, file_meta, label, chunk_count):
-    supabase.upsert("ghf_documents", {
-        "drive_file_id": file_meta["id"],
-        "file_name":     file_meta["name"],
-        "mime_type":     file_meta["mimeType"],
-        "folder_label":  label,
-        "modified_at":   file_meta["modifiedTime"],
-        "ingested_at":   datetime.now(timezone.utc).isoformat(),
-        "chunk_count":   chunk_count,
-    }, on_conflict="drive_file_id")
+def upsert_document(supabase: SupabaseClient, file_meta, label, chunk_count) -> str:
+    """Upserts document record and returns its uuid."""
+    headers = {**supabase.headers, "Prefer": "resolution=merge-duplicates,return=representation"}
+    r = requests.post(
+        supabase._rest("ghf_documents"),
+        headers=headers,
+        params={"on_conflict": "drive_file_id"},
+        json=[{
+            "drive_file_id": file_meta["id"],
+            "file_name":     file_meta["name"],
+            "mime_type":     file_meta["mimeType"],
+            "folder_label":  label,
+            "modified_at":   file_meta["modifiedTime"],
+            "ingested_at":   datetime.now(timezone.utc).isoformat(),
+            "chunk_count":   chunk_count,
+        }],
+        timeout=30,
+    )
+    if not r.ok:
+        print(f"  [ERROR] upsert_document {r.status_code}: {r.text[:300]}")
+    r.raise_for_status()
+    return r.json()[0]["id"]
 
 
-def upsert_chunks(supabase: SupabaseClient, drive_file_id, file_name, label, chunks, embeddings):
+def upsert_chunks(supabase: SupabaseClient, document_id, drive_file_id, file_name, label, chunks, embeddings):
     supabase.delete("ghf_chunks", drive_file_id=drive_file_id)
 
     rows = []
     for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
         rows.append({
+            "document_id":   document_id,
             "drive_file_id": drive_file_id,
             "chunk_index":   i,
             "content":       chunk["content"],
@@ -373,10 +386,10 @@ def process_file(drive, sheets, openai_client, supabase, file_meta, label):
     print(f"    Chunked into {len(chunks)} chunks")
     print(f"    Embedding...")
     embeddings = embed_chunks(openai_client, chunks)
-    print(f"    Upserting chunks...")
-    upsert_chunks(supabase, fid, fname, label, chunks, embeddings)
     print(f"    Upserting document...")
-    upsert_document(supabase, file_meta, label, len(chunks))
+    document_id = upsert_document(supabase, file_meta, label, len(chunks))
+    print(f"    Upserting chunks...")
+    upsert_chunks(supabase, document_id, fid, fname, label, chunks, embeddings)
 
     print(f"    [OK] {len(chunks)} chunks ingested")
 
