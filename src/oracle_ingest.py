@@ -389,8 +389,8 @@ def main():
     creds = load_google_credentials()
     drive = build("drive", "v3", credentials=creds, cache_discovery=False)
     sheets = build("sheets", "v4", credentials=creds, cache_discovery=False)
-    openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    supabase = SupabaseClient(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
+    openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"].strip())
+    supabase = SupabaseClient(os.environ["SUPABASE_URL"].strip(), os.environ["SUPABASE_SERVICE_KEY"].strip())
 
     total_files = 0
     total_ingested = 0
