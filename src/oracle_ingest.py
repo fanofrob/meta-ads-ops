@@ -225,20 +225,11 @@ def _extract_sheet(sheets_svc, spreadsheet_id) -> str:
             # If so, transpose so each metric row becomes "Metric\nDate: Value\nDate: Value..."
             # This ensures column headers travel with each metric when the text is chunked.
             first_row = [str(c).strip() for c in rows[0]] if rows else []
-            # Check if data rows have text in col 0 (metric names) and numbers elsewhere —
-            # works regardless of whether A1 is blank or has a label like "Metric".
-            sample_data_rows = [r for r in rows[1:6] if r and str(r[0]).strip()]
-            data_cols_numeric = sum(
-                1 for r in sample_data_rows
-                for v in (r[1:4] if len(r) > 1 else [])
-                if str(v).strip().replace(".", "").replace("-", "").replace("%", "").replace("$", "").replace(",", "").isdigit()
-            )
-            is_time_series = (
-                len(first_row) > 3
-                and any(c for c in first_row[1:])  # column headers present
-                and len(sample_data_rows) >= 2
-                and data_cols_numeric >= 2  # most data cells are numeric
-            )
+            # Heuristic: if the sheet has many columns (>10) it's almost certainly a
+            # weekly time-series grid. We don't inspect values because early rows may
+            # be empty or contain formula errors.
+            is_time_series = len(first_row) > 10
+            print(f"    Sheet '{name}': {len(rows)} rows x {len(first_row)} cols — time_series={is_time_series}")
 
             if is_time_series:
                 col_headers = first_row  # index 0 = blank, 1..N = date/week labels
@@ -300,9 +291,10 @@ def chunk_text(text: str, file_name: str) -> list[dict]:
         end = min(start + CHUNK_CHARS, len(text))
         chunk = text[start:end]
 
-        # Try to end on a paragraph boundary in the last 20% of the chunk
+        # Always prefer to break at a paragraph boundary (\n\n) so that
+        # transposed metric blocks (each separated by \n\n) stay intact.
         if end < len(text):
-            boundary = chunk.rfind("\n\n", len(chunk) * 4 // 5)
+            boundary = chunk.rfind("\n\n")
             if boundary > 0:
                 chunk = chunk[:boundary]
 
