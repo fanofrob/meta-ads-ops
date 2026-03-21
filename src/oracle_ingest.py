@@ -414,6 +414,20 @@ def upsert_chunks(supabase: SupabaseClient, document_id, drive_file_id, file_nam
 
 
 # ---------------------------------------------------------------------------
+# Cleanup stale documents
+# ---------------------------------------------------------------------------
+
+def cleanup_old_documents(supabase: SupabaseClient, label: str, current_drive_file_id: str):
+    """Delete all documents (and their chunks) for a label except the current file."""
+    old_docs = supabase.select("ghf_documents", columns="drive_file_id", folder_label=label)
+    for doc in old_docs:
+        if doc["drive_file_id"] != current_drive_file_id:
+            supabase.delete("ghf_chunks", drive_file_id=doc["drive_file_id"])
+            supabase.delete("ghf_documents", drive_file_id=doc["drive_file_id"])
+            print(f"    [CLEANUP] Removed stale document {doc['drive_file_id']} for label={label}")
+
+
+# ---------------------------------------------------------------------------
 # Process a single file
 # ---------------------------------------------------------------------------
 
@@ -459,6 +473,12 @@ def process_file(drive, sheets, openai_client, supabase, file_meta, label, force
     document_id = upsert_document(supabase, file_meta, label, len(chunks))
     print(f"    Upserting chunks...")
     upsert_chunks(supabase, document_id, fid, fname, label, chunks, embeddings)
+
+    # For labels that should only have one active document (daily brief, snapshots,
+    # org context), delete any older documents so stale data doesn't accumulate.
+    SINGLE_FILE_LABELS = {"daily_brief", "snapshots", "org_context"}
+    if label in SINGLE_FILE_LABELS:
+        cleanup_old_documents(supabase, label, fid)
 
     print(f"    [OK] {len(chunks)} chunks ingested")
 
