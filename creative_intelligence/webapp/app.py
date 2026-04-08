@@ -1270,7 +1270,13 @@ def render_asset_image(asset_id: int) -> Any:
         # 2. Local file path
         if path and not path.startswith("mock://"):
             p = Path(path)
-            if p.exists():
+            _exists = p.exists()
+            _fsize  = p.stat().st_size if _exists else -1
+            app.logger.info(
+                "render_asset_image %s: path=%s exists=%s size=%s",
+                asset_id, path, _exists, _fsize,
+            )
+            if _exists:
                 # Validate: check magic bytes to ensure this is actually an image.
                 # Old assets may have corrupt data (HTML error page saved as .png
                 # when CDN URL expired before server-side download completed).
@@ -1283,6 +1289,9 @@ def render_asset_image(asset_id: int) -> Any:
                 )
                 with open(p, "rb") as _f:
                     _hdr = _f.read(12)
+                app.logger.info(
+                    "render_asset_image %s: magic=%s", asset_id, _hdr[:8].hex()
+                )
                 _is_image = any(_hdr.startswith(m) for m in _IMAGE_MAGIC)
                 if _is_image:
                     if _hdr.startswith(b"\xff\xd8\xff"):
@@ -1293,6 +1302,10 @@ def render_asset_image(asset_id: int) -> Any:
                         mime = "image/png"
                     return send_file(str(p), mimetype=mime)
                 # File is corrupt — fall through to CDN redirect or 404
+                app.logger.warning(
+                    "render_asset_image %s: unrecognised format magic=%s",
+                    asset_id, _hdr[:8].hex(),
+                )
             # File gone or corrupt → try CDN fallback from metadata
             cdn_url = metadata.get("cdn_url") or ""
             if cdn_url.startswith("http"):
