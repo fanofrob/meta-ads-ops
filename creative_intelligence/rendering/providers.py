@@ -223,7 +223,8 @@ class ReplicateGenerator(ImageGenerator):
             )
 
         width, height = self._RATIO_TO_DIMS.get(aspect_ratio, (1024, 1024))
-        model = config.CI_REPLICATE_MODEL
+        # Per-request model override (from UI model picker); fall back to config default
+        model = kwargs.pop("model", None) or config.CI_REPLICATE_MODEL
 
         client = replicate.Client(api_token=config.CI_REPLICATE_API_KEY)
 

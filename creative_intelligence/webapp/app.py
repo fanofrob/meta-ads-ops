@@ -1093,6 +1093,7 @@ def render_generate() -> Any:
       aspect_ratio         : str?   — "9:16" | "1:1" | "4:5" | "16:9"  (default: "9:16")
       variants             : list?  — subset of VARIANT_STRATEGIES (default: all 5)
       generate_images      : bool?  — override CI_IMAGE_GENERATION_ENABLED
+      model                : str?   — Replicate model slug override (e.g. "black-forest-labs/flux-1.1-pro")
       dry_run              : bool?  — default False
     }
     """
@@ -1108,6 +1109,7 @@ def render_generate() -> Any:
         aspect        = body.get("aspect_ratio", "9:16")
         variants_req  = body.get("variants") or list(VARIANT_STRATEGIES)
         gen_images    = body.get("generate_images")   # None = use config
+        model         = body.get("model") or None
         dry_run       = bool(body.get("dry_run", False))
 
         conn   = _db()
@@ -1117,6 +1119,7 @@ def render_generate() -> Any:
             variants=tuple(v for v in variants_req if v in VARIANT_STRATEGIES),
             aspect_ratio=aspect,
             generate_images=gen_images,
+            model=model,
             dry_run=dry_run,
         )
         conn.close()

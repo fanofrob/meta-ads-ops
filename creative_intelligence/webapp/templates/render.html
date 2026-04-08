@@ -109,6 +109,18 @@ header .subtitle { font-size: 12px; color: var(--muted); }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
+/* Model picker panel */
+.model-panel { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 7px; }
+.model-panel label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; }
+.model-select { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 5px 8px; font-size: 12px; }
+.model-select:focus { outline: none; border-color: var(--accent); }
+.model-custom { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text2); padding: 5px 8px; font-size: 11px; font-family: monospace; display: none; }
+.model-custom.visible { display: block; }
+.model-custom:focus { outline: none; border-color: var(--accent); }
+.btn-gen-images { width: 100%; padding: 7px; border-radius: 6px; border: 1px solid var(--accent); background: transparent; color: var(--accent2); font-size: 12px; cursor: pointer; transition: all .12s; }
+.btn-gen-images:hover { background: var(--accent); color: #fff; }
+.btn-gen-images:disabled { opacity: .4; cursor: not-allowed; }
+
 /* Toast */
 #toast { position: fixed; bottom: 16px; right: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 12px; box-shadow: 0 4px 16px #0006; opacity: 0; transform: translateY(6px); transition: all .2s; pointer-events: none; z-index: 999; }
 #toast.show { opacity: 1; transform: translateY(0); }
@@ -126,6 +138,26 @@ header .subtitle { font-size: 12px; color: var(--muted); }
   <!-- Sidebar: list of render outputs -->
   <div class="sidebar">
     <div class="sidebar-top"><h3>Render Outputs</h3></div>
+
+    <!-- Model picker — used when generating images for the selected render -->
+    <div class="model-panel">
+      <label>Image Model</label>
+      <select class="model-select" id="modelSelect" onchange="onModelChange(this)">
+        <option value="stability-ai/stable-diffusion-3.5-large-turbo">SD 3.5 Large Turbo (fast)</option>
+        <option value="stability-ai/stable-diffusion-3.5-large">SD 3.5 Large (quality)</option>
+        <option value="black-forest-labs/flux-1.1-pro">FLUX 1.1 Pro</option>
+        <option value="black-forest-labs/flux-schnell">FLUX Schnell (fast)</option>
+        <option value="black-forest-labs/flux-dev">FLUX Dev</option>
+        <option value="ideogram-ai/ideogram-v2">Ideogram V2</option>
+        <option value="recraft-ai/recraft-v3">Recraft V3</option>
+        <option value="custom">Custom model slug…</option>
+      </select>
+      <input class="model-custom" id="modelCustom" placeholder="owner/model-name or owner/model-name:version" />
+      <button class="btn-gen-images" id="genImagesBtn" onclick="generateImages()" disabled>
+        🎨 Generate Images
+      </button>
+    </div>
+
     <div class="sidebar-list" id="renderList">
       <div style="padding:16px;color:var(--muted);font-size:12px">Loading…</div>
     </div>
@@ -202,10 +234,66 @@ async function loadRenderList() {
   }
 }
 
+/* ─── Model picker ──────────────────────── */
+function onModelChange(sel) {
+  const custom = document.getElementById('modelCustom');
+  if (sel.value === 'custom') {
+    custom.classList.add('visible');
+    custom.focus();
+  } else {
+    custom.classList.remove('visible');
+  }
+}
+
+function getSelectedModel() {
+  const sel = document.getElementById('modelSelect');
+  if (sel.value === 'custom') {
+    return document.getElementById('modelCustom').value.trim() || null;
+  }
+  return sel.value;
+}
+
+async function generateImages() {
+  if (!currentRenderId) return;
+  const btn = document.getElementById('genImagesBtn');
+  const model = getSelectedModel();
+  btn.disabled = true;
+  btn.textContent = '⏳ Generating…';
+  toast('Sending to ' + (model || 'default model') + '…');
+  try {
+    // Fetch the source production_output_id from the current render
+    const detailRes = await fetch(`/api/render/${currentRenderId}`);
+    const detail    = await detailRes.json();
+    const res = await fetch('/api/render/generate', {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        production_output_id: detail.source_production_output_id,
+        generate_images:      true,
+        model:                model,
+        aspect_ratio:         detail.render_specs?.[0]?.aspect_ratio || '9:16',
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    toast('✓ Images generated — loading…');
+    await loadRenderList();
+    selectRender(data.render_output_id);
+  } catch(e) {
+    toast('Generation failed: ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🎨 Generate Images';
+  }
+}
+
 /* ─── Select a render output ─────────────── */
 async function selectRender(id) {
   currentRenderId = id;
   location.hash = id;
+  // Enable the generate button now that a render is selected
+  const btn = document.getElementById('genImagesBtn');
+  if (btn) btn.disabled = false;
 
   // Highlight sidebar item
   document.querySelectorAll('.render-item').forEach(el => {
