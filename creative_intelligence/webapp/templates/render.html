@@ -89,7 +89,7 @@ header .subtitle { font-size: 12px; color: var(--muted); }
 .spec-section { margin-bottom: 12px; }
 .spec-section h5 { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; margin-bottom: 5px; }
 .spec-section p, .spec-section .prompt-text { font-size: 12px; line-height: 1.6; color: var(--text2); }
-.prompt-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px; line-height: 1.6; color: var(--text2); font-family: inherit; max-height: 120px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
+.prompt-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px; line-height: 1.6; color: var(--text2); font-family: inherit; white-space: pre-wrap; word-break: break-word; }
 .overlay-grid { display: grid; grid-template-columns: 80px 1fr; gap: 4px 10px; font-size: 12px; }
 .overlay-label { color: var(--muted); font-size: 11px; }
 .style-tags { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -108,8 +108,6 @@ header .subtitle { font-size: 12px; color: var(--muted); }
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-.prompt-box::-webkit-scrollbar { width: 4px; }
-.prompt-box::-webkit-scrollbar-thumb { background: var(--muted2); }
 
 /* Model picker panel */
 .model-panel { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 7px; }
@@ -119,6 +117,14 @@ header .subtitle { font-size: 12px; color: var(--muted); }
 .model-custom { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--text2); padding: 5px 8px; font-size: 11px; font-family: monospace; display: none; }
 .model-custom.visible { display: block; }
 .model-custom:focus { outline: none; border-color: var(--accent); }
+
+/* Variant checkboxes */
+.variant-checks { display: flex; flex-direction: column; gap: 4px; }
+.variant-check-row { display: flex; align-items: center; gap: 7px; cursor: pointer; padding: 2px 0; }
+.variant-check-row input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
+.variant-check-row .vc-badge { font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 8px; text-transform: uppercase; letter-spacing: .4px; flex-shrink: 0; }
+.variant-check-row .vc-label { font-size: 11px; color: var(--text2); }
+
 .btn-gen-images { width: 100%; padding: 7px; border-radius: 6px; border: 1px solid var(--accent); background: transparent; color: var(--accent2); font-size: 12px; cursor: pointer; transition: all .12s; }
 .btn-gen-images:hover { background: var(--accent); color: #fff; }
 .btn-gen-images:disabled { opacity: .4; cursor: not-allowed; }
@@ -141,7 +147,7 @@ header .subtitle { font-size: 12px; color: var(--muted); }
   <div class="sidebar">
     <div class="sidebar-top"><h3>Render Outputs</h3></div>
 
-    <!-- Model picker — used when generating images for the selected render -->
+    <!-- Model picker + variant selector -->
     <div class="model-panel">
       <label>Image Model</label>
       <select class="model-select" id="modelSelect" onchange="onModelChange(this)">
@@ -156,6 +162,36 @@ header .subtitle { font-size: 12px; color: var(--muted); }
         <option value="custom">Custom model slug…</option>
       </select>
       <input class="model-custom" id="modelCustom" placeholder="owner/model-name or owner/model-name:version" />
+
+      <label style="margin-top:4px">Variants to generate</label>
+      <div class="variant-checks">
+        <label class="variant-check-row">
+          <input type="checkbox" value="minimal" checked>
+          <span class="vc-badge badge-minimal">Minimal</span>
+          <span class="vc-label">Clean, product-forward</span>
+        </label>
+        <label class="variant-check-row">
+          <input type="checkbox" value="premium" checked>
+          <span class="vc-badge badge-premium">Premium</span>
+          <span class="vc-label">Luxury, elevated context</span>
+        </label>
+        <label class="variant-check-row">
+          <input type="checkbox" value="direct_response" checked>
+          <span class="vc-badge badge-direct-response">Direct Response</span>
+          <span class="vc-label">CTA-heavy, conversion</span>
+        </label>
+        <label class="variant-check-row">
+          <input type="checkbox" value="reveal" checked>
+          <span class="vc-badge badge-reveal">Reveal</span>
+          <span class="vc-label">Before/after, contrast</span>
+        </label>
+        <label class="variant-check-row">
+          <input type="checkbox" value="product_hero" checked>
+          <span class="vc-badge badge-product-hero">Product Hero</span>
+          <span class="vc-label">Full-frame product</span>
+        </label>
+      </div>
+
       <button class="btn-gen-images" id="genImagesBtn" onclick="generateImages()" disabled>
         🎨 Generate Images
       </button>
@@ -256,12 +292,20 @@ function getSelectedModel() {
   return sel.value;
 }
 
+function getSelectedVariants() {
+  return Array.from(
+    document.querySelectorAll('.variant-checks input[type=checkbox]:checked')
+  ).map(cb => cb.value);
+}
+
 async function generateImages() {
   if (!currentRenderId) return;
-  const btn = document.getElementById('genImagesBtn');
+  const variants = getSelectedVariants();
+  if (!variants.length) { toast('Select at least one variant', true); return; }
+  const btn   = document.getElementById('genImagesBtn');
   const model = getSelectedModel();
   btn.disabled = true;
-  btn.textContent = '⏳ Generating…';
+  btn.textContent = `⏳ Generating ${variants.length} variant${variants.length>1?'s':''}…`;
   toast('Sending to ' + (model || 'default model') + '…');
   try {
     // Fetch the source production_output_id from the current render
@@ -274,12 +318,13 @@ async function generateImages() {
         production_output_id: detail.source_production_output_id,
         generate_images:      true,
         model:                model,
+        variants:             variants,
         aspect_ratio:         detail.render_specs?.[0]?.aspect_ratio || '9:16',
       }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.statusText);
-    toast('✓ Images generated — loading…');
+    toast(`✓ ${variants.length} variant${variants.length>1?'s':''} generated — loading…`);
     await loadRenderList();
     selectRender(data.render_output_id);
   } catch(e) {
