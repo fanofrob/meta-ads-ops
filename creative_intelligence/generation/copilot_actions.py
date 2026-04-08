@@ -447,6 +447,8 @@ def score_concept(concept: str, conn: sqlite3.Connection) -> dict[str, Any]:
         "structural": structural,
         "pattern_match": round(pattern_match, 1),
         "overall": overall,
+        "hook_type": tags.get("hook_type", "unknown"),
+        "angle": tags.get("angle", "unknown"),
     }
 
 
