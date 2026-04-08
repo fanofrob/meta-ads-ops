@@ -24,6 +24,7 @@ from creative_intelligence.rendering.prompt_builder import build_render_specs
 from creative_intelligence.rendering.providers import (
     MockImageGenerator,
     NanoBananaGenerator,
+    ReplicateGenerator,
     get_provider,
 )
 from creative_intelligence.rendering.asset_store import (
@@ -331,6 +332,26 @@ class TestProviders:
     def test_nano_banana_raises_not_implemented(self):
         gen = NanoBananaGenerator()
         with pytest.raises((NotImplementedError, RuntimeError)):
+            gen.generate("test prompt", "negative")
+
+    def test_get_provider_replicate(self):
+        provider = get_provider("replicate")
+        assert isinstance(provider, ReplicateGenerator)
+        assert provider.name == "replicate"
+
+    def test_replicate_ratio_mapping_9_16(self):
+        gen = ReplicateGenerator()
+        assert gen._RATIO_TO_DIMS["9:16"] == (768, 1344)
+
+    def test_replicate_ratio_mapping_1_1(self):
+        gen = ReplicateGenerator()
+        assert gen._RATIO_TO_DIMS["1:1"] == (1024, 1024)
+
+    def test_replicate_raises_without_api_key(self, monkeypatch):
+        import creative_intelligence.config as cfg
+        monkeypatch.setattr(cfg, "CI_REPLICATE_API_KEY", "")
+        gen = ReplicateGenerator()
+        with pytest.raises(RuntimeError, match="CI_REPLICATE_API_KEY"):
             gen.generate("test prompt", "negative")
 
 

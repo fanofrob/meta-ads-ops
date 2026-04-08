@@ -169,6 +169,95 @@ class NanoBananaGenerator(ImageGenerator):
 
 
 # ─────────────────────────────────────────────
+# Replicate provider
+# ─────────────────────────────────────────────
+
+class ReplicateGenerator(ImageGenerator):
+    """
+    Image generation via Replicate.
+
+    Required env var
+    ----------------
+    CI_REPLICATE_API_KEY  : Replicate API token (r8_...)
+
+    Optional env var
+    ----------------
+    CI_REPLICATE_MODEL    : Model in owner/name or owner/name:version format.
+                            Default: stability-ai/stable-diffusion-3.5-large-turbo
+
+    Aspect ratio mapping
+    --------------------
+    Replicate models accept width/height rather than ratio strings.
+    We map our standard ratios to common resolutions (1024-base):
+        9:16  → 768 × 1344   (Stories / Reels)
+        4:5   → 896 × 1120   (Feed portrait)
+        1:1   → 1024 × 1024  (Square)
+        16:9  → 1344 × 768   (Landscape)
+    """
+
+    _RATIO_TO_DIMS: dict[str, tuple[int, int]] = {
+        "9:16":  (768,  1344),
+        "4:5":   (896,  1120),
+        "1:1":   (1024, 1024),
+        "16:9":  (1344, 768),
+    }
+
+    @property
+    def name(self) -> str:
+        return "replicate"
+
+    def generate(
+        self,
+        prompt: str,
+        negative_prompt: str,
+        aspect_ratio: str = "9:16",
+        **kwargs: Any,
+    ) -> list[str]:
+        from creative_intelligence import config
+        import replicate
+
+        if not config.CI_REPLICATE_API_KEY:
+            raise RuntimeError(
+                "CI_REPLICATE_API_KEY is not set. "
+                "Add it to Railway env vars or use CI_IMAGE_PROVIDER=mock."
+            )
+
+        width, height = self._RATIO_TO_DIMS.get(aspect_ratio, (1024, 1024))
+        model = config.CI_REPLICATE_MODEL
+
+        client = replicate.Client(api_token=config.CI_REPLICATE_API_KEY)
+
+        # Build input — covers SD3.5, SDXL, Flux, and similar models.
+        # Models that don't support a field ignore unknown keys.
+        input_payload: dict[str, Any] = {
+            "prompt":           prompt,
+            "negative_prompt":  negative_prompt,
+            "width":            width,
+            "height":           height,
+            "aspect_ratio":     aspect_ratio,   # some models prefer this
+            "num_outputs":      1,
+            "output_format":    "png",
+            **kwargs,
+        }
+
+        output = client.run(model, input=input_payload)
+
+        # Replicate returns a list of FileOutput objects or URL strings
+        urls: list[str] = []
+        for item in output:
+            url = str(item)   # FileOutput.__str__ returns the URL
+            if url:
+                urls.append(url)
+
+        if not urls:
+            raise RuntimeError(
+                f"Replicate returned no output for model={model!r}. "
+                "Check the model name and API key."
+            )
+        return urls
+
+
+# ─────────────────────────────────────────────
 # Factory
 # ─────────────────────────────────────────────
 
@@ -187,6 +276,8 @@ def get_provider(name: str | None = None) -> ImageGenerator:
     """
     from creative_intelligence import config
     resolved = (name or config.CI_IMAGE_PROVIDER or "mock").strip().lower()
+    if resolved == "replicate":
+        return ReplicateGenerator()
     if resolved == "nano_banana":
         return NanoBananaGenerator()
     return MockImageGenerator()

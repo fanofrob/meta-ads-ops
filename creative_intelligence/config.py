@@ -131,6 +131,15 @@ CI_NANO_BANANA_ENDPOINT: str = os.getenv(
     "https://api.nanobanana.io/v1/generate",   # placeholder — update from API docs
 )
 
+# Replicate credentials — only needed when CI_IMAGE_PROVIDER=replicate
+CI_REPLICATE_API_KEY: str = os.getenv("CI_REPLICATE_API_KEY", "")
+# Default model: Stable Diffusion 3.5 Large Turbo (fast, high quality)
+# Override with any Replicate image model in owner/name:version format
+CI_REPLICATE_MODEL: str = os.getenv(
+    "CI_REPLICATE_MODEL",
+    "stability-ai/stable-diffusion-3.5-large-turbo",
+)
+
 
 def validate() -> list[str]:
     """Return a list of missing required config vars."""
