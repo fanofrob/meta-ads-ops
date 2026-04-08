@@ -73,9 +73,15 @@ def _predict_hook_score(
     """Quick predicted score for a newly generated hook (no historical performance)."""
     from creative_intelligence.scoring.scorer import _structural_score, _pattern_match_score
     from creative_intelligence.analysis.patterns import get_patterns
+    from creative_intelligence.tagging.rule_tagger import tag_creative
 
     structural = _structural_score({"hook_text": hook_text})
-    tags = {"hook_type": hook_type or "unknown", "angle": angle or "unknown"}
+    # Tag the actual hook text so scores reflect real content, not inherited pattern tags
+    actual_tags = tag_creative({"hook_text": hook_text})
+    tags = {
+        "hook_type": actual_tags.get("hook_type") or hook_type or "unknown",
+        "angle": actual_tags.get("angle") or angle or "unknown",
+    }
     try:
         winning = get_patterns(min_winners=1, conn=conn)
     except Exception:
@@ -132,6 +138,7 @@ def api_generate() -> Any:
         from creative_intelligence.db import get_connection, init_db
         from creative_intelligence.analysis.patterns import get_patterns
         from creative_intelligence.generation.hook_generator import generate_hooks_from_pattern
+        from creative_intelligence.tagging.rule_tagger import tag_creative as _tag_hook
 
         init_db()
         conn = get_connection()
@@ -174,11 +181,15 @@ def api_generate() -> Any:
                 app.logger.warning("Pattern %s generation failed: %s", pat["id"], gen_exc)
                 continue
 
-            hook_type = pat.get("hook_type") or "unknown"
-            angle_tag = pat.get("angle") or "unknown"
-            emotion   = pat.get("emotional_trigger") or "unknown"
+            emotion = pat.get("emotional_trigger") or "unknown"
 
             for hook_text in result.get("hooks", []):
+                # Tag the actual generated text — don't inherit pattern's stored tags
+                # (all patterns in DB share the same tag since historical data was
+                # uniformly labelled; real classification must come from the hook itself)
+                actual_tags = _tag_hook({"hook_text": hook_text})
+                hook_type = actual_tags.get("hook_type") or "unknown"
+                angle_tag = actual_tags.get("angle") or "unknown"
                 score = _predict_hook_score(hook_text, hook_type, angle_tag, conn)
                 all_hooks.append({
                     "hook_text":      hook_text,
