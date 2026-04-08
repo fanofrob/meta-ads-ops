@@ -1,0 +1,1060 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Creative Copilot</title>
+<style>
+/* ── Base ──────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:       #0f0f11;
+  --surface:  #18181b;
+  --surface2: #1f1f23;
+  --border:   #2a2a2e;
+  --accent:   #5b5bf8;
+  --accent2:  #7c7cf9;
+  --text:     #e8e8e8;
+  --muted:    #888;
+  --muted2:   #555;
+  --green:    #22c55e;
+  --blue:     #60a5fa;
+  --orange:   #f97316;
+  --red:      #ef4444;
+  --gold:     #f59e0b;
+  --radius:   8px;
+  --sidebar:  280px;
+}
+body {
+  background: var(--bg); color: var(--text);
+  font: 14px/1.5 "Inter", system-ui, sans-serif;
+  height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* ── Header ────────────────────────────────────────────── */
+header {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 10px 20px; display: flex; align-items: center; gap: 16px;
+  flex-shrink: 0;
+}
+header h1 { font-size: 15px; font-weight: 700; letter-spacing: .5px; color: var(--accent2); }
+header .subtitle { font-size: 12px; color: var(--muted); }
+.nav-link {
+  margin-left: auto; font-size: 12px; color: var(--muted);
+  text-decoration: none; border: 1px solid var(--border);
+  padding: 4px 10px; border-radius: var(--radius);
+}
+.nav-link:hover { border-color: var(--accent); color: var(--text); }
+
+/* ── Layout ────────────────────────────────────────────── */
+.layout { display: flex; flex: 1; overflow: hidden; }
+
+/* ── Sidebar ───────────────────────────────────────────── */
+.sidebar {
+  width: var(--sidebar); flex-shrink: 0;
+  background: var(--surface); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.sidebar-top { padding: 16px; border-bottom: 1px solid var(--border); }
+.sidebar label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.sidebar select, .sidebar input[type=text] {
+  width: 100%; background: var(--surface2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 7px 10px; font-size: 13px; margin-bottom: 10px; outline: none;
+}
+.sidebar select:focus, .sidebar input:focus { border-color: var(--accent); }
+.btn-generate {
+  width: 100%; padding: 9px; background: var(--accent); color: #fff;
+  border: none; border-radius: 6px; cursor: pointer; font-size: 13px;
+  font-weight: 600; transition: background .15s;
+}
+.btn-generate:hover { background: var(--accent2); }
+.btn-generate:disabled { opacity: .5; cursor: default; }
+
+/* Sidebar history */
+.sidebar-history { flex: 1; overflow-y: auto; padding: 10px 0; }
+.sidebar-history h3 { font-size: 11px; color: var(--muted); padding: 4px 16px 8px; text-transform: uppercase; letter-spacing: .8px; }
+.sess-item {
+  padding: 8px 16px; cursor: pointer; border-left: 2px solid transparent;
+  transition: background .1s;
+}
+.sess-item:hover { background: var(--surface2); }
+.sess-item.active { border-left-color: var(--accent); background: var(--surface2); }
+.sess-item .sess-product { font-size: 12px; font-weight: 600; }
+.sess-item .sess-meta { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+/* ── Main workspace ────────────────────────────────────── */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+/* Concept area */
+.concept-area {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 16px 20px; flex-shrink: 0;
+}
+.concept-top { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+.concept-area textarea {
+  flex: 1; background: var(--surface2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 12px; font-size: 14px; line-height: 1.6;
+  resize: none; height: 68px; outline: none; font-family: inherit;
+  transition: border-color .15s;
+}
+.concept-area textarea:focus { border-color: var(--accent); }
+.concept-area textarea::placeholder { color: var(--muted2); }
+
+.score-badge {
+  flex-shrink: 0; min-width: 64px; text-align: center;
+  border-radius: 6px; padding: 6px 10px; font-size: 12px; line-height: 1.3;
+  border: 1px solid var(--border);
+}
+.score-badge .score-val { font-size: 22px; font-weight: 700; display: block; }
+.score-badge .score-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; }
+.score-high { border-color: #166534; background: #052e16; color: var(--green); }
+.score-mid  { border-color: #1e3a5f; background: #0c1e2f; color: var(--blue); }
+.score-low  { border-color: #7c2d12; background: #2a0e07; color: var(--orange); }
+
+/* Action buttons */
+.actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.action-btn {
+  padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500;
+  cursor: pointer; border: 1px solid var(--border);
+  background: var(--surface2); color: var(--text);
+  transition: background .12s, border-color .12s;
+}
+.action-btn:hover { border-color: var(--accent); color: var(--accent2); background: #1a1a2e; }
+.action-btn:disabled { opacity: .4; cursor: default; }
+.action-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.action-btn.primary:hover { background: var(--accent2); }
+.action-btn.rich { border-color: #4a4a6a; }
+.action-btn.rich:hover { border-color: var(--accent2); }
+.action-btn.prod { border-color: #3a2a5a; color: #9a7ae0; }
+.action-btn.prod:hover { border-color: #7a5ac0; color: #c0a0f8; background: #1a1030; }
+.action-sep { width: 1px; height: 26px; background: var(--border); margin: 0 2px; align-self: center; }
+
+/* Results feed */
+.results-feed {
+  flex: 1; overflow-y: auto; padding: 16px 20px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+/* Explanation card */
+.explain-card {
+  background: #0f1a2e; border: 1px solid #1e3a5f; border-radius: 8px;
+  padding: 14px 16px; font-size: 13px; line-height: 1.7;
+  color: #a8c4e0;
+}
+.explain-card h4 { font-size: 11px; color: var(--blue); text-transform: uppercase; letter-spacing: .7px; margin-bottom: 8px; }
+.explain-card p, .explain-card li { margin-bottom: 6px; }
+
+/* Result card */
+.result-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 14px 16px; transition: border-color .15s;
+}
+.result-card:hover { border-color: #3a3a4e; }
+.result-card.is-fav { border-color: var(--gold); }
+.result-card.is-root { border-color: #3a3a5e; }
+
+.card-header { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+.card-text { flex: 1; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+.card-score-pill {
+  flex-shrink: 0; font-size: 11px; font-weight: 700; padding: 3px 8px;
+  border-radius: 12px;
+}
+.pill-high { background: #052e16; color: var(--green); }
+.pill-mid  { background: #0c1e2f; color: var(--blue); }
+.pill-low  { background: #2a0e07; color: var(--orange); }
+
+/* Rich cards */
+.rich-card-section { margin-bottom: 10px; }
+.rich-card-section h5 { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; margin-bottom: 4px; }
+.rich-card-section p  { font-size: 13px; line-height: 1.6; }
+.rich-card-section ul { padding-left: 16px; font-size: 13px; line-height: 1.7; }
+.rich-badge { display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 10px; background: var(--surface2); color: var(--muted); border: 1px solid var(--border); margin-right: 4px; }
+
+.card-footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.card-tag { font-size: 10px; color: var(--muted); background: var(--surface2); padding: 2px 7px; border-radius: 10px; border: 1px solid var(--border); }
+.card-actions { margin-left: auto; display: flex; gap: 6px; }
+.card-btn {
+  font-size: 11px; padding: 4px 9px; border-radius: 5px; cursor: pointer;
+  border: 1px solid var(--border); background: transparent; color: var(--muted);
+  transition: all .12s;
+}
+.card-btn:hover { border-color: var(--accent); color: var(--text); }
+.card-btn.star { color: var(--muted2); }
+.card-btn.star.active { color: var(--gold); border-color: var(--gold); }
+.card-btn.use-btn { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.card-btn.use-btn:hover { background: var(--accent2); }
+
+/* Production output cards */
+.production-section {
+  padding: 16px 20px; border-top: 1px solid var(--border);
+}
+.production-section h4 {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .8px;
+  color: var(--muted); margin-bottom: 10px;
+}
+.production-feed { display: flex; flex-direction: column; gap: 10px; }
+.prod-card {
+  background: var(--surface); border: 1px solid #2a2a4a; border-radius: 8px;
+  padding: 14px 16px; transition: border-color .15s;
+}
+.prod-card:hover { border-color: #4a4a7a; }
+.prod-card.is-approved { border-color: #1a5a2a; }
+.prod-card.is-fav { border-color: var(--gold); }
+.prod-card-header {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+}
+.prod-type-badge {
+  font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 10px;
+  text-transform: uppercase; letter-spacing: .5px;
+}
+.prod-badge-static  { background: #0c2040; color: #5ba4e8; }
+.prod-badge-ugc     { background: #1a2a0c; color: #7ecb5b; }
+.prod-badge-script  { background: #2a0c2a; color: #c07be0; }
+.prod-badge-package { background: #2a1a08; color: #e09a3b; }
+.prod-concept-preview {
+  font-size: 13px; color: var(--muted); flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.prod-card-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.prod-body { font-size: 13px; line-height: 1.65; }
+.prod-section { margin-bottom: 10px; }
+.prod-section h5 {
+  font-size: 10px; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .7px; margin-bottom: 4px;
+}
+.prod-section p { color: var(--text); }
+.prod-section ul { padding-left: 16px; color: var(--text2); margin: 0; }
+.prod-section ul li { margin-bottom: 3px; }
+.prod-collapsed { max-height: 0; overflow: hidden; transition: max-height .25s ease; }
+.prod-collapsed.open { max-height: 9999px; }
+.prod-toggle { font-size: 11px; color: var(--accent2); cursor: pointer; background: none; border: none; padding: 0; margin-top: 6px; }
+.prod-toggle:hover { text-decoration: underline; }
+.prod-approve-btn { font-size: 11px; padding: 3px 8px; border-radius: 5px; cursor: pointer;
+  border: 1px solid var(--border); background: transparent; color: var(--muted);
+  transition: all .12s; }
+.prod-approve-btn.approved { border-color: #1a5a2a; color: #5cb87a; background: #0a1f10; }
+.prod-approve-btn:hover { border-color: var(--accent); }
+.prod-variants-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.prod-variants-table th { color: var(--muted); font-weight: 600; text-transform: uppercase;
+  letter-spacing: .5px; font-size: 10px; border-bottom: 1px solid var(--border);
+  padding: 4px 6px; text-align: left; }
+.prod-variants-table td { padding: 5px 6px; border-bottom: 1px solid #1a1a2a; color: var(--text2); }
+
+/* Loading */
+.loading-card {
+  background: var(--surface); border: 1px dashed var(--border); border-radius: 8px;
+  padding: 20px; text-align: center; color: var(--muted); font-size: 13px;
+}
+.spinner {
+  display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border);
+  border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite;
+  vertical-align: middle; margin-right: 8px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Empty state */
+.empty-state { text-align: center; padding: 40px 20px; color: var(--muted); }
+.empty-state h3 { font-size: 16px; margin-bottom: 8px; color: var(--muted); }
+.empty-state p  { font-size: 13px; }
+
+/* Toast */
+#toast {
+  position: fixed; bottom: 20px; right: 20px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px;
+  font-size: 13px; box-shadow: 0 4px 16px #0006;
+  opacity: 0; transform: translateY(8px); transition: all .2s; pointer-events: none; z-index: 999;
+}
+#toast.show { opacity: 1; transform: translateY(0); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>✦ Creative Copilot</h1>
+  <span class="subtitle">Iterative creative workspace</span>
+  <a class="nav-link" href="/test">← Test Lab</a>
+</header>
+
+<div class="layout">
+
+  <!-- ── Sidebar ──────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-top">
+      <label for="product">Product</label>
+      <select id="product">
+        <option value="">— No product context —</option>
+      </select>
+
+      <label for="goal">Goal</label>
+      <select id="goal">
+        <option value="conversions">Conversions</option>
+        <option value="traffic">Traffic</option>
+        <option value="awareness">Awareness</option>
+      </select>
+
+      <label for="audience">Audience (optional)</label>
+      <input id="audience" type="text" placeholder="e.g. health-conscious moms">
+
+      <label for="tone">Tone</label>
+      <select id="tone">
+        <option value="authentic">Authentic</option>
+        <option value="punchy">Punchy</option>
+        <option value="emotional">Emotional</option>
+        <option value="educational">Educational</option>
+      </select>
+
+      <button class="btn-generate" id="startBtn" onclick="startSession()">New Session + Generate</button>
+    </div>
+
+    <div class="sidebar-history">
+      <h3>Recent Sessions</h3>
+      <div id="sessionsPanel"></div>
+    </div>
+  </aside>
+
+  <!-- ── Main workspace ───────────────────────────── -->
+  <div class="main">
+
+    <!-- Concept textarea + live score -->
+    <div class="concept-area">
+      <div class="concept-top">
+        <textarea id="concept" placeholder="Type or paste a concept / hook here, then click an action — or leave blank and click Generate to start from a winning pattern…"></textarea>
+        <div class="score-badge score-low" id="scoreBadge">
+          <span class="score-val" id="scoreVal">—</span>
+          <span class="score-lbl">score</span>
+        </div>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="actions">
+        <button class="action-btn primary" onclick="runAction('rewrite')">Rewrite</button>
+        <button class="action-btn" onclick="runAction('variants')" title="Generate 5 variants">5 Variants</button>
+        <div class="action-sep"></div>
+        <button class="action-btn" onclick="runAction('premium')">Premium</button>
+        <button class="action-btn" onclick="runAction('direct_response')">Direct-Response</button>
+        <button class="action-btn" onclick="runAction('curiosity')">Curiosity</button>
+        <button class="action-btn" onclick="runAction('mainstream')">Mainstream</button>
+        <button class="action-btn" onclick="runAction('adapt_audience')">Adapt Audience</button>
+        <div class="action-sep"></div>
+        <button class="action-btn" onclick="doScore()" title="Rescore the concept above">Score</button>
+        <button class="action-btn" onclick="doExplain()" title="Explain pattern alignment">Explain</button>
+        <div class="action-sep"></div>
+        <button class="action-btn rich" onclick="runAction('ugc_concepts')">→ UGC Concepts</button>
+        <button class="action-btn rich" onclick="runAction('static_concepts')">→ Statics</button>
+        <button class="action-btn rich" onclick="runAction('script')">→ Script</button>
+        <button class="action-btn rich" onclick="runAction('creator_brief')">→ Brief</button>
+        <div class="action-sep"></div>
+        <button class="action-btn prod" onclick="runProduction('static_brief')" title="Full static ad brief for designers">→ Static Brief</button>
+        <button class="action-btn prod" onclick="runProduction('ugc_brief')" title="Full creator brief for UGC talent">→ UGC Brief</button>
+        <button class="action-btn prod" onclick="runProduction('script_package')" title="Script with beat structure">→ Script Package</button>
+        <button class="action-btn prod" onclick="runProduction('test_package')" title="Bundle core concept + session variants for testing">→ Test Package</button>
+      </div>
+    </div>
+
+    <!-- Results feed -->
+    <div class="results-feed" id="resultsFeed">
+      <div class="empty-state">
+        <h3>Start creating</h3>
+        <p>Type a concept and hit an action, or click <strong>New Session + Generate</strong> to start from a winning pattern.</p>
+      </div>
+    </div>
+
+    <!-- Production outputs -->
+    <div class="production-section" id="productionSection" style="display:none">
+      <h4>📄 Production Outputs</h4>
+      <div class="production-feed" id="productionFeed"></div>
+    </div>
+
+  </div><!-- /.main -->
+</div><!-- /.layout -->
+
+<div id="toast"></div>
+
+<script>
+/* ── State ──────────────────────────────────────────── */
+let sessionId   = null;
+let productId   = null;
+let currentIterId = null;   // the iteration currently in the workspace
+let scoreTimer  = null;
+
+/* ── Boot ───────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  loadProducts();
+  loadSessions();
+  document.getElementById('concept').addEventListener('input', debouncedScore);
+});
+
+/* ── Product dropdown ───────────────────────────────── */
+async function loadProducts() {
+  try {
+    const r = await fetch('/api/products');
+    const products = await r.json();
+    const sel = document.getElementById('product');
+    products.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = (p.label || p.name) + (p.price ? ` — $${Math.round(p.price)}` : '');
+      sel.appendChild(opt);
+    });
+  } catch (e) { console.warn('Could not load products', e); }
+}
+
+/* ── Sessions sidebar ────────────────────────────────── */
+async function loadSessions() {
+  try {
+    const r = await fetch('/api/copilot/sessions');
+    const sessions = await r.json();
+    const panel = document.getElementById('sessionsPanel');
+    panel.innerHTML = '';
+    if (!sessions.length) {
+      panel.innerHTML = '<div style="padding:8px 16px;font-size:12px;color:var(--muted)">No sessions yet</div>';
+      return;
+    }
+    sessions.forEach(s => {
+      const d = document.createElement('div');
+      d.className = 'sess-item' + (s.session_id === sessionId ? ' active' : '');
+      d.dataset.sid = s.session_id;
+      d.innerHTML = `
+        <div class="sess-product">${esc(s.product_name || 'No product')}</div>
+        <div class="sess-meta">${s.iteration_count} concepts · ${s.favorite_count || 0} ★ · ${fmtDate(s.created_at)}</div>
+      `;
+      d.onclick = () => loadSession(s.session_id);
+      panel.appendChild(d);
+    });
+  } catch(e) { console.warn('Could not load sessions', e); }
+}
+
+/* ── Start session (+ optional generate) ────────────── */
+async function startSession() {
+  const concept = document.getElementById('concept').value.trim();
+  productId = document.getElementById('product').value || null;
+
+  setLoading(true);
+  try {
+    // Create session
+    const sr = await api('/api/copilot/session', {
+      product_id: productId,
+      goal:       document.getElementById('goal').value,
+      audience:   document.getElementById('audience').value,
+      tone:       document.getElementById('tone').value,
+    });
+    sessionId = sr.session_id;
+    toast('Session started' + (sr.product_name ? ` — ${sr.product_name}` : ''));
+    markActiveSession();
+
+    // Generate or store concept
+    const gr = await api('/api/copilot/generate', {
+      session_id: sessionId,
+      concept:    concept,
+      product_id: productId,
+      goal:       document.getElementById('goal').value,
+      audience:   document.getElementById('audience').value,
+      tone:       document.getElementById('tone').value,
+      count:      5,
+    });
+
+    clearFeed();
+    gr.iterations.forEach(it => appendCard(it));
+    loadSessions();
+  } catch(e) {
+    toast('Error: ' + e.message, true);
+  } finally {
+    setLoading(false);
+  }
+}
+
+/* ── Load existing session ───────────────────────────── */
+async function loadSession(sid) {
+  try {
+    const r = await api(`/api/copilot/session/${sid}`);
+    sessionId = sid;
+    productId = r.session.product_id;
+    // Restore form state
+    if (productId) document.getElementById('product').value = productId;
+    if (r.session.goal)     document.getElementById('goal').value     = r.session.goal;
+    if (r.session.audience) document.getElementById('audience').value = r.session.audience;
+    if (r.session.tone)     document.getElementById('tone').value     = r.session.tone;
+
+    clearFeed();
+    r.iterations.forEach(it => appendCard(it));
+    markActiveSession();
+    toast(`Loaded session (${r.iterations.length} concepts)`);
+  } catch(e) {
+    toast('Error loading session: ' + e.message, true);
+  }
+}
+
+/* ── Run an action ───────────────────────────────────── */
+async function runAction(actionType) {
+  const concept = document.getElementById('concept').value.trim();
+  if (!concept) { toast('Type or paste a concept first'); return; }
+  if (!sessionId) { toast('Start a session first (click New Session + Generate)'); return; }
+
+  const countMap = { variants: 5, ugc_concepts: 3, static_concepts: 3 };
+  const count = countMap[actionType] || 1;
+
+  const loadCard = appendLoading(`Running: ${actionType.replace(/_/g, ' ')}…`);
+  try {
+    const r = await api('/api/copilot/action', {
+      session_id:   sessionId,
+      iteration_id: currentIterId,
+      concept,
+      action_type:  actionType,
+      product_id:   document.getElementById('product').value || null,
+      params: {
+        count,
+        audience: document.getElementById('audience').value,
+        tone:     document.getElementById('tone').value,
+      },
+    });
+    loadCard.remove();
+    r.iterations.forEach(it => appendCard(it));
+  } catch(e) {
+    loadCard.remove();
+    toast('Error: ' + e.message, true);
+  }
+}
+
+/* ── Score ───────────────────────────────────────────── */
+async function doScore() {
+  const concept = document.getElementById('concept').value.trim();
+  if (!concept) return;
+  try {
+    const sc = await api('/api/copilot/score', { concept });
+    updateScoreBadge(sc.overall);
+  } catch(e) { console.warn('Score error', e); }
+}
+
+function debouncedScore() {
+  clearTimeout(scoreTimer);
+  const concept = document.getElementById('concept').value.trim();
+  if (!concept) { resetScoreBadge(); return; }
+  scoreTimer = setTimeout(doScore, 600);
+}
+
+/* ── Explain ─────────────────────────────────────────── */
+async function doExplain() {
+  const concept = document.getElementById('concept').value.trim();
+  if (!concept) { toast('Type a concept first'); return; }
+  if (!sessionId) { toast('Start a session first'); return; }
+
+  const loadCard = appendLoading('Analysing pattern alignment…');
+  try {
+    const r = await api('/api/copilot/explain', {
+      concept,
+      product_id:   document.getElementById('product').value || null,
+      iteration_id: currentIterId,
+    });
+    loadCard.remove();
+    appendExplanation(r.explanation, concept);
+  } catch(e) {
+    loadCard.remove();
+    toast('Error: ' + e.message, true);
+  }
+}
+
+/* ── Favorite ────────────────────────────────────────── */
+async function toggleFavorite(iterationId, btn) {
+  const isFav = btn.classList.toggle('active');
+  const card  = btn.closest('.result-card');
+  if (card) card.classList.toggle('is-fav', isFav);
+  try {
+    await api('/api/copilot/favorite', { iteration_id: iterationId, favorite: isFav });
+  } catch(e) {
+    btn.classList.toggle('active');
+    toast('Could not save favorite', true);
+  }
+}
+
+/* ── "Use this" ──────────────────────────────────────── */
+function useConcept(text, iterId) {
+  document.getElementById('concept').value = text;
+  currentIterId = iterId;
+  debouncedScore();
+  document.getElementById('concept').focus();
+  document.getElementById('concept').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  toast('Concept loaded into workspace');
+}
+
+// Delegate use-btn clicks via data attribute to avoid quoting issues
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('.use-btn[data-text]');
+  if (!btn) return;
+  const text = btn.dataset.text;
+  const iterId = parseInt(btn.dataset.iter, 10) || null;
+  useConcept(text, iterId);
+});
+
+/* ── UI helpers ──────────────────────────────────────── */
+function clearFeed() {
+  document.getElementById('resultsFeed').innerHTML = '';
+}
+
+function appendLoading(msg) {
+  const d = document.createElement('div');
+  d.className = 'loading-card';
+  d.innerHTML = `<span class="spinner"></span>${esc(msg)}`;
+  document.getElementById('resultsFeed').prepend(d);
+  return d;
+}
+
+function appendCard(it) {
+  const feed   = document.getElementById('resultsFeed');
+  const isRich = ['ugc_concepts','static_concepts','script','creator_brief'].includes(it.action_type);
+  const score  = it.predicted_score;
+  const meta   = it.metadata || {};
+
+  const card = document.createElement('div');
+  card.className = 'result-card' + (it.is_favorite ? ' is-fav' : '') + (it.action_type === 'initial_generate' ? ' is-root' : '');
+  card.dataset.iterId = it.id;
+
+  let inner = '';
+
+  if (!isRich) {
+    // Plain hook card
+    const pillCls = score >= 60 ? 'pill-high' : score >= 35 ? 'pill-mid' : 'pill-low';
+    const pillTxt = score != null ? `${score}` : '—';
+    inner = `
+      <div class="card-header">
+        <div class="card-text">${esc(it.concept_text)}</div>
+        ${score != null ? `<span class="card-score-pill ${pillCls}">${pillTxt}</span>` : ''}
+      </div>
+      <div class="card-footer">
+        <span class="card-tag">${esc(it.action_type.replace(/_/g,' '))}</span>
+        ${meta.pattern_name ? `<span class="card-tag">${esc(meta.pattern_name)}</span>` : ''}
+        <div class="card-actions">
+          <button class="card-btn star${it.is_favorite ? ' active' : ''}" onclick="toggleFavorite(${it.id}, this)" title="Save as favourite">★</button>
+          <button class="card-btn use-btn" data-text="${esc(it.concept_text)}" data-iter="${it.id}">Use this ↑</button>
+        </div>
+      </div>
+    `;
+  } else {
+    // Rich card (UGC / static / script / brief)
+    const richData = it.rich_data || meta;
+    inner = buildRichCard(it.action_type, richData, it.id, it.concept_text, !!it.is_favorite);
+  }
+
+  card.innerHTML = inner;
+  feed.prepend(card);
+}
+
+function buildRichCard(actionType, data, iterId, fallback, isFav) {
+  let sections = '';
+
+  if (actionType === 'ugc_concepts') {
+    sections = `
+      ${data.title ? `<div class="rich-card-section"><h5>Concept</h5><p>${esc(data.title)}</p></div>` : ''}
+      ${data.hook  ? `<div class="rich-card-section"><h5>Opening Hook</h5><p>${esc(data.hook)}</p></div>` : ''}
+      ${data.story_arc ? `<div class="rich-card-section"><h5>Story Arc</h5><p>${esc(data.story_arc)}</p></div>` : ''}
+      <div class="card-footer">
+        ${data.cta    ? `<span class="card-tag">CTA: ${esc(data.cta)}</span>` : ''}
+        ${data.format ? `<span class="card-tag">${esc(data.format)}</span>` : ''}
+        <div class="card-actions">
+          <button class="card-btn star${isFav?' active':''}" onclick="toggleFavorite(${iterId}, this)">★</button>
+          ${data.hook ? `<button class="card-btn use-btn" data-text="${esc(data.hook)}" data-iter="${iterId}">Use hook ↑</button>` : ''}
+        </div>
+      </div>`;
+  } else if (actionType === 'static_concepts') {
+    sections = `
+      ${data.title       ? `<div class="rich-card-section"><h5>Concept</h5><p>${esc(data.title)}</p></div>` : ''}
+      ${data.headline    ? `<div class="rich-card-section"><h5>Headline</h5><p><strong>${esc(data.headline)}</strong></p></div>` : ''}
+      ${data.body_copy   ? `<div class="rich-card-section"><h5>Body Copy</h5><p>${esc(data.body_copy)}</p></div>` : ''}
+      ${data.visual_description ? `<div class="rich-card-section"><h5>Visual</h5><p>${esc(data.visual_description)}</p></div>` : ''}
+      <div class="card-footer">
+        ${data.cta ? `<span class="card-tag">CTA: ${esc(data.cta)}</span>` : ''}
+        <div class="card-actions">
+          <button class="card-btn star${isFav?' active':''}" onclick="toggleFavorite(${iterId}, this)">★</button>
+          ${data.headline ? `<button class="card-btn use-btn" data-text="${esc(data.headline)}" data-iter="${iterId}">Use headline ↑</button>` : ''}
+        </div>
+      </div>`;
+  } else if (actionType === 'script') {
+    sections = `
+      ${data.hook  ? `<div class="rich-card-section"><h5>Hook (on camera)</h5><p>${esc(data.hook)}</p></div>` : ''}
+      ${data.body  ? `<div class="rich-card-section"><h5>Body</h5><p>${esc(data.body)}</p></div>` : ''}
+      ${data.cta   ? `<div class="rich-card-section"><h5>CTA</h5><p>${esc(data.cta)}</p></div>` : ''}
+      ${data.notes ? `<div class="rich-card-section"><h5>Notes</h5><p style="color:var(--muted)">${esc(data.notes)}</p></div>` : ''}
+      <div class="card-footer">
+        ${data.duration ? `<span class="card-tag">${esc(data.duration)}</span>` : ''}
+        <div class="card-actions">
+          <button class="card-btn star${isFav?' active':''}" onclick="toggleFavorite(${iterId}, this)">★</button>
+          ${data.hook ? `<button class="card-btn use-btn" data-text="${esc(data.hook)}" data-iter="${iterId}">Use hook ↑</button>` : ''}
+        </div>
+      </div>`;
+  } else if (actionType === 'creator_brief') {
+    const msgs   = Array.isArray(data.key_messages) ? data.key_messages.map(m => `<li>${esc(m)}</li>`).join('') : '';
+    const dos    = Array.isArray(data.tone_dos)      ? data.tone_dos.map(d2 => `<li>${esc(d2)}</li>`).join('')    : '';
+    const donts  = Array.isArray(data.tone_donts)    ? data.tone_donts.map(d2 => `<li>${esc(d2)}</li>`).join('') : '';
+    sections = `
+      ${data.hook_direction ? `<div class="rich-card-section"><h5>Hook Direction</h5><p>${esc(data.hook_direction)}</p></div>` : ''}
+      ${data.story_arc      ? `<div class="rich-card-section"><h5>Story Arc</h5><p>${esc(data.story_arc)}</p></div>` : ''}
+      ${msgs ? `<div class="rich-card-section"><h5>Key Messages</h5><ul>${msgs}</ul></div>` : ''}
+      ${dos  ? `<div class="rich-card-section"><h5>Tone Do's</h5><ul>${dos}</ul></div>`    : ''}
+      ${donts? `<div class="rich-card-section"><h5>Tone Don'ts</h5><ul>${donts}</ul></div>` : ''}
+      ${data.cta ? `<div class="rich-card-section"><h5>CTA</h5><p>${esc(data.cta)}</p></div>` : ''}
+      <div class="card-footer">
+        <div class="card-actions">
+          <button class="card-btn star${isFav?' active':''}" onclick="toggleFavorite(${iterId}, this)">★</button>
+        </div>
+      </div>`;
+  } else {
+    sections = `<div class="card-text">${esc(fallback)}</div>
+      <div class="card-footer">
+        <div class="card-actions">
+          <button class="card-btn star${isFav?' active':''}" onclick="toggleFavorite(${iterId}, this)">★</button>
+          <button class="card-btn use-btn" data-text="${esc(fallback)}" data-iter="${iterId}">Use this ↑</button>
+        </div>
+      </div>`;
+  }
+
+  return `<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px">
+    ${actionType.replace(/_/g,' ')}</div>${sections}`;
+}
+
+function appendExplanation(text, concept) {
+  const feed = document.getElementById('resultsFeed');
+  const d = document.createElement('div');
+  d.className = 'explain-card';
+  // Convert simple markdown to HTML
+  const html = text
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/\n/g, '<br>');
+  d.innerHTML = `<h4>Pattern alignment analysis</h4><p>${html}</p>`;
+  feed.prepend(d);
+}
+
+/* ── Score badge ─────────────────────────────────────── */
+function updateScoreBadge(val) {
+  const badge = document.getElementById('scoreBadge');
+  const valEl = document.getElementById('scoreVal');
+  valEl.textContent = val != null ? Math.round(val) : '—';
+  badge.className = 'score-badge ' + (val >= 60 ? 'score-high' : val >= 35 ? 'score-mid' : 'score-low');
+}
+function resetScoreBadge() {
+  document.getElementById('scoreVal').textContent = '—';
+  document.getElementById('scoreBadge').className = 'score-badge score-low';
+}
+
+/* ── Loading state ───────────────────────────────────── */
+function setLoading(on) {
+  document.getElementById('startBtn').disabled = on;
+  document.querySelectorAll('.action-btn').forEach(b => b.disabled = on);
+}
+
+/* ── Session sidebar highlight ───────────────────────── */
+function markActiveSession() {
+  document.querySelectorAll('.sess-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.sid === sessionId);
+  });
+}
+
+/* ── API helper ──────────────────────────────────────── */
+async function api(url, body) {
+  const opts = body
+    ? { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) }
+    : { method: 'GET' };
+  const r = await fetch(url, opts);
+  const json = await r.json();
+  if (!r.ok) throw new Error(json.error || r.statusText);
+  return json;
+}
+
+/* ── Utilities ───────────────────────────────────────── */
+function esc(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + (iso.endsWith('Z') ? '' : 'Z'));
+  return d.toLocaleDateString(undefined, {month:'short',day:'numeric'});
+}
+
+let toastTimer = null;
+function toast(msg, isErr) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.borderColor = isErr ? 'var(--red)' : 'var(--border)';
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+/* ── Production Handoff ─────────────────────────────── */
+
+async function runProduction(outputType) {
+  const concept = (document.getElementById('concept').value || '').trim();
+  if (!concept) { toast('Enter a concept first', true); return; }
+
+  const loadCard = document.createElement('div');
+  loadCard.className = 'loading-card';
+  loadCard.textContent = `Generating ${outputType.replace(/_/g, ' ')}…`;
+  const feed = document.getElementById('productionFeed');
+  feed.prepend(loadCard);
+  document.getElementById('productionSection').style.display = '';
+
+  try {
+    const payload = {
+      output_type: outputType,
+      concept,
+      product_id:  productId || null,
+      session_id:  sessionId || null,
+      iteration_id: currentIterId || null,
+      audience:    (document.getElementById('audience') || {}).value || '',
+      goal:        (document.getElementById('goal') || {}).value || 'conversions',
+      dry_run:     false,
+    };
+    const result = await api('/api/production/generate', payload);
+    loadCard.remove();
+    appendProductionCard(result);
+    toast(`${outputType.replace(/_/g,' ')} generated`);
+  } catch(e) {
+    loadCard.remove();
+    toast('Production generation failed: ' + e.message, true);
+  }
+}
+
+function appendProductionCard(result) {
+  const feed = document.getElementById('productionFeed');
+  document.getElementById('productionSection').style.display = '';
+  const card = buildProductionCard(result);
+  feed.prepend(card);
+}
+
+function buildProductionCard(result) {
+  const outputType = result.output_type || '';
+  const data       = result.data || {};
+  const outputId   = result.output_id || result.package_id || null;
+  const isPkg      = outputType === 'test_package';
+
+  // Badge style
+  const badgeClass = {
+    static_brief:   'prod-badge-static',
+    ugc_brief:      'prod-badge-ugc',
+    script_package: 'prod-badge-script',
+    test_package:   'prod-badge-package',
+  }[outputType] || 'prod-badge-static';
+  const badgeLabel = outputType.replace(/_/g, ' ');
+
+  // Concept preview
+  const preview = esc(
+    data.hook || data.opening_line || data.core_concept || ''
+  ).slice(0, 80);
+
+  // Action buttons HTML
+  const exportBase = isPkg
+    ? `/api/production/package/${outputId}/export`
+    : `/api/production/${outputId}/export`;
+
+  const actionButtons = outputId ? `
+    <button class="card-btn prod-approve-btn" data-output-id="${outputId}" data-is-pkg="${isPkg ? 1 : 0}"
+            onclick="toggleApprove(this)" title="Mark as approved for production">✓ Approve</button>
+    <button class="card-btn star" data-output-id="${outputId}" data-is-pkg="${isPkg ? 1 : 0}"
+            onclick="toggleProdFav(this)" title="Save">★</button>
+    <button class="card-btn" onclick="exportProduction('${exportBase}','md')" title="Copy Markdown">Copy MD</button>
+    <button class="card-btn" onclick="exportProduction('${exportBase}','json')" title="Download JSON">JSON</button>
+  ` : '';
+
+  // Body HTML by type
+  let bodyHtml = '';
+  if (outputType === 'static_brief') {
+    bodyHtml = buildStaticBriefBody(data);
+  } else if (outputType === 'ugc_brief') {
+    bodyHtml = buildUGCBriefBody(data);
+  } else if (outputType === 'script_package') {
+    bodyHtml = buildScriptPackageBody(data);
+  } else if (outputType === 'test_package') {
+    bodyHtml = buildTestPackageBody(data);
+  }
+
+  const div = document.createElement('div');
+  div.className = 'prod-card';
+  div.innerHTML = `
+    <div class="prod-card-header">
+      <span class="prod-type-badge ${badgeClass}">${badgeLabel}</span>
+      <span class="prod-concept-preview">${preview}…</span>
+      <div class="prod-card-actions">${actionButtons}</div>
+    </div>
+    <div class="prod-body">${bodyHtml}</div>
+  `;
+  return div;
+}
+
+function prodSection(title, content) {
+  if (!content) return '';
+  return `<div class="prod-section"><h5>${esc(title)}</h5>${content}</div>`;
+}
+function prodList(items) {
+  if (!Array.isArray(items) || !items.length) return '<p>—</p>';
+  return '<ul>' + items.map(i => `<li>${esc(String(i))}</li>`).join('') + '</ul>';
+}
+function prodCollapsed(html) {
+  const id = 'pc' + Math.random().toString(36).slice(2);
+  return `
+    <div class="prod-collapsed" id="${id}">${html}</div>
+    <button class="prod-toggle" onclick="toggleProdCollapsed('${id}',this)">▼ Show full brief</button>
+  `;
+}
+function toggleProdCollapsed(id, btn) {
+  const el = document.getElementById(id);
+  const open = el.classList.toggle('open');
+  btn.textContent = open ? '▲ Hide' : '▼ Show full brief';
+}
+
+function buildStaticBriefBody(d) {
+  const preview = `
+    ${prodSection('Hook', `<p>${esc(d.hook || '')}</p>`)}
+    ${prodSection('Headlines', prodList(d.headline_options))}
+    ${prodSection('Body / Primary Text', prodList(d.body_options))}
+  `;
+  const full = `
+    ${prodSection('Visual Direction', `<p>${esc(d.visual_direction || '')}</p>`)}
+    ${prodSection('Composition Notes', `<p>${esc(d.composition_notes || '')}</p>`)}
+    ${prodSection('Product Visibility', `<p>${esc(d.product_visibility || '')}</p>`)}
+    ${prodSection('Text Overlay', `<p>${esc(d.text_overlay || '')}</p>`)}
+    ${prodSection('CTA', `<p>${esc(d.cta || '')}</p>`)}
+    ${prodSection('Why This Works', `<p>${esc(d.why_it_works || '')}</p>`)}
+  `;
+  return preview + prodCollapsed(full);
+}
+
+function buildUGCBriefBody(d) {
+  const preview = `
+    ${prodSection('Creator Persona', `<p>${esc(d.creator_persona || '')}</p>`)}
+    ${prodSection('Opening Line', `<p><em>"${esc(d.opening_line || '')}"</em></p>`)}
+    ${prodSection('Talking Points', prodList(d.talking_points))}
+  `;
+  const full = `
+    ${prodSection('Demo Beats', prodList(d.demo_beats))}
+    ${prodSection('Emotional Tone', `<p>${esc(d.emotional_tone || '')}</p>`)}
+    ${prodSection('Scene Suggestions', prodList(d.scene_suggestions))}
+    ${prodSection('CTA', `<p>${esc(d.cta || '')}</p>`)}
+    ${prodSection('No-Go Notes', prodList(d.no_go_notes))}
+  `;
+  return preview + prodCollapsed(full);
+}
+
+function buildScriptPackageBody(d) {
+  const dur = d.duration ? `<span class="rich-badge">${esc(d.duration)}</span>` : '';
+  const preview = `
+    <div class="prod-section"><h5>Hook ${dur}</h5><p>${esc(d.hook || '')}</p></div>
+    ${prodSection('Body', `<p>${esc(d.body || '')}</p>`)}
+    ${prodSection('CTA', `<p>${esc(d.cta || '')}</p>`)}
+  `;
+  // Beat structure table
+  const beats = Array.isArray(d.beat_structure) ? d.beat_structure : [];
+  let beatHtml = '';
+  if (beats.length) {
+    beatHtml = '<table class="prod-variants-table"><thead><tr><th>Beat</th><th>Time</th><th>Line</th><th>Direction</th></tr></thead><tbody>' +
+      beats.map(b => `<tr><td>${esc(b.beat||'')}</td><td>${esc(b.seconds||'')}</td><td>${esc(b.line||'')}</td><td>${esc(b.direction||'')}</td></tr>`).join('') +
+      '</tbody></table>';
+  }
+  const full = `
+    ${beatHtml ? `<div class="prod-section"><h5>Beat Structure</h5>${beatHtml}</div>` : ''}
+    ${prodSection('Alternate Hooks', prodList(d.alternate_hooks))}
+    ${prodSection('Alternate CTAs', prodList(d.alternate_ctas))}
+    ${prodSection('Production Notes', `<p>${esc(d.production_notes || '')}</p>`)}
+  `;
+  return preview + prodCollapsed(full);
+}
+
+function buildTestPackageBody(d) {
+  const cScore = d.core_score || {};
+  const summary = d.score_summary || {};
+  const pat = d.pattern_alignment || {};
+  const variants = Array.isArray(d.variants) ? d.variants : [];
+
+  const scorePill = (s) => {
+    if (s == null) return '—';
+    const tier = s >= 70 ? 'high' : s >= 50 ? 'mid' : 'low';
+    return `<span class="card-score-pill pill-${tier}">${Math.round(s)}</span>`;
+  };
+
+  let variantsHtml = '';
+  if (variants.length) {
+    variantsHtml = '<table class="prod-variants-table"><thead><tr><th>#</th><th>Concept</th><th>Type</th><th>Score</th></tr></thead><tbody>' +
+      variants.map((v, i) => {
+        const vs = v.predicted_score || (v.scores && v.scores.overall);
+        return `<tr><td>${i+1}</td><td>${esc((v.concept_text||'').slice(0,70))}</td><td>${esc(v.action_type||'')}</td><td>${scorePill(vs)}</td></tr>`;
+      }).join('') + '</tbody></table>';
+  }
+
+  const patHtml = pat.pattern_name
+    ? `<p><strong>${esc(pat.pattern_name)}</strong> — hook: ${esc(pat.hook_type||'—')}, angle: ${esc(pat.angle||'—')}, winners: ${pat.winner_count||0}</p>`
+    : '<p>No patterns extracted yet.</p>';
+
+  return `
+    <div class="prod-section">
+      <h5>Core Concept ${scorePill(cScore.overall)}</h5>
+      <p>${esc(d.core_concept || '')}</p>
+    </div>
+    <div class="prod-section">
+      <h5>Score Summary — ${summary.count||0} concepts · avg ${(summary.avg||0).toFixed(1)} · range ${(summary.min||0).toFixed(0)}–${(summary.max||0).toFixed(0)}</h5>
+    </div>
+    ${variants.length ? `<div class="prod-section"><h5>Variants</h5>${variantsHtml}</div>` : ''}
+    <div class="prod-section"><h5>Pattern Alignment</h5>${patHtml}</div>
+  `;
+}
+
+async function toggleApprove(btn) {
+  const outputId = parseInt(btn.dataset.outputId, 10);
+  const isPkg    = btn.dataset.isPkg === '1';
+  const approved = !btn.classList.contains('approved');
+  try {
+    const endpoint = isPkg
+      ? `/api/production/package/${outputId}/approve`
+      : `/api/production/${outputId}/approve`;
+    await api(endpoint, {approved});
+    btn.classList.toggle('approved', approved);
+    btn.textContent = approved ? '✓ Approved' : '✓ Approve';
+    btn.closest('.prod-card').classList.toggle('is-approved', approved);
+    toast(approved ? 'Marked as approved' : 'Approval removed');
+  } catch(e) { toast('Failed: ' + e.message, true); }
+}
+
+async function toggleProdFav(btn) {
+  const outputId = parseInt(btn.dataset.outputId, 10);
+  const isPkg    = btn.dataset.isPkg === '1';
+  const fav      = !btn.classList.contains('active');
+  try {
+    const endpoint = isPkg
+      ? `/api/production/package/${outputId}/favorite`
+      : `/api/production/${outputId}/favorite`;
+    await api(endpoint, {favorite: fav});
+    btn.classList.toggle('active', fav);
+    btn.closest('.prod-card').classList.toggle('is-fav', fav);
+    toast(fav ? 'Saved' : 'Removed from saved');
+  } catch(e) { toast('Failed: ' + e.message, true); }
+}
+
+async function exportProduction(baseUrl, format) {
+  try {
+    const r = await fetch(`${baseUrl}?format=${format}`);
+    if (!r.ok) throw new Error(r.statusText);
+    const text = await r.text();
+    if (format === 'json') {
+      // trigger download
+      const blob = new Blob([text], {type: 'application/json'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'production-output.json';
+      a.click();
+      toast('JSON downloaded');
+    } else {
+      await navigator.clipboard.writeText(text);
+      toast('Markdown copied to clipboard');
+    }
+  } catch(e) { toast('Export failed: ' + e.message, true); }
+}
+</script>
+</body>
+</html>
