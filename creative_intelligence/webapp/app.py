@@ -1271,9 +1271,29 @@ def render_asset_image(asset_id: int) -> Any:
         if path and not path.startswith("mock://"):
             p = Path(path)
             if p.exists():
-                mime = "image/png" if p.suffix.lower() in (".png", "") else "image/jpeg"
-                return send_file(str(p), mimetype=mime)
-            # File gone (redeploy wiped it) → try CDN fallback from metadata
+                # Validate: check magic bytes to ensure this is actually an image.
+                # Old assets may have corrupt data (HTML error page saved as .png
+                # when CDN URL expired before server-side download completed).
+                _IMAGE_MAGIC = (
+                    b"\x89PNG",          # PNG
+                    b"\xff\xd8\xff",     # JPEG
+                    b"RIFF",             # WebP (RIFF....WEBP)
+                    b"GIF8",             # GIF
+                    b"\x00\x00\x00",     # HEIC/AVIF (ftyp box)
+                )
+                with open(p, "rb") as _f:
+                    _hdr = _f.read(12)
+                _is_image = any(_hdr.startswith(m) for m in _IMAGE_MAGIC)
+                if _is_image:
+                    if _hdr.startswith(b"\xff\xd8\xff"):
+                        mime = "image/jpeg"
+                    elif _hdr[:4] == b"RIFF" and _hdr[8:12] == b"WEBP":
+                        mime = "image/webp"
+                    else:
+                        mime = "image/png"
+                    return send_file(str(p), mimetype=mime)
+                # File is corrupt — fall through to CDN redirect or 404
+            # File gone or corrupt → try CDN fallback from metadata
             cdn_url = metadata.get("cdn_url") or ""
             if cdn_url.startswith("http"):
                 return _redirect(cdn_url, code=302)
