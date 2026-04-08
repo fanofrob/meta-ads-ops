@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_file, abort
 
 # ─────────────────────────────────────────────
 # App setup
@@ -1229,6 +1229,32 @@ def render_asset_review(asset_id: int) -> Any:
             )
         conn.close()
         return jsonify({"ok": True, "review_status": status})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/render/asset/<int:asset_id>/image")
+def render_asset_image(asset_id: int) -> Any:
+    """Serve a locally-stored render asset as an image file."""
+    try:
+        conn = _db()
+        row = conn.execute(
+            "SELECT asset_path_or_url FROM render_assets WHERE id = ?",
+            (asset_id,),
+        ).fetchone()
+        conn.close()
+        if row is None:
+            abort(404)
+        path = row["asset_path_or_url"]
+        # Only serve local file paths (not mock:// or bare URLs)
+        if not path or path.startswith("mock://") or path.startswith("http"):
+            abort(404)
+        from pathlib import Path as _Path
+        p = _Path(path)
+        if not p.exists():
+            abort(404)
+        mime = "image/png" if p.suffix.lower() in (".png", "") else "image/jpeg"
+        return send_file(p, mimetype=mime)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
