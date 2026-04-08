@@ -266,24 +266,43 @@ class ReplicateGenerator(ImageGenerator):
             return Path(tmp.name).as_uri()  # file:///tmp/replicate_xxx.png
 
         def _extract_url(item: Any) -> str:
-            """Extract a URL (or file URI) from any Replicate output item."""
-            # FileOutput with .url() method
+            """Extract a URL (or file URI) from any Replicate output item.
+
+            Handles three SDK generations:
+            - Old SDK / some models: .url() is a callable method
+            - New SDK (≥0.30): .url is a plain string property
+            - Bytes-only models: .read() returns raw image bytes
+            """
+            # 1. Try .url as a METHOD (older Replicate SDK)
             if hasattr(item, "url") and callable(item.url):
                 u = item.url()
                 if u and isinstance(u, str):
                     return u
-                # .url() returned nothing — fall through to .read()
-            # FileOutput with .read() method (returns bytes)
+                # .url() returned nothing — fall through
+
+            # 2. Try .url as a PROPERTY (newer Replicate SDK ≥0.30)
+            #    In the newer SDK, FileOutput.url is a str property, not callable.
+            #    callable("https://...") is False so the block above never runs.
+            url_attr = getattr(item, "url", None)
+            if isinstance(url_attr, str) and url_attr:
+                return url_attr
+
+            # 3. Bytes fallback — .read() downloads and returns raw bytes
             if hasattr(item, "read") and callable(item.read):
                 data = item.read()
                 if isinstance(data, bytes) and data:
                     return _bytes_to_file(data)
-            # Raw bytes
+
+            # 4. Raw bytes directly
             if isinstance(item, bytes):
                 return _bytes_to_file(item)
+
             return str(item)
 
-        if hasattr(output, "url") and callable(output.url):
+        # Handle single FileOutput (method .url()) or single FileOutput
+        # (property .url) — the str() check handles property access.
+        url_attr_top = getattr(output, "url", None)
+        if (hasattr(output, "url") and callable(output.url)) or isinstance(url_attr_top, str):
             # Single FileOutput
             urls.append(_extract_url(output))
         elif isinstance(output, bytes):
