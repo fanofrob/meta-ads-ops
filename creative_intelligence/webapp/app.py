@@ -1277,35 +1277,33 @@ def render_asset_image(asset_id: int) -> Any:
                 asset_id, path, _exists, _fsize,
             )
             if _exists:
-                # Validate: check magic bytes to ensure this is actually an image.
-                # Old assets may have corrupt data (HTML error page saved as .png
-                # when CDN URL expired before server-side download completed).
-                _IMAGE_MAGIC = (
-                    b"\x89PNG",          # PNG
-                    b"\xff\xd8\xff",     # JPEG
-                    b"RIFF",             # WebP (RIFF....WEBP)
-                    b"GIF8",             # GIF
-                    b"\x00\x00\x00",     # HEIC/AVIF (ftyp box)
-                )
                 with open(p, "rb") as _f:
                     _hdr = _f.read(12)
-                app.logger.info(
-                    "render_asset_image %s: magic=%s", asset_id, _hdr[:8].hex()
-                )
-                _is_image = any(_hdr.startswith(m) for m in _IMAGE_MAGIC)
-                if _is_image:
-                    if _hdr.startswith(b"\xff\xd8\xff"):
+                # Detect MIME type from magic bytes; fall back to jpeg for
+                # unknown formats (browser content-sniffing handles the rest).
+                # Reject only tiny files that are clearly not images (< 2KB).
+                if _fsize < 2048:
+                    app.logger.warning(
+                        "render_asset_image %s: file too small (%s bytes), "
+                        "treating as corrupt", asset_id, _fsize
+                    )
+                else:
+                    if _hdr.startswith(b"\x89PNG"):
+                        mime = "image/png"
+                    elif _hdr.startswith(b"\xff\xd8\xff"):
                         mime = "image/jpeg"
                     elif _hdr[:4] == b"RIFF" and _hdr[8:12] == b"WEBP":
                         mime = "image/webp"
                     else:
-                        mime = "image/png"
+                        # Unknown format — serve as image/jpeg; modern browsers
+                        # sniff the real content type from the bytes regardless.
+                        app.logger.warning(
+                            "render_asset_image %s: unknown magic=%s size=%s, "
+                            "serving as image/jpeg for browser sniff",
+                            asset_id, _hdr[:8].hex(), _fsize,
+                        )
+                        mime = "image/jpeg"
                     return send_file(str(p), mimetype=mime)
-                # File is corrupt — fall through to CDN redirect or 404
-                app.logger.warning(
-                    "render_asset_image %s: unrecognised format magic=%s",
-                    asset_id, _hdr[:8].hex(),
-                )
             # File gone or corrupt → try CDN fallback from metadata
             cdn_url = metadata.get("cdn_url") or ""
             if cdn_url.startswith("http"):
