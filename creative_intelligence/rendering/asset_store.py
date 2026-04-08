@@ -75,15 +75,25 @@ def save_asset(
     render_assets.id of the inserted row
     """
     if source.startswith("mock://") or source.startswith("mock:"):
+        # Mock path — store as-is, no download
         asset_path = source
-    else:
-        # Download real image to local file
+    elif source.startswith("https://") or source.startswith("http://"):
+        # Remote CDN URL (e.g. Replicate delivery URL) — store as-is.
+        # Do NOT download: Railway's filesystem is ephemeral so downloaded files
+        # disappear on every deploy/restart. CDN URLs remain valid for hours and
+        # are served directly to the browser.
+        asset_path = source
+    elif source.startswith("file://"):
+        # Temp file written by provider for models that return raw bytes.
+        # Copy to the render output dir so it survives for the current process.
         out_dir = get_render_output_dir() / str(render_output_id)
         out_dir.mkdir(parents=True, exist_ok=True)
-        ext = Path(source.split("?")[0]).suffix or ".png"
-        dest = out_dir / f"{variant_label}{ext}"
+        dest = out_dir / f"{variant_label}.png"  # always .png for binary outputs
         _download_url(source, dest)
         asset_path = str(dest)
+    else:
+        # Unknown scheme — store as-is
+        asset_path = source
 
     meta_str = json.dumps(metadata or {})
     with conn:
