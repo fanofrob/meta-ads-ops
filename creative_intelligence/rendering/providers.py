@@ -243,12 +243,33 @@ class ReplicateGenerator(ImageGenerator):
 
         output = client.run(model, input=input_payload)
 
-        # Replicate returns a list of FileOutput objects or URL strings
+        # Normalize output: Replicate models return either
+        # - a single FileOutput object  (e.g. google/nano-banana-pro)
+        # - a list/iterator of FileOutput objects  (e.g. SDXL)
+        # - a plain string URL
+        # FileOutput has a .url() method; str() on it also gives the URL.
         urls: list[str] = []
-        for item in output:
-            url = str(item)   # FileOutput.__str__ returns the URL
+
+        def _extract_url(item: Any) -> str:
+            if hasattr(item, "url") and callable(item.url):
+                return item.url()
+            return str(item)
+
+        if hasattr(output, "url") and callable(output.url):
+            # Single FileOutput
+            url = output.url()
             if url:
                 urls.append(url)
+        elif isinstance(output, (str, bytes)):
+            url = output if isinstance(output, str) else output.decode()
+            if url:
+                urls.append(url)
+        else:
+            # List / iterator
+            for item in output:
+                url = _extract_url(item)
+                if url:
+                    urls.append(url)
 
         if not urls:
             raise RuntimeError(
