@@ -21,7 +21,9 @@ get_provider(name=None) → ImageGenerator
 from __future__ import annotations
 
 import hashlib
+import tempfile
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any
 
 
@@ -243,33 +245,58 @@ class ReplicateGenerator(ImageGenerator):
 
         output = client.run(model, input=input_payload)
 
-        # Normalize output: Replicate models return either
-        # - a single FileOutput object  (e.g. google/nano-banana-pro)
+        # Normalize output: Replicate models return one of:
+        # - a single FileOutput  (e.g. google/nano-banana-pro, SD3.5)
+        #     .url()  → string URL  (preferred)
+        #     .read() → raw bytes   (fallback for models that stream bytes)
         # - a list/iterator of FileOutput objects  (e.g. SDXL)
         # - a plain string URL
-        # FileOutput has a .url() method; str() on it also gives the URL.
+        # - raw bytes  (some older/fine-tuned models stream PNG bytes directly)
         urls: list[str] = []
 
+        def _bytes_to_file(data: bytes) -> str:
+            """Write raw image bytes to a temp file, return file:// URL."""
+            suffix = ".png" if data[:4] == b"\x89PNG" else ".bin"
+            tmp = tempfile.NamedTemporaryFile(
+                delete=False, suffix=suffix,
+                dir=tempfile.gettempdir(), prefix="replicate_"
+            )
+            tmp.write(data)
+            tmp.close()
+            return Path(tmp.name).as_uri()  # file:///tmp/replicate_xxx.png
+
         def _extract_url(item: Any) -> str:
+            """Extract a URL (or file URI) from any Replicate output item."""
+            # FileOutput with .url() method
             if hasattr(item, "url") and callable(item.url):
-                return item.url()
+                u = item.url()
+                if u and isinstance(u, str):
+                    return u
+                # .url() returned nothing — fall through to .read()
+            # FileOutput with .read() method (returns bytes)
+            if hasattr(item, "read") and callable(item.read):
+                data = item.read()
+                if isinstance(data, bytes) and data:
+                    return _bytes_to_file(data)
+            # Raw bytes
+            if isinstance(item, bytes):
+                return _bytes_to_file(item)
             return str(item)
 
         if hasattr(output, "url") and callable(output.url):
             # Single FileOutput
-            url = output.url()
-            if url:
-                urls.append(url)
-        elif isinstance(output, (str, bytes)):
-            url = output if isinstance(output, str) else output.decode()
-            if url:
-                urls.append(url)
+            urls.append(_extract_url(output))
+        elif isinstance(output, bytes):
+            urls.append(_bytes_to_file(output))
+        elif isinstance(output, str):
+            if output:
+                urls.append(output)
         else:
             # List / iterator
             for item in output:
-                url = _extract_url(item)
-                if url:
-                    urls.append(url)
+                u = _extract_url(item)
+                if u:
+                    urls.append(u)
 
         if not urls:
             raise RuntimeError(

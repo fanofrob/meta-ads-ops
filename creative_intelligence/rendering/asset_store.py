@@ -15,6 +15,7 @@ list_render_assets(render_output_id, conn) → list[dict]
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -32,10 +33,16 @@ def get_render_output_dir() -> Path:
 
 
 def _download_url(url: str, dest: Path) -> None:
-    """Download a remote URL to a local file. Raises on HTTP error."""
+    """Download a remote URL (or copy a file:// URI) to a local file."""
     try:
-        import urllib.request
-        urllib.request.urlretrieve(url, dest)  # noqa: S310
+        if url.startswith("file://"):
+            # file:// URI — copy from temp file written by provider
+            from urllib.request import url2pathname
+            src = Path(url2pathname(url[7:]))  # strip "file://"
+            shutil.copy2(src, dest)
+        else:
+            import urllib.request
+            urllib.request.urlretrieve(url, dest)  # noqa: S310
     except Exception as exc:
         raise RuntimeError(f"Failed to download asset from {url}: {exc}") from exc
 
