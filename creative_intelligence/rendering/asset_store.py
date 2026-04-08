@@ -121,9 +121,20 @@ def list_render_assets(
     render_output_id: int,
     conn: sqlite3.Connection,
 ) -> list[dict[str, Any]]:
-    """Return all render_assets rows for a given render_output_id."""
+    """Return the latest render_assets row per variant_label for a render_output_id.
+
+    When a variant has been regenerated multiple times only the most recent
+    asset (highest id) is returned — keeps the response small regardless of
+    how many regeneration runs have accumulated.
+    """
     rows = conn.execute(
-        "SELECT * FROM render_assets WHERE render_output_id = ? ORDER BY id ASC",
+        """SELECT * FROM render_assets
+           WHERE id IN (
+               SELECT MAX(id) FROM render_assets
+               WHERE render_output_id = ?
+               GROUP BY variant_label
+           )
+           ORDER BY id ASC""",
         (render_output_id,),
     ).fetchall()
     result = []
