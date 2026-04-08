@@ -48,6 +48,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     """Additive column migrations for existing DBs (safe to re-run)."""
     migrations = [
         "ALTER TABLE products ADD COLUMN tags TEXT",
+        # render_assets: decision/review columns added in v1.4.1
+        "ALTER TABLE render_assets ADD COLUMN is_favorite INTEGER DEFAULT 0",
+        "ALTER TABLE render_assets ADD COLUMN is_ready_to_test INTEGER DEFAULT 0",
+        "ALTER TABLE render_assets ADD COLUMN review_notes TEXT DEFAULT ''",
+        "ALTER TABLE render_assets ADD COLUMN reviewed_at TEXT",
     ]
     for stmt in migrations:
         try:
