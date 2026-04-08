@@ -5,3 +5,11 @@ markdown>=3.5
 google-auth>=2.0.0
 google-auth-httplib2>=0.2.0
 google-api-python-client>=2.0.0
+
+# Creative Intelligence — Test UI
+flask>=3.0.0
+
+# Creative Intelligence — LLM providers
+anthropic>=0.20.0
+# openai>=1.0.0
+replicate>=0.34.0
