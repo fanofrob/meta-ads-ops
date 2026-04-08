@@ -1259,6 +1259,155 @@ def render_asset_image(asset_id: int) -> Any:
         return jsonify({"error": str(exc)}), 500
 
 
+@app.post("/api/render/asset/<int:asset_id>/approve")
+def render_asset_approve(asset_id: int) -> Any:
+    """Set review_status='approved' and record reviewed_at timestamp."""
+    try:
+        from datetime import datetime as _dt
+        conn = _db()
+        row = conn.execute(
+            "SELECT id FROM render_assets WHERE id = ?", (asset_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "asset not found"}), 404
+        now = _dt.utcnow().isoformat()
+        with conn:
+            conn.execute(
+                "UPDATE render_assets SET review_status = 'approved', reviewed_at = ? WHERE id = ?",
+                (now, asset_id),
+            )
+        conn.close()
+        return jsonify({"ok": True, "review_status": "approved", "reviewed_at": now})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/render/asset/<int:asset_id>/reject")
+def render_asset_reject(asset_id: int) -> Any:
+    """Set review_status='rejected' and record reviewed_at timestamp."""
+    try:
+        from datetime import datetime as _dt
+        conn = _db()
+        row = conn.execute(
+            "SELECT id FROM render_assets WHERE id = ?", (asset_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "asset not found"}), 404
+        now = _dt.utcnow().isoformat()
+        with conn:
+            conn.execute(
+                "UPDATE render_assets SET review_status = 'rejected', reviewed_at = ? WHERE id = ?",
+                (now, asset_id),
+            )
+        conn.close()
+        return jsonify({"ok": True, "review_status": "rejected", "reviewed_at": now})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/render/asset/<int:asset_id>/favorite")
+def render_asset_favorite(asset_id: int) -> Any:
+    """Toggle is_favorite on a render asset."""
+    try:
+        conn = _db()
+        row = conn.execute(
+            "SELECT is_favorite FROM render_assets WHERE id = ?", (asset_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "asset not found"}), 404
+        new_val = 0 if row["is_favorite"] else 1
+        with conn:
+            conn.execute(
+                "UPDATE render_assets SET is_favorite = ? WHERE id = ?",
+                (new_val, asset_id),
+            )
+        conn.close()
+        return jsonify({"ok": True, "is_favorite": bool(new_val)})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/render/asset/<int:asset_id>/ready")
+def render_asset_ready(asset_id: int) -> Any:
+    """Toggle is_ready_to_test on a render asset."""
+    try:
+        conn = _db()
+        row = conn.execute(
+            "SELECT is_ready_to_test FROM render_assets WHERE id = ?", (asset_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "asset not found"}), 404
+        new_val = 0 if row["is_ready_to_test"] else 1
+        with conn:
+            conn.execute(
+                "UPDATE render_assets SET is_ready_to_test = ? WHERE id = ?",
+                (new_val, asset_id),
+            )
+        conn.close()
+        return jsonify({"ok": True, "is_ready_to_test": bool(new_val)})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/render/asset/<int:asset_id>/notes")
+def render_asset_notes(asset_id: int) -> Any:
+    """Set review_notes on a render asset. Body: {"notes": "..."}"""
+    try:
+        body  = request.get_json(force=True) or {}
+        notes = body.get("notes", "")
+        conn  = _db()
+        row   = conn.execute(
+            "SELECT id FROM render_assets WHERE id = ?", (asset_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "asset not found"}), 404
+        with conn:
+            conn.execute(
+                "UPDATE render_assets SET review_notes = ? WHERE id = ?",
+                (notes, asset_id),
+            )
+        conn.close()
+        return jsonify({"ok": True, "review_notes": notes})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/render/summary/<int:render_output_id>")
+def render_summary(render_output_id: int) -> Any:
+    """Return decision summary counts for all assets of a render output."""
+    try:
+        conn = _db()
+        row = conn.execute(
+            "SELECT id FROM render_outputs WHERE id = ?", (render_output_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "render output not found"}), 404
+        assets = conn.execute(
+            "SELECT id, variant_label, review_status, is_favorite, is_ready_to_test, asset_path_or_url "
+            "FROM render_assets WHERE render_output_id = ?",
+            (render_output_id,),
+        ).fetchall()
+        conn.close()
+        asset_list = [dict(a) for a in assets]
+        return jsonify({
+            "render_output_id": render_output_id,
+            "total":        len(asset_list),
+            "approved":     sum(1 for a in asset_list if a["review_status"] == "approved"),
+            "rejected":     sum(1 for a in asset_list if a["review_status"] == "rejected"),
+            "favorites":    sum(1 for a in asset_list if a["is_favorite"]),
+            "ready_to_test": sum(1 for a in asset_list if a["is_ready_to_test"]),
+            "assets": asset_list,
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 @app.get("/api/render/list")
 def render_list() -> Any:
     """Return the last 20 render outputs with source brief info."""

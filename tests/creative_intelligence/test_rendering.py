@@ -767,3 +767,225 @@ class TestRenderListEndpoint:
             assert "id" in item
             assert "status" in item
             assert "created_at" in item
+
+
+# ─────────────────────────────────────────────
+# Helpers for new per-asset endpoint tests
+# ─────────────────────────────────────────────
+
+def _create_render_with_assets(client, db, brief):
+    """Insert brief, generate render with mock images, return (render_id, first_asset_id)."""
+    output_id = _insert_static_brief(db, brief)
+    data = client.post(
+        "/api/render/generate",
+        json={"production_output_id": output_id, "generate_images": True},
+    ).get_json()
+    rid = data["render_output_id"]
+    assets = list_render_assets(rid, db)
+    return rid, assets[0]["id"]
+
+
+# ─────────────────────────────────────────────
+# TestApproveAssetEndpoint
+# ─────────────────────────────────────────────
+
+class TestApproveAssetEndpoint:
+    def test_approve_sets_status_approved(self, flask_app, sample_brief):
+        client, db = flask_app
+        _, aid = _create_render_with_assets(client, db, sample_brief)
+        resp = client.post(f"/api/render/asset/{aid}/approve")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["review_status"] == "approved"
+
+    def test_approve_persists_to_db(self, flask_app, sample_brief):
+        client, db = flask_app
+        _, aid = _create_render_with_assets(client, db, sample_brief)
+        client.post(f"/api/render/asset/{aid}/approve")
+        row = dict(db.execute(
+            "SELECT review_status FROM render_assets WHERE id = ?", (aid,)
+        ).fetchone())
+        assert row["review_status"] == "approved"
+
+    def test_approve_sets_reviewed_at(self, flask_app, sample_brief):
+        client, db = flask_app
+        _, aid = _create_render_with_assets(client, db, sample_brief)
+        client.post(f"/api/render/asset/{aid}/approve")
+        row = dict(db.execute(
+            "SELECT reviewed_at FROM render_assets WHERE id = ?", (aid,)
+        ).fetchone())
+        assert row["reviewed_at"] is not None
+
+    def test_approve_unknown_asset_returns_404(self, flask_app):
+        client, _ = flask_app
+        resp = client.post("/api/render/asset/99999/approve")
+        assert resp.status_code == 404
+
+
+# ─────────────────────────────────────────────
+# TestRejectAssetEndpoint
+# ─────────────────────────────────────────────
+
+class TestRejectAssetEndpoint:
+    def test_reject_sets_status_rejected(self, flask_app, sample_brief):
+        client, db = flask_app
+        _, aid = _create_render_with_assets(client, db, sample_brief)
+        resp = client.post(f"/api/render/asset/{aid}/reject")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["review_status"] == "rejected"
+
+    def test_reject_persists_to_db(self, flask_app, sample_brief):
+        client, db = flask_app
+        _, aid = _create_render_with_assets(client, db, sample_brief)
+        client.post(f"/api/render/asset/{aid}/reject")
+        row = dict(db.execute(
+            "SELECT review_status FROM render_assets WHERE id = ?", (aid,)
+        ).fetchone())
+        assert row["review_status"] == "rejected"
+
+    def test_reject_unknown_asset_returns_404(self, flask_app):
+        client, _ = flask_app
+        resp = client.post("/api/render/asset/99999/reject")
+        assert resp.status_code == 404
+
+
+# ─────────────────────────────────────────────
+# TestFavoriteAssetEndpoint
+# ─────────────────────────────────────────────
+
+class TestFavoriteAssetEndpoint:
+    def test_favorite_toggles_on(self, flask_app, sample_brief):
+        client, db = flask_app
+        _, aid = _create_render_with_assets(client, db, sample_brief)
+        resp = client.post(f"/api/render/asset/{aid}/favorite")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["is_favorite"] is True
+
+    def test_favorite_toggles_off(self, flask_app, sample_brief):
+        client, db = flask_app
+        _, aid = _create_render_with_assets(client, db, sample_brief)
+        client.post(f"/api/render/asset/{aid}/favorite")  # on
+        resp = client.post(f"/api/render/asset/{aid}/favorite")  # off
+        data = resp.get_json()
+        assert data["is_favorite"] is False
+
+    def test_favorite_persists_to_db(self, flask_app, sample_brief):
+        client, db = flask_app
+        _, aid = _create_render_with_assets(client, db, sample_brief)
+        client.post(f"/api/render/asset/{aid}/favorite")
+        row = dict(db.execute(
+            "SELECT is_favorite FROM render_assets WHERE id = ?", (aid,)
+        ).fetchone())
+        assert row["is_favorite"] == 1
+
+    def test_favorite_unknown_asset_returns_404(self, flask_app):
+        client, _ = flask_app
+        resp = client.post("/api/render/asset/99999/favorite")
+        assert resp.status_code == 404
+
+
+# ─────────────────────────────────────────────
+# TestReadyAssetEndpoint
+# ─────────────────────────────────────────────
+
+class TestReadyAssetEndpoint:
+    def test_ready_toggles_on(self, flask_app, sample_brief):
+        client, db = flask_app
+        _, aid = _create_render_with_assets(client, db, sample_brief)
+        resp = client.post(f"/api/render/asset/{aid}/ready")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["is_ready_to_test"] is True
+
+    def test_ready_toggles_off(self, flask_app, sample_brief):
+        client, db = flask_app
+        _, aid = _create_render_with_assets(client, db, sample_brief)
+        client.post(f"/api/render/asset/{aid}/ready")   # on
+        resp = client.post(f"/api/render/asset/{aid}/ready")  # off
+        data = resp.get_json()
+        assert data["is_ready_to_test"] is False
+
+    def test_ready_persists_to_db(self, flask_app, sample_brief):
+        client, db = flask_app
+        _, aid = _create_render_with_assets(client, db, sample_brief)
+        client.post(f"/api/render/asset/{aid}/ready")
+        row = dict(db.execute(
+            "SELECT is_ready_to_test FROM render_assets WHERE id = ?", (aid,)
+        ).fetchone())
+        assert row["is_ready_to_test"] == 1
+
+    def test_ready_unknown_asset_returns_404(self, flask_app):
+        client, _ = flask_app
+        resp = client.post("/api/render/asset/99999/ready")
+        assert resp.status_code == 404
+
+
+# ─────────────────────────────────────────────
+# TestSummaryEndpoint
+# ─────────────────────────────────────────────
+
+class TestSummaryEndpoint:
+    def test_summary_returns_200(self, flask_app, sample_brief):
+        client, db = flask_app
+        rid, _ = _create_render_with_assets(client, db, sample_brief)
+        resp = client.get(f"/api/render/summary/{rid}")
+        assert resp.status_code == 200
+
+    def test_summary_correct_total(self, flask_app, sample_brief):
+        client, db = flask_app
+        rid, _ = _create_render_with_assets(client, db, sample_brief)
+        data = client.get(f"/api/render/summary/{rid}").get_json()
+        assert data["total"] == len(list_render_assets(rid, db))
+
+    def test_summary_counts_approved(self, flask_app, sample_brief):
+        client, db = flask_app
+        rid, aid = _create_render_with_assets(client, db, sample_brief)
+        client.post(f"/api/render/asset/{aid}/approve")
+        data = client.get(f"/api/render/summary/{rid}").get_json()
+        assert data["approved"] == 1
+
+    def test_summary_counts_rejected(self, flask_app, sample_brief):
+        client, db = flask_app
+        rid, aid = _create_render_with_assets(client, db, sample_brief)
+        client.post(f"/api/render/asset/{aid}/reject")
+        data = client.get(f"/api/render/summary/{rid}").get_json()
+        assert data["rejected"] == 1
+
+    def test_summary_counts_favorites(self, flask_app, sample_brief):
+        client, db = flask_app
+        rid, aid = _create_render_with_assets(client, db, sample_brief)
+        client.post(f"/api/render/asset/{aid}/favorite")
+        data = client.get(f"/api/render/summary/{rid}").get_json()
+        assert data["favorites"] == 1
+
+    def test_summary_counts_ready_to_test(self, flask_app, sample_brief):
+        client, db = flask_app
+        rid, aid = _create_render_with_assets(client, db, sample_brief)
+        client.post(f"/api/render/asset/{aid}/ready")
+        data = client.get(f"/api/render/summary/{rid}").get_json()
+        assert data["ready_to_test"] == 1
+
+    def test_summary_assets_list_present(self, flask_app, sample_brief):
+        client, db = flask_app
+        rid, _ = _create_render_with_assets(client, db, sample_brief)
+        data = client.get(f"/api/render/summary/{rid}").get_json()
+        assert "assets" in data
+        assert isinstance(data["assets"], list)
+        assert len(data["assets"]) > 0
+
+    def test_summary_unknown_render_returns_404(self, flask_app):
+        client, _ = flask_app
+        resp = client.get("/api/render/summary/99999")
+        assert resp.status_code == 404
+
+    def test_summary_render_output_id_field(self, flask_app, sample_brief):
+        client, db = flask_app
+        rid, _ = _create_render_with_assets(client, db, sample_brief)
+        data = client.get(f"/api/render/summary/{rid}").get_json()
+        assert data["render_output_id"] == rid

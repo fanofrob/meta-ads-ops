@@ -532,16 +532,20 @@ CREATE INDEX IF NOT EXISTS idx_render_outputs_status
     ON render_outputs(status);
 
 -- One row per generated image asset (or mock placeholder path).
--- review_status: 'pending' | 'preferred' | 'rejected'
+-- review_status: 'pending' | 'preferred' | 'rejected' | 'approved'
 CREATE TABLE IF NOT EXISTS render_assets (
-    id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    render_output_id  INTEGER NOT NULL,
-    asset_type        TEXT NOT NULL DEFAULT 'image_variant',
-    variant_label     TEXT,            -- minimal|premium|direct_response|reveal|product_hero
-    asset_path_or_url TEXT,            -- local file path or remote URL (no binary blobs)
-    metadata_json     TEXT DEFAULT '{}',
-    review_status     TEXT DEFAULT 'pending',
-    created_at        TEXT DEFAULT (datetime('now'))
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    render_output_id    INTEGER NOT NULL,
+    asset_type          TEXT NOT NULL DEFAULT 'image_variant',
+    variant_label       TEXT,            -- minimal|premium|direct_response|reveal|product_hero
+    asset_path_or_url   TEXT,            -- local file path or remote URL (no binary blobs)
+    metadata_json       TEXT DEFAULT '{}',
+    review_status       TEXT DEFAULT 'pending',
+    is_favorite         INTEGER DEFAULT 0,
+    is_ready_to_test    INTEGER DEFAULT 0,
+    review_notes        TEXT DEFAULT '',
+    reviewed_at         TEXT,
+    created_at          TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_render_assets_output
     ON render_assets(render_output_id);

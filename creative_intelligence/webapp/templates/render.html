@@ -21,6 +21,7 @@
   --orange:   #fb923c;
   --blue:     #60a5fa;
   --purple:   #c084fc;
+  --red:      #f87171;
 }
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
@@ -58,60 +59,102 @@ header .subtitle { font-size: 12px; color: var(--muted); }
 
 /* ── Render detail ── */
 .render-detail { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.detail-header { padding: 14px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0; display: flex; align-items: center; gap: 10px; }
-.detail-header h2 { font-size: 14px; font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Top bar */
+.detail-header { padding: 12px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.detail-header-row1 { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.detail-header-row1 h2 { font-size: 14px; font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .detail-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .btn { font-size: 11px; padding: 5px 10px; border-radius: 6px; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--muted); transition: all .12s; }
 .btn:hover { border-color: var(--accent); color: var(--text); }
 .btn.approved { border-color: #166534; color: var(--green); background: #052e16; }
 .btn.fav { border-color: var(--gold); color: var(--gold); }
 .btn-export { background: var(--surface2); }
+.btn-danger { border-color: #7c2d12; color: var(--red); }
+.btn-danger:hover { background: #2a0e07; }
 
-.specs-feed { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+/* Summary pills */
+.summary-pills { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.pill { font-size: 11px; padding: 2px 9px; border-radius: 10px; border: 1px solid var(--border); color: var(--text2); background: var(--surface2); white-space: nowrap; }
+.pill.p-approved { border-color: #166534; color: var(--green); background: #052e16; }
+.pill.p-rejected { border-color: #7c2d12; color: var(--red); background: #2a0e07; }
+.pill.p-fav { border-color: #92400e; color: var(--gold); background: #1c1200; }
+.pill.p-ready { border-color: #1e3a5f; color: var(--blue); background: #071828; }
 
-/* ── Spec cards ── */
-.spec-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-.spec-card-header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; cursor: pointer; user-select: none; }
-.spec-card-header:hover { background: var(--surface2); }
+/* View toggle */
+.view-toolbar { display: flex; align-items: center; gap: 8px; }
+.view-btn { font-size: 11px; padding: 3px 8px; border-radius: 5px; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--muted); }
+.view-btn.active { border-color: var(--accent2); color: var(--accent2); background: rgba(79,70,229,.1); }
+
+/* ── Cards feed ── */
+.cards-feed { flex: 1; overflow-y: auto; padding: 16px 20px; }
+.cards-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.cards-large { display: grid; grid-template-columns: 1fr; gap: 16px; max-width: 680px; }
+
+/* Ready-to-test highlighted section */
+.ready-section { margin-bottom: 16px; }
+.ready-section-title { font-size: 11px; color: var(--blue); text-transform: uppercase; letter-spacing: .7px; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #1e3a5f; }
+
+/* ── Variant card ── */
+.variant-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color .15s, background .15s;
+  position: relative;
+  outline: none;
+}
+.variant-card:hover, .variant-card:focus { border-color: var(--accent2); }
+.variant-card.state-approved { border-left: 4px solid #4ade80; background: #030f08; }
+.variant-card.state-rejected  { border-left: 4px solid #f87171; background: #0f0505; }
+.variant-card.state-favorite  { border-color: var(--gold); }
+
+/* Card header */
+.card-header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; }
 .variant-badge { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 10px; text-transform: uppercase; letter-spacing: .5px; flex-shrink: 0; }
 .badge-minimal        { background: #0c2040; color: #5ba4e8; }
 .badge-premium        { background: #1a1a0c; color: #d4af37; }
 .badge-direct-response{ background: #2a0a0a; color: #f87171; }
 .badge-reveal         { background: #0a1a2a; color: #60a5fa; }
 .badge-product-hero   { background: #1a2a0c; color: #7ecb5b; }
-.spec-rationale { font-size: 12px; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.spec-chevron { font-size: 10px; color: var(--muted2); transition: transform .2s; }
-.spec-card.expanded .spec-chevron { transform: rotate(180deg); }
+.card-rationale { font-size: 11px; color: var(--muted); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spec-toggle { font-size: 10px; color: var(--muted2); cursor: pointer; background: none; border: none; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
+.spec-toggle:hover { color: var(--text2); background: var(--surface2); }
 
-.spec-body { max-height: 0; overflow: hidden; transition: max-height .4s ease, padding .3s ease; padding: 0 14px; }
-.spec-card.expanded .spec-body { max-height: 4000px; padding: 10px 14px 16px; }
+/* Image area */
+.card-image-wrap { position: relative; background: var(--surface2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); overflow: hidden; }
+.card-image { width: 100%; display: block; object-fit: contain; max-height: 380px; }
+.card-image-placeholder { padding: 32px 16px; text-align: center; color: var(--muted); font-size: 11px; font-family: monospace; word-break: break-all; }
+.ready-badge-corner { position: absolute; top: 8px; right: 8px; background: #071828; border: 1px solid #1e3a5f; color: var(--blue); font-size: 10px; padding: 3px 7px; border-radius: 6px; }
 
-.spec-section { margin-bottom: 12px; }
+/* Overlay copy */
+.card-copy { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.card-headline { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+.card-cta { font-size: 11px; color: var(--accent2); }
+
+/* Action buttons */
+.card-actions { display: flex; align-items: center; gap: 6px; padding: 8px 12px; flex-wrap: wrap; }
+.action-btn { font-size: 11px; padding: 4px 9px; border-radius: 6px; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--muted); transition: all .1s; white-space: nowrap; }
+.action-btn:hover { border-color: var(--accent); color: var(--text); }
+.action-btn.active-approve { border-color: #166534; color: var(--green); background: #052e16; }
+.action-btn.active-reject  { border-color: #7c2d12; color: var(--red); background: #2a0e07; }
+.action-btn.active-fav     { border-color: #92400e; color: var(--gold); background: #1c1200; }
+.action-btn.active-ready   { border-color: #1e3a5f; color: var(--blue); background: #071828; }
+.download-link { font-size: 11px; color: var(--muted); text-decoration: none; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); margin-left: auto; }
+.download-link:hover { color: var(--text); border-color: var(--accent); }
+
+/* Spec detail (collapsible) */
+.spec-detail { overflow: hidden; max-height: 0; transition: max-height .35s ease, padding .25s ease; padding: 0 12px; }
+.spec-detail.open { max-height: 3000px; padding: 10px 12px 14px; }
+.spec-section { margin-bottom: 10px; }
 .spec-section h5 { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; margin-bottom: 5px; }
 .spec-section p, .spec-section .prompt-text { font-size: 12px; line-height: 1.6; color: var(--text2); }
 .prompt-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px; line-height: 1.6; color: var(--text2); font-family: inherit; white-space: pre-wrap; word-break: break-word; }
-.overlay-grid { display: grid; grid-template-columns: 80px 1fr; gap: 4px 10px; font-size: 12px; }
+.overlay-grid { display: grid; grid-template-columns: 70px 1fr; gap: 4px 8px; font-size: 12px; }
 .overlay-label { color: var(--muted); font-size: 11px; }
 .style-tags { display: flex; flex-wrap: wrap; gap: 5px; }
 .style-tag { font-size: 10px; padding: 2px 7px; border-radius: 8px; background: var(--surface2); border: 1px solid var(--border); color: var(--muted); }
-
-/* Asset row */
-.asset-row { display: flex; flex-direction: column; gap: 8px; padding: 10px 0; border-top: 1px solid var(--border); }
-.asset-img-wrap { width: 100%; border-radius: 6px; overflow: hidden; background: var(--surface2); border: 1px solid var(--border); }
-.asset-img { width: 100%; display: block; object-fit: contain; max-height: 420px; }
-.asset-img-placeholder { padding: 20px; text-align: center; color: var(--muted); font-size: 11px; font-family: monospace; word-break: break-all; }
-.asset-controls { display: flex; align-items: center; gap: 8px; }
-.asset-path { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; font-size: 10px; }
-.asset-review { display: flex; gap: 4px; }
-.review-btn { font-size: 10px; padding: 2px 7px; border-radius: 5px; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--muted); transition: all .1s; }
-.review-btn:hover { border-color: var(--accent); }
-.review-btn.preferred { border-color: #166534; color: var(--green); background: #052e16; }
-.review-btn.rejected  { border-color: #7c2d12; color: var(--orange); background: #2a0e07; }
-
-/* Scrollbar */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
 /* Model picker panel */
 .model-panel { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 7px; }
@@ -133,21 +176,29 @@ header .subtitle { font-size: 12px; color: var(--muted); }
 .btn-gen-images:hover { background: var(--accent); color: #fff; }
 .btn-gen-images:disabled { opacity: .4; cursor: not-allowed; }
 
+/* Shortcut hint */
+.shortcut-hint { font-size: 10px; color: var(--muted2); padding: 4px 20px 0; }
+
 /* Toast */
 #toast { position: fixed; bottom: 16px; right: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 12px; box-shadow: 0 4px 16px #0006; opacity: 0; transform: translateY(6px); transition: all .2s; pointer-events: none; z-index: 999; }
 #toast.show { opacity: 1; transform: translateY(0); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>🎨 Static Render Review</h1>
-  <span class="subtitle">Spec-first rendering · controlled validation phase</span>
+  <h1>Static Render Review</h1>
+  <span class="subtitle">Spec-first rendering · per-variant decision layer</span>
   <a class="nav-link" href="/copilot">← Copilot</a>
 </header>
 
 <div class="layout">
-  <!-- Sidebar: list of render outputs -->
+  <!-- Sidebar -->
   <div class="sidebar">
     <div class="sidebar-top"><h3>Render Outputs</h3></div>
 
@@ -197,7 +248,7 @@ header .subtitle { font-size: 12px; color: var(--muted); }
       </div>
 
       <button class="btn-gen-images" id="genImagesBtn" onclick="generateImages()" disabled>
-        🎨 Generate Images
+        Generate Images
       </button>
     </div>
 
@@ -206,11 +257,11 @@ header .subtitle { font-size: 12px; color: var(--muted); }
     </div>
   </div>
 
-  <!-- Main: spec/asset review -->
+  <!-- Main area -->
   <div class="main" id="mainArea">
     <div class="empty-state">
       <h2>Select a render output</h2>
-      <p>Or go to <a href="/copilot" style="color:var(--accent2)">Copilot</a> → generate a Static Brief → click <strong>🎨 Render</strong></p>
+      <p>Or go to <a href="/copilot" style="color:var(--accent2)">Copilot</a> → generate a Static Brief → click Render</p>
     </div>
   </div>
 </div>
@@ -219,14 +270,29 @@ header .subtitle { font-size: 12px; color: var(--muted); }
 
 <script>
 /* ─── State ─────────────────────────────── */
-let currentRenderId = null;
+let currentRenderId   = null;
+let currentViewMode   = 'grid'; // 'grid' | 'large'
+let currentFocusedAssetId = null;
+// assetState: { [assetId]: { review_status, is_favorite, is_ready_to_test } }
+let assetState = {};
 
 /* ─── Boot ──────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   loadRenderList();
-  // Auto-select from URL hash: /render#42
   const hash = parseInt(location.hash.replace('#',''));
   if (hash) setTimeout(() => selectRender(hash), 400);
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    if (!currentFocusedAssetId) return;
+    // Ignore if typing in an input
+    if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+    const key = e.key.toLowerCase();
+    if (key === 'a') { e.preventDefault(); assetApprove(currentFocusedAssetId); }
+    if (key === 'r') { e.preventDefault(); assetReject(currentFocusedAssetId); }
+    if (key === 'f') { e.preventDefault(); assetFavorite(currentFocusedAssetId); }
+    if (key === 't') { e.preventDefault(); assetReady(currentFocusedAssetId); }
+  });
 });
 
 /* ─── Helpers ───────────────────────────── */
@@ -261,8 +327,8 @@ async function loadRenderList() {
       const label = (it.status || 'pending').replace(/_/g,' ');
       const concept = (it.concept_text || '—').slice(0, 60);
       const date = (it.created_at || '').slice(0,10);
-      const fav  = it.is_favorite  ? ' ★' : '';
-      const appr = it.is_approved  ? ' ✓' : '';
+      const fav  = it.is_favorite ? ' ★' : '';
+      const appr = it.is_approved ? ' ✓' : '';
       return `
         <div class="render-item" data-id="${it.id}" onclick="selectRender(${it.id})">
           <div class="ri-concept">${esc(concept)}${fav}${appr}</div>
@@ -309,10 +375,9 @@ async function generateImages() {
   const btn   = document.getElementById('genImagesBtn');
   const model = getSelectedModel();
   btn.disabled = true;
-  btn.textContent = `⏳ Generating ${variants.length} variant${variants.length>1?'s':''}…`;
+  btn.textContent = `Generating ${variants.length} variant${variants.length>1?'s':''}…`;
   toast('Sending to ' + (model || 'default model') + '…');
   try {
-    // Fetch the source production_output_id from the current render
     const detailRes = await fetch(`/api/render/${currentRenderId}`);
     const detail    = await detailRes.json();
     const res = await fetch('/api/render/generate', {
@@ -335,25 +400,25 @@ async function generateImages() {
     toast('Generation failed: ' + e.message, true);
   } finally {
     btn.disabled = false;
-    btn.textContent = '🎨 Generate Images';
+    btn.textContent = 'Generate Images';
   }
 }
 
-/* ─── Select a render output ─────────────── */
+/* ─── Select render ─────────────────────── */
 async function selectRender(id) {
   currentRenderId = id;
   location.hash = id;
-  // Enable the generate button now that a render is selected
   const btn = document.getElementById('genImagesBtn');
   if (btn) btn.disabled = false;
 
-  // Highlight sidebar item
   document.querySelectorAll('.render-item').forEach(el => {
     el.classList.toggle('active', parseInt(el.dataset.id) === id);
   });
 
   const main = document.getElementById('mainArea');
   main.innerHTML = '<div class="empty-state"><p style="color:var(--muted)">Loading…</p></div>';
+  assetState = {};
+  currentFocusedAssetId = null;
 
   try {
     const res  = await fetch(`/api/render/${id}`);
@@ -365,43 +430,76 @@ async function selectRender(id) {
   }
 }
 
-/* ─── Render detail panel ────────────────── */
+/* ─── Render detail ─────────────────────── */
 function renderDetail(data) {
-  const main = document.getElementById('mainArea');
-  const specs = data.render_specs || [];
+  const main   = document.getElementById('mainArea');
+  const specs  = data.render_specs || [];
   const assets = data.assets || [];
-  const concept = data.concept_text || `Render #${data.id}`;
-  const isApproved = data.is_approved;
-  const isFav = data.is_favorite;
+  const title  = data.concept_text ? data.concept_text.slice(0,60) : `Render #${data.id}`;
 
-  // Build asset map: variant_label → [asset]
+  // Build asset state cache and map by variant_label
   const assetMap = {};
   assets.forEach(a => {
+    assetState[a.id] = {
+      review_status:   a.review_status   || 'pending',
+      is_favorite:     a.is_favorite     || 0,
+      is_ready_to_test: a.is_ready_to_test || 0,
+    };
     if (!assetMap[a.variant_label]) assetMap[a.variant_label] = [];
     assetMap[a.variant_label].push(a);
   });
 
-  const specsHtml = specs.map(spec => buildSpecCard(spec, assetMap[spec.variant_label] || [])).join('');
+  // Compute initial summary counts
+  const counts = computeCounts();
 
   main.innerHTML = `
     <div class="render-detail">
       <div class="detail-header">
-        <h2>${esc(concept)}</h2>
-        <div class="detail-actions">
-          <button class="btn btn-approve${isApproved?' approved':''}" id="approveBtn"
-                  onclick="toggleApprove(${data.id})">${isApproved?'✓ Approved':'Approve'}</button>
-          <button class="btn${isFav?' fav':''}" id="favBtn"
-                  onclick="toggleFav(${data.id})">★</button>
-          <button class="btn btn-export" onclick="exportRender(${data.id},'md')">Export MD</button>
-          <button class="btn btn-export" onclick="exportRender(${data.id},'json')">Export JSON</button>
+        <div class="detail-header-row1">
+          <h2>Render #${data.id} — ${esc(title)}</h2>
+          <div class="detail-actions">
+            <button class="btn btn-approve${data.is_approved?' approved':''}" id="approveBtn"
+                    onclick="toggleApprove(${data.id})">${data.is_approved?'✓ Approved':'Approve All'}</button>
+            <button class="btn${data.is_favorite?' fav':''}" id="favBtn"
+                    onclick="toggleFav(${data.id})" title="Star this render output">★</button>
+            <button class="btn btn-export" onclick="exportRender(${data.id},'md')">Export MD</button>
+            <button class="btn btn-export" onclick="exportRender(${data.id},'json')">Export JSON</button>
+          </div>
+        </div>
+        <div id="summaryPills" class="summary-pills"></div>
+        <div class="view-toolbar">
+          <button class="view-btn${currentViewMode==='grid'?' active':''}" id="vbGrid" onclick="setView('grid')">⊞ Grid</button>
+          <button class="view-btn${currentViewMode==='large'?' active':''}" id="vbLarge" onclick="setView('large')">▣ Large</button>
+          <span class="shortcut-hint">Hover card · A approve · R reject · F fav · T ready</span>
         </div>
       </div>
-      <div class="specs-feed">${specsHtml || '<p style="color:var(--muted);padding:20px">No specs.</p>'}</div>
+      <div class="cards-feed" id="cardsFeed">
+        <div id="readySection"></div>
+        <div id="cardsGrid" class="${currentViewMode==='grid'?'cards-grid':'cards-large'}"></div>
+      </div>
     </div>
   `;
+
+  // Render all cards
+  const gridEl = document.getElementById('cardsGrid');
+  specs.forEach(spec => {
+    const specAssets = assetMap[spec.variant_label] || [];
+    specAssets.forEach(asset => {
+      const cardEl = buildCard(spec, asset);
+      gridEl.appendChild(cardEl);
+    });
+    // If no assets yet, show spec-only card with no image
+    if (!specAssets.length) {
+      const cardEl = buildCard(spec, null);
+      gridEl.appendChild(cardEl);
+    }
+  });
+
+  updateSummaryUI();
 }
 
-function buildSpecCard(spec, assets) {
+/* ─── Build a variant card DOM element ─── */
+function buildCard(spec, asset) {
   const variantLabel = spec.variant_label || '';
   const badgeClass = {
     minimal:         'badge-minimal',
@@ -412,90 +510,299 @@ function buildSpecCard(spec, assets) {
   }[variantLabel] || 'badge-minimal';
   const badgeLabel = variantLabel.replace(/_/g,' ');
 
+  const card = document.createElement('div');
+  card.className = 'variant-card';
+  card.setAttribute('tabindex', '0');
+  if (asset) {
+    card.dataset.assetId = asset.id;
+    card.addEventListener('mouseenter', () => { currentFocusedAssetId = asset.id; });
+    card.addEventListener('focus',      () => { currentFocusedAssetId = asset.id; });
+  }
+
+  // Image
+  let imgHtml = '';
+  if (asset) {
+    const p = asset.asset_path_or_url || '';
+    let imgSrc = null;
+    if (p && !p.startsWith('mock://')) {
+      imgSrc = p.startsWith('http') ? p : `/api/render/asset/${asset.id}/image`;
+    }
+    if (imgSrc) {
+      imgHtml = `<img class="card-image" src="${imgSrc}" alt="${esc(variantLabel)}" loading="lazy"
+                      onerror="this.closest('.card-image-wrap').innerHTML='<div class=card-image-placeholder>Image unavailable</div>'">`;
+    } else if (p) {
+      imgHtml = `<div class="card-image-placeholder">${esc(p)}</div>`;
+    } else {
+      imgHtml = `<div class="card-image-placeholder">No image generated yet</div>`;
+    }
+  } else {
+    imgHtml = `<div class="card-image-placeholder">No image generated yet</div>`;
+  }
+
+  const assetId = asset ? asset.id : null;
+  const st = assetId ? assetState[assetId] : null;
+
+  const readyBadge = (st && st.is_ready_to_test)
+    ? `<span class="ready-badge-corner">🧪 Ready to Test</span>` : '';
+
+  // Download link
+  let downloadHtml = '';
+  if (asset && asset.asset_path_or_url) {
+    const p = asset.asset_path_or_url;
+    if (p.startsWith('http')) {
+      downloadHtml = `<a class="download-link" href="${esc(p)}" target="_blank" rel="noopener">↓ Download</a>`;
+    } else if (!p.startsWith('mock://')) {
+      downloadHtml = `<a class="download-link" href="/api/render/asset/${assetId}/image" download>↓ Download</a>`;
+    }
+  }
+
+  // Action buttons (only if there's an asset)
+  let actionsHtml = '';
+  if (assetId) {
+    const approveClass = st && st.review_status === 'approved' ? 'active-approve' : '';
+    const rejectClass  = st && st.review_status === 'rejected'  ? 'active-reject'  : '';
+    const favClass     = st && st.is_favorite                    ? 'active-fav'     : '';
+    const readyClass   = st && st.is_ready_to_test               ? 'active-ready'   : '';
+    actionsHtml = `
+      <div class="card-actions">
+        <button class="action-btn ${approveClass}" id="ab-approve-${assetId}"
+                onclick="assetApprove(${assetId})">👍 Approve</button>
+        <button class="action-btn ${rejectClass}"  id="ab-reject-${assetId}"
+                onclick="assetReject(${assetId})">👎 Reject</button>
+        <button class="action-btn ${favClass}"     id="ab-fav-${assetId}"
+                onclick="assetFavorite(${assetId})">★ Fav</button>
+        <button class="action-btn ${readyClass}"   id="ab-ready-${assetId}"
+                onclick="assetReady(${assetId})">🧪 Ready</button>
+        ${downloadHtml}
+      </div>`;
+  }
+
+  // Spec detail body
   const tags = (spec.style_tags || []).map(t => `<span class="style-tag">${esc(t)}</span>`).join('');
+  const specId = `spec-body-${variantLabel}-${assetId||'noasset'}`;
 
-  const assetHtml = assets.length
-    ? assets.map(a => {
-        const p = a.asset_path_or_url || '';
-        // Determine image source: serve local files via API route; use HTTPS URLs directly
-        let imgSrc = null;
-        if (p && !p.startsWith('mock://')) {
-          imgSrc = p.startsWith('http') ? p : `/api/render/asset/${a.id}/image`;
-        }
-        const imgEl = imgSrc
-          ? `<div class="asset-img-wrap"><img class="asset-img" src="${imgSrc}" alt="${esc(a.variant_label)}" loading="lazy" onerror="this.closest('.asset-img-wrap').innerHTML='<div class=asset-img-placeholder>Image unavailable</div>'"></div>`
-          : (p ? `<div class="asset-img-wrap"><div class="asset-img-placeholder">${esc(p)}</div></div>` : '');
-        return `
-          <div class="asset-row">
-            ${imgEl}
-            <div class="asset-controls">
-              <span class="asset-path" title="${esc(p)}">${esc(p.split('/').pop() || p)}</span>
-              <div class="asset-review">
-                <button class="review-btn${a.review_status==='preferred'?' preferred':''}"
-                        onclick="reviewAsset(${a.id},'preferred',this)">✓ Preferred</button>
-                <button class="review-btn${a.review_status==='rejected'?' rejected':''}"
-                        onclick="reviewAsset(${a.id},'rejected',this)">✗ Reject</button>
-              </div>
-            </div>
-          </div>`;
-      }).join('')
-    : '';
+  card.innerHTML = `
+    <div class="card-header">
+      <span class="variant-badge ${badgeClass}">${esc(badgeLabel)}</span>
+      <span class="card-rationale">${esc(spec.variant_rationale || '')}</span>
+      <button class="spec-toggle" onclick="toggleSpec('${specId}', this)">spec ▾</button>
+    </div>
+    <div class="card-image-wrap">
+      ${imgHtml}
+      ${readyBadge}
+    </div>
+    <div class="card-copy">
+      <div class="card-headline">${esc(spec.headline_overlay || '')}</div>
+      ${spec.cta_text ? `<div class="card-cta">${esc(spec.cta_text)}</div>` : ''}
+    </div>
+    ${actionsHtml}
+    <div class="spec-detail" id="${specId}">
+      <div class="spec-section">
+        <h5>Visual Prompt</h5>
+        <div class="prompt-box">${esc(spec.visual_prompt || '')}</div>
+      </div>
+      <div class="spec-section">
+        <h5>Negative Prompt</h5>
+        <div class="prompt-box">${esc(spec.negative_prompt || '')}</div>
+      </div>
+      <div class="spec-section">
+        <h5>Overlay Copy</h5>
+        <div class="overlay-grid">
+          <span class="overlay-label">Headline</span><span>${esc(spec.headline_overlay||'')}</span>
+          <span class="overlay-label">Body</span><span>${esc(spec.body_overlay||'')}</span>
+          <span class="overlay-label">CTA</span><span>${esc(spec.cta_text||'')}</span>
+        </div>
+      </div>
+      <div class="spec-section">
+        <h5>Composition · Shot: ${esc(spec.shot_type||'')}</h5>
+        <p>${esc(spec.composition||'')}</p>
+      </div>
+      <div class="spec-section">
+        <h5>Background Style</h5>
+        <p>${esc(spec.background_style||'')}</p>
+      </div>
+      ${spec.product_focus ? `<div class="spec-section"><h5>Product Focus</h5><p>${esc(spec.product_focus)}</p></div>` : ''}
+      ${spec.text_hierarchy ? `<div class="spec-section"><h5>Text Hierarchy</h5><p>${esc(spec.text_hierarchy)}</p></div>` : ''}
+      ${tags ? `<div class="spec-section"><h5>Style Tags</h5><div class="style-tags">${tags}</div></div>` : ''}
+    </div>
+  `;
 
-  return `
-    <div class="spec-card expanded" id="spec-${variantLabel}">
-      <div class="spec-card-header" onclick="toggleSpecCard(this.closest('.spec-card'))">
-        <span class="variant-badge ${badgeClass}">${esc(badgeLabel)}</span>
-        <span class="spec-rationale">${esc(spec.variant_rationale || '')}</span>
-        <span class="spec-chevron">▼</span>
-      </div>
-      <div class="spec-body">
-        <div class="spec-section">
-          <h5>Visual Prompt</h5>
-          <div class="prompt-box">${esc(spec.visual_prompt || '')}</div>
-        </div>
-        <div class="spec-section">
-          <h5>Negative Prompt</h5>
-          <div class="prompt-box">${esc(spec.negative_prompt || '')}</div>
-        </div>
-        <div class="spec-section">
-          <h5>Overlay Copy</h5>
-          <div class="overlay-grid">
-            <span class="overlay-label">Headline</span><span>${esc(spec.headline_overlay||'')}</span>
-            <span class="overlay-label">Body</span><span>${esc(spec.body_overlay||'')}</span>
-            <span class="overlay-label">CTA</span><span>${esc(spec.cta_text||'')}</span>
-          </div>
-        </div>
-        <div class="spec-section">
-          <h5>Composition · Shot: ${esc(spec.shot_type||'')}</h5>
-          <p>${esc(spec.composition||'')}</p>
-        </div>
-        <div class="spec-section">
-          <h5>Background Style</h5>
-          <p>${esc(spec.background_style||'')}</p>
-        </div>
-        <div class="spec-section">
-          <h5>Product Focus</h5>
-          <p>${esc(spec.product_focus||'')}</p>
-        </div>
-        ${spec.text_hierarchy ? `<div class="spec-section"><h5>Text Hierarchy</h5><p>${esc(spec.text_hierarchy)}</p></div>` : ''}
-        ${tags ? `<div class="spec-section"><h5>Style Tags</h5><div class="style-tags">${tags}</div></div>` : ''}
-        ${assetHtml ? `<div class="spec-section"><h5>Generated Assets</h5>${assetHtml}</div>` : ''}
-      </div>
-    </div>`;
+  // Set initial card state classes
+  if (st) applyCardState(card, st);
+
+  return card;
 }
 
-function toggleSpecCard(card) { card.classList.toggle('expanded'); }
+function toggleSpec(id, btn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.toggle('open');
+  btn.textContent = el.classList.contains('open') ? 'spec ▴' : 'spec ▾';
+}
 
-/* ─── Actions ───────────────────────────── */
+function applyCardState(card, st) {
+  card.classList.remove('state-approved','state-rejected','state-favorite');
+  if (st.review_status === 'approved') card.classList.add('state-approved');
+  if (st.review_status === 'rejected')  card.classList.add('state-rejected');
+  if (st.is_favorite)                   card.classList.add('state-favorite');
+}
+
+/* ─── Summary ───────────────────────────── */
+function computeCounts() {
+  const vals = Object.values(assetState);
+  return {
+    total:    vals.length,
+    approved: vals.filter(s => s.review_status === 'approved').length,
+    rejected: vals.filter(s => s.review_status === 'rejected').length,
+    fav:      vals.filter(s => s.is_favorite).length,
+    ready:    vals.filter(s => s.is_ready_to_test).length,
+  };
+}
+
+function updateSummaryUI() {
+  const c = computeCounts();
+  const el = document.getElementById('summaryPills');
+  if (!el) return;
+  el.innerHTML = `
+    <span class="pill">${c.total} variants</span>
+    <span class="pill p-approved">${c.approved} ✓ approved</span>
+    <span class="pill p-rejected">${c.rejected} ✗ rejected</span>
+    <span class="pill p-fav">${c.fav} ★ fav</span>
+    <span class="pill p-ready">${c.ready} 🧪 ready</span>
+  `;
+
+  // Ready-to-test section
+  const readySec = document.getElementById('readySection');
+  if (!readySec) return;
+  const readyIds = Object.entries(assetState)
+    .filter(([,s]) => s.is_ready_to_test)
+    .map(([id]) => parseInt(id));
+  if (readyIds.length) {
+    const list = readyIds.map(id => {
+      const card = document.querySelector(`[data-asset-id="${id}"]`);
+      const label = card ? (card.querySelector('.variant-badge')?.textContent || id) : id;
+      return `<span class="pill p-ready">${esc(String(label))}</span>`;
+    }).join(' ');
+    readySec.innerHTML = `<div class="ready-section"><div class="ready-section-title">Selected for Testing</div><div style="display:flex;gap:6px;flex-wrap:wrap">${list}</div></div>`;
+  } else {
+    readySec.innerHTML = '';
+  }
+}
+
+/* ─── View toggle ───────────────────────── */
+function setView(mode) {
+  currentViewMode = mode;
+  const grid = document.getElementById('cardsGrid');
+  if (grid) {
+    grid.className = mode === 'grid' ? 'cards-grid' : 'cards-large';
+  }
+  document.getElementById('vbGrid')?.classList.toggle('active', mode==='grid');
+  document.getElementById('vbLarge')?.classList.toggle('active', mode==='large');
+}
+
+/* ─── Asset actions ─────────────────────── */
+async function assetApprove(assetId) {
+  try {
+    const res  = await fetch(`/api/render/asset/${assetId}/approve`, {method:'POST'});
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    assetState[assetId].review_status = 'approved';
+    refreshCardButtons(assetId);
+    toast('✓ Approved');
+    updateSummaryUI();
+  } catch(e) { toast('Error: '+e.message, true); }
+}
+
+async function assetReject(assetId) {
+  try {
+    const res  = await fetch(`/api/render/asset/${assetId}/reject`, {method:'POST'});
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    assetState[assetId].review_status = 'rejected';
+    refreshCardButtons(assetId);
+    toast('✗ Rejected');
+    updateSummaryUI();
+  } catch(e) { toast('Error: '+e.message, true); }
+}
+
+async function assetFavorite(assetId) {
+  try {
+    const res  = await fetch(`/api/render/asset/${assetId}/favorite`, {method:'POST'});
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    assetState[assetId].is_favorite = data.is_favorite ? 1 : 0;
+    refreshCardButtons(assetId);
+    toast(data.is_favorite ? '★ Saved' : 'Removed from saved');
+    updateSummaryUI();
+  } catch(e) { toast('Error: '+e.message, true); }
+}
+
+async function assetReady(assetId) {
+  try {
+    const res  = await fetch(`/api/render/asset/${assetId}/ready`, {method:'POST'});
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    assetState[assetId].is_ready_to_test = data.is_ready_to_test ? 1 : 0;
+    refreshCardButtons(assetId);
+    // update corner badge
+    const card = document.querySelector(`[data-asset-id="${assetId}"]`);
+    if (card) {
+      const wrap = card.querySelector('.card-image-wrap');
+      const existing = wrap ? wrap.querySelector('.ready-badge-corner') : null;
+      if (data.is_ready_to_test) {
+        if (wrap && !existing) {
+          const badge = document.createElement('span');
+          badge.className = 'ready-badge-corner';
+          badge.textContent = '🧪 Ready to Test';
+          wrap.appendChild(badge);
+        }
+      } else {
+        if (existing) existing.remove();
+      }
+      applyCardState(card, assetState[assetId]);
+    }
+    toast(data.is_ready_to_test ? '🧪 Marked ready to test' : 'Removed from ready');
+    updateSummaryUI();
+  } catch(e) { toast('Error: '+e.message, true); }
+}
+
+function refreshCardButtons(assetId) {
+  const st = assetState[assetId];
+  if (!st) return;
+
+  const approveBtn = document.getElementById(`ab-approve-${assetId}`);
+  const rejectBtn  = document.getElementById(`ab-reject-${assetId}`);
+  const favBtn     = document.getElementById(`ab-fav-${assetId}`);
+  const readyBtn   = document.getElementById(`ab-ready-${assetId}`);
+
+  if (approveBtn) {
+    approveBtn.className = 'action-btn' + (st.review_status==='approved'?' active-approve':'');
+  }
+  if (rejectBtn) {
+    rejectBtn.className = 'action-btn' + (st.review_status==='rejected'?' active-reject':'');
+  }
+  if (favBtn) {
+    favBtn.className = 'action-btn' + (st.is_favorite?' active-fav':'');
+  }
+  if (readyBtn) {
+    readyBtn.className = 'action-btn' + (st.is_ready_to_test?' active-ready':'');
+  }
+
+  // Update card border/bg state
+  const card = document.querySelector(`[data-asset-id="${assetId}"]`);
+  if (card) applyCardState(card, st);
+}
+
+/* ─── Render-level actions ──────────────── */
 async function toggleApprove(id) {
   const res  = await fetch(`/api/render/${id}/approve`, {method:'POST'});
   const data = await res.json();
   if (data.ok) {
     const btn = document.getElementById('approveBtn');
     btn.classList.toggle('approved', data.is_approved);
-    btn.textContent = data.is_approved ? '✓ Approved' : 'Approve';
+    btn.textContent = data.is_approved ? '✓ Approved' : 'Approve All';
     loadRenderList();
-    toast(data.is_approved ? 'Approved' : 'Approval removed');
+    toast(data.is_approved ? 'Render approved' : 'Approval removed');
   }
 }
 
@@ -510,28 +817,9 @@ async function toggleFav(id) {
   }
 }
 
-async function reviewAsset(assetId, status, btn) {
-  const res  = await fetch(`/api/render/asset/${assetId}/review`, {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({status}),
-  });
-  const data = await res.json();
-  if (data.ok) {
-    // Refresh all review buttons in the same row
-    const row = btn.closest('.asset-row');
-    row.querySelectorAll('.review-btn').forEach(b => {
-      b.classList.remove('preferred','rejected');
-      if (b.textContent.includes('Preferred') && status==='preferred') b.classList.add('preferred');
-      if (b.textContent.includes('Reject')    && status==='rejected')  b.classList.add('rejected');
-    });
-    toast(`Asset marked as ${status}`);
-  }
-}
-
+/* ─── Export ────────────────────────────── */
 async function exportRender(id, format) {
-  const url  = `/api/render/${id}`;
-  const res  = await fetch(url);
+  const res  = await fetch(`/api/render/${id}`);
   const data = await res.json();
   const specs = data.render_specs || [];
 
@@ -542,7 +830,6 @@ async function exportRender(id, format) {
     a.download = `render_${id}_specs.json`;
     a.click();
   } else {
-    // MD — copy to clipboard
     const md = specs.map(s => [
       `## ${(s.variant_label||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())} Variant`,
       `**Concept:** ${s.concept_title||''}`,
@@ -557,7 +844,6 @@ async function exportRender(id, format) {
       await navigator.clipboard.writeText(md);
       toast('Render specs copied to clipboard');
     } catch {
-      // Fallback: download
       const blob = new Blob([md], {type:'text/plain'});
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
