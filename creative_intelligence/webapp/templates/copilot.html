@@ -966,6 +966,10 @@ function buildProductionCard(result) {
     ? `/api/production/package/${outputId}/export`
     : `/api/production/${outputId}/export`;
 
+  const renderBtn = (outputId && outputType === 'static_brief') ? `
+    <button class="card-btn" onclick="triggerRender(${outputId})" title="Generate render specs for this brief">🎨 Render</button>
+  ` : '';
+
   const actionButtons = outputId ? `
     <button class="card-btn prod-approve-btn" data-output-id="${outputId}" data-is-pkg="${isPkg ? 1 : 0}"
             onclick="toggleApprove(this)" title="Mark as approved for production">✓ Approve</button>
@@ -973,6 +977,7 @@ function buildProductionCard(result) {
             onclick="toggleProdFav(this)" title="Save">★</button>
     <button class="card-btn" onclick="exportProduction('${exportBase}','md')" title="Copy Markdown">Copy MD</button>
     <button class="card-btn" onclick="exportProduction('${exportBase}','json')" title="Download JSON">JSON</button>
+    ${renderBtn}
   ` : '';
 
   // Body HTML by type
@@ -1127,6 +1132,29 @@ async function toggleProdFav(btn) {
     btn.closest('.prod-card').classList.toggle('is-fav', fav);
     toast(fav ? 'Saved' : 'Removed from saved');
   } catch(e) { toast('Failed: ' + e.message, true); }
+}
+
+async function triggerRender(outputId) {
+  try {
+    toast('Generating render specs…');
+    const res = await fetch('/api/render/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        production_output_id: outputId,
+        aspect_ratio: '9:16',
+        generate_images: false,
+        dry_run: false,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || res.statusText);
+    }
+    const data = await res.json();
+    const rid  = data.render_output_id;
+    window.open(`/render${rid ? '#' + rid : ''}`, '_blank');
+  } catch(e) { toast('Render failed: ' + e.message, true); }
 }
 
 async function exportProduction(baseUrl, format) {

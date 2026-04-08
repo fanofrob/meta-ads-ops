@@ -1071,6 +1071,189 @@ def production_list():
 
 
 # ─────────────────────────────────────────────
+# STATIC RENDERING LAYER  (v1.4)
+# Converts StaticAdBrief production outputs into render specs + image variants.
+# ─────────────────────────────────────────────
+
+@app.get("/render")
+def render_page() -> Any:
+    """Static rendering review UI."""
+    return render_template("render.html")
+
+
+@app.post("/api/render/generate")
+def render_generate() -> Any:
+    """
+    Generate render specs (and optionally images) from a stored StaticAdBrief.
+
+    Request JSON
+    ------------
+    {
+      production_output_id : int    — required
+      aspect_ratio         : str?   — "9:16" | "1:1" | "4:5" | "16:9"  (default: "9:16")
+      variants             : list?  — subset of VARIANT_STRATEGIES (default: all 5)
+      generate_images      : bool?  — override CI_IMAGE_GENERATION_ENABLED
+      dry_run              : bool?  — default False
+    }
+    """
+    from creative_intelligence.rendering.static_renderer import render_static_brief
+    from creative_intelligence.rendering.schemas import VARIANT_STRATEGIES
+
+    try:
+        body   = request.get_json(force=True) or {}
+        pid    = body.get("production_output_id")
+        if not pid:
+            return jsonify({"error": "production_output_id required"}), 400
+
+        aspect        = body.get("aspect_ratio", "9:16")
+        variants_req  = body.get("variants") or list(VARIANT_STRATEGIES)
+        gen_images    = body.get("generate_images")   # None = use config
+        dry_run       = bool(body.get("dry_run", False))
+
+        conn   = _db()
+        result = render_static_brief(
+            production_output_id=int(pid),
+            conn=conn,
+            variants=tuple(v for v in variants_req if v in VARIANT_STRATEGIES),
+            aspect_ratio=aspect,
+            generate_images=gen_images,
+            dry_run=dry_run,
+        )
+        conn.close()
+        return jsonify(result)
+
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except Exception as exc:
+        app.logger.exception("render/generate failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/render/<int:render_id>")
+def render_fetch(render_id: int) -> Any:
+    """Fetch a render output with its spec and all assets."""
+    try:
+        from creative_intelligence.rendering.asset_store import list_render_assets
+        conn = _db()
+        row  = conn.execute(
+            "SELECT * FROM render_outputs WHERE id = ?", (render_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "render output not found"}), 404
+
+        d = dict(row)
+        try:
+            d["render_specs"] = json.loads(d.get("render_spec_json") or "[]")
+        except Exception:
+            d["render_specs"] = []
+
+        assets = list_render_assets(render_id, conn)
+        conn.close()
+        return jsonify({**d, "assets": assets})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/render/<int:render_id>/approve")
+def render_approve(render_id: int) -> Any:
+    """Toggle is_approved on a render output."""
+    try:
+        conn = _db()
+        row  = conn.execute(
+            "SELECT is_approved FROM render_outputs WHERE id = ?", (render_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "not found"}), 404
+        new_val = 0 if row["is_approved"] else 1
+        with conn:
+            conn.execute(
+                "UPDATE render_outputs SET is_approved = ? WHERE id = ?",
+                (new_val, render_id),
+            )
+        conn.close()
+        return jsonify({"ok": True, "is_approved": bool(new_val)})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/render/<int:render_id>/favorite")
+def render_favorite(render_id: int) -> Any:
+    """Toggle is_favorite on a render output."""
+    try:
+        conn = _db()
+        row  = conn.execute(
+            "SELECT is_favorite FROM render_outputs WHERE id = ?", (render_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "not found"}), 404
+        new_val = 0 if row["is_favorite"] else 1
+        with conn:
+            conn.execute(
+                "UPDATE render_outputs SET is_favorite = ? WHERE id = ?",
+                (new_val, render_id),
+            )
+        conn.close()
+        return jsonify({"ok": True, "is_favorite": bool(new_val)})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/render/asset/<int:asset_id>/review")
+def render_asset_review(asset_id: int) -> Any:
+    """
+    Set review_status on a render asset.
+    Body: {"status": "preferred" | "rejected" | "pending"}
+    """
+    try:
+        body   = request.get_json(force=True) or {}
+        status = (body.get("status") or "pending").strip().lower()
+        if status not in ("preferred", "rejected", "pending"):
+            return jsonify({"error": "status must be preferred|rejected|pending"}), 400
+        conn = _db()
+        row  = conn.execute(
+            "SELECT id FROM render_assets WHERE id = ?", (asset_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "asset not found"}), 404
+        with conn:
+            conn.execute(
+                "UPDATE render_assets SET review_status = ? WHERE id = ?",
+                (status, asset_id),
+            )
+        conn.close()
+        return jsonify({"ok": True, "review_status": status})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/render/list")
+def render_list() -> Any:
+    """Return the last 20 render outputs with source brief info."""
+    try:
+        conn = _db()
+        rows = conn.execute(
+            """SELECT r.id, r.source_production_output_id, r.render_type,
+                      r.status, r.provider_name, r.is_approved, r.is_favorite,
+                      r.created_at,
+                      po.concept_text, po.output_type,
+                      p.name AS product_name
+               FROM render_outputs r
+               LEFT JOIN production_outputs po ON po.id = r.source_production_output_id
+               LEFT JOIN products p ON p.id = po.product_id
+               ORDER BY r.created_at DESC
+               LIMIT 20"""
+        ).fetchall()
+        conn.close()
+        return jsonify([dict(r) for r in rows])
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ─────────────────────────────────────────────
 # Entrypoint
 # ─────────────────────────────────────────────
 
@@ -1083,4 +1266,5 @@ if __name__ == "__main__":
     print(f"Creative Test Lab starting on      http://localhost:{port}/test")
     print(f"Creative Copilot starting on       http://localhost:{port}/copilot")
     print(f"Production API available at        http://localhost:{port}/api/production/")
+    print(f"Static Render Review at            http://localhost:{port}/render")
     app.run(host="0.0.0.0", port=port, debug=is_local)
