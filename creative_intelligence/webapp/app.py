@@ -1235,26 +1235,34 @@ def render_asset_review(asset_id: int) -> Any:
 
 @app.get("/api/render/asset/<int:asset_id>/image")
 def render_asset_image(asset_id: int) -> Any:
-    """Serve a locally-stored render asset as an image file."""
+    """Serve a render asset image: local file if available, CDN redirect otherwise."""
+    from flask import redirect as _redirect
     try:
         conn = _db()
         row = conn.execute(
-            "SELECT asset_path_or_url FROM render_assets WHERE id = ?",
+            "SELECT asset_path_or_url, metadata_json FROM render_assets WHERE id = ?",
             (asset_id,),
         ).fetchone()
         conn.close()
         if row is None:
             abort(404)
         path = row["asset_path_or_url"]
-        # Only serve local file paths (not mock:// or bare URLs)
-        if not path or path.startswith("mock://") or path.startswith("http"):
+        metadata = json.loads(row["metadata_json"] or "{}") if row["metadata_json"] else {}
+
+        # Try local file first
+        if path and not path.startswith("http") and not path.startswith("mock://"):
+            p = Path(path)
+            if p.exists():
+                mime = "image/png" if p.suffix.lower() in (".png", "") else "image/jpeg"
+                return send_file(p, mimetype=mime)
+            # Local file gone (e.g. after redeploy) — try CDN fallback
+            cdn_url = metadata.get("cdn_url")
+            if cdn_url:
+                return _redirect(cdn_url)
             abort(404)
-        from pathlib import Path as _Path
-        p = _Path(path)
-        if not p.exists():
-            abort(404)
-        mime = "image/png" if p.suffix.lower() in (".png", "") else "image/jpeg"
-        return send_file(p, mimetype=mime)
+        elif path and path.startswith("http"):
+            return _redirect(path)
+        abort(404)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -1424,6 +1432,50 @@ def render_list() -> Any:
                LEFT JOIN products p ON p.id = po.product_id
                ORDER BY r.created_at DESC
                LIMIT 20"""
+        ).fetchall()
+        conn.close()
+        return jsonify([dict(r) for r in rows])
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ─────────────────────────────────────────────
+# Collection routes
+# ─────────────────────────────────────────────
+
+@app.get("/collection")
+def collection_page() -> Any:
+    """Creative collection: all approved, favorited, and ready-to-test assets."""
+    return render_template("collection.html")
+
+
+@app.get("/api/collection")
+def collection_api() -> Any:
+    """Return all approved/favorite/ready assets with their context."""
+    try:
+        conn = _db()
+        rows = conn.execute(
+            """SELECT
+                ra.id as asset_id,
+                ra.variant_label,
+                ra.asset_path_or_url,
+                ra.metadata_json,
+                ra.review_status,
+                ra.is_favorite,
+                ra.is_ready_to_test,
+                ra.review_notes,
+                ra.reviewed_at,
+                ro.id as render_output_id,
+                ro.source_production_output_id,
+                ro.created_at,
+                po.concept_text,
+                p.name as product_name
+            FROM render_assets ra
+            JOIN render_outputs ro ON ro.id = ra.render_output_id
+            LEFT JOIN production_outputs po ON po.id = ro.source_production_output_id
+            LEFT JOIN products p ON p.id = po.product_id
+            WHERE ra.review_status = 'approved' OR ra.is_favorite = 1 OR ra.is_ready_to_test = 1
+            ORDER BY ra.is_ready_to_test DESC, ra.is_favorite DESC, ra.id DESC"""
         ).fetchall()
         conn.close()
         return jsonify([dict(r) for r in rows])

@@ -194,7 +194,8 @@ header .subtitle { font-size: 12px; color: var(--muted); }
 <header>
   <h1>Static Render Review</h1>
   <span class="subtitle">Spec-first rendering · per-variant decision layer</span>
-  <a class="nav-link" href="/copilot">← Copilot</a>
+  <a class="nav-link" href="/collection" style="margin-left:auto">Collection →</a>
+  <a class="nav-link" href="/copilot" style="margin-left:12px">← Copilot</a>
 </header>
 
 <div class="layout">
@@ -275,6 +276,8 @@ let currentViewMode   = 'grid'; // 'grid' | 'large'
 let currentFocusedAssetId = null;
 // assetState: { [assetId]: { review_status, is_favorite, is_ready_to_test } }
 let assetState = {};
+// currentSpecs: the render_specs array for the active render
+let currentSpecs = [];
 
 /* ─── Boot ──────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
@@ -418,6 +421,7 @@ async function selectRender(id) {
   const main = document.getElementById('mainArea');
   main.innerHTML = '<div class="empty-state"><p style="color:var(--muted)">Loading…</p></div>';
   assetState = {};
+  currentSpecs = [];
   currentFocusedAssetId = null;
 
   try {
@@ -434,10 +438,11 @@ async function selectRender(id) {
 function renderDetail(data) {
   const main   = document.getElementById('mainArea');
   const specs  = data.render_specs || [];
+  currentSpecs = specs;
   const assets = data.assets || [];
   const title  = data.concept_text ? data.concept_text.slice(0,60) : `Render #${data.id}`;
 
-  // Build asset state cache and map by variant_label
+  // Build asset state cache and map by variant_label (keep only latest per variant)
   const assetMap = {};
   assets.forEach(a => {
     assetState[a.id] = {
@@ -445,8 +450,10 @@ function renderDetail(data) {
       is_favorite:     a.is_favorite     || 0,
       is_ready_to_test: a.is_ready_to_test || 0,
     };
-    if (!assetMap[a.variant_label]) assetMap[a.variant_label] = [];
-    assetMap[a.variant_label].push(a);
+    // Keep only the most recent asset per variant (highest id)
+    if (!assetMap[a.variant_label] || a.id > assetMap[a.variant_label].id) {
+      assetMap[a.variant_label] = a;
+    }
   });
 
   // Compute initial summary counts
@@ -480,19 +487,12 @@ function renderDetail(data) {
     </div>
   `;
 
-  // Render all cards
+  // Render all cards — one card per spec variant (most recent asset if any)
   const gridEl = document.getElementById('cardsGrid');
   specs.forEach(spec => {
-    const specAssets = assetMap[spec.variant_label] || [];
-    specAssets.forEach(asset => {
-      const cardEl = buildCard(spec, asset);
-      gridEl.appendChild(cardEl);
-    });
-    // If no assets yet, show spec-only card with no image
-    if (!specAssets.length) {
-      const cardEl = buildCard(spec, null);
-      gridEl.appendChild(cardEl);
-    }
+    const asset = assetMap[spec.variant_label] || null;
+    const cardEl = buildCard(spec, asset);
+    gridEl.appendChild(cardEl);
   });
 
   updateSummaryUI();
@@ -525,7 +525,8 @@ function buildCard(spec, asset) {
     const p = asset.asset_path_or_url || '';
     let imgSrc = null;
     if (p && !p.startsWith('mock://')) {
-      imgSrc = p.startsWith('http') ? p : `/api/render/asset/${asset.id}/image`;
+      // Always route through the API endpoint — handles local files and CDN redirects
+      imgSrc = `/api/render/asset/${asset.id}/image`;
     }
     if (imgSrc) {
       imgHtml = `<img class="card-image" src="${imgSrc}" alt="${esc(variantLabel)}" loading="lazy"
@@ -545,15 +546,10 @@ function buildCard(spec, asset) {
   const readyBadge = (st && st.is_ready_to_test)
     ? `<span class="ready-badge-corner">🧪 Ready to Test</span>` : '';
 
-  // Download link
+  // Download link — always route through API endpoint
   let downloadHtml = '';
-  if (asset && asset.asset_path_or_url) {
-    const p = asset.asset_path_or_url;
-    if (p.startsWith('http')) {
-      downloadHtml = `<a class="download-link" href="${esc(p)}" target="_blank" rel="noopener">↓ Download</a>`;
-    } else if (!p.startsWith('mock://')) {
-      downloadHtml = `<a class="download-link" href="/api/render/asset/${assetId}/image" download>↓ Download</a>`;
-    }
+  if (asset && asset.asset_path_or_url && !asset.asset_path_or_url.startsWith('mock://')) {
+    downloadHtml = `<a class="download-link" href="/api/render/asset/${assetId}/image" download>↓ Download</a>`;
   }
 
   // Action buttons (only if there's an asset)
@@ -651,7 +647,8 @@ function applyCardState(card, st) {
 function computeCounts() {
   const vals = Object.values(assetState);
   return {
-    total:    vals.length,
+    total:    currentSpecs.length,           // number of spec variants (1-5)
+    images:   vals.length,                   // number of generated images (may be > total if re-generated)
     approved: vals.filter(s => s.review_status === 'approved').length,
     rejected: vals.filter(s => s.review_status === 'rejected').length,
     fav:      vals.filter(s => s.is_favorite).length,
@@ -663,8 +660,13 @@ function updateSummaryUI() {
   const c = computeCounts();
   const el = document.getElementById('summaryPills');
   if (!el) return;
+  const variantWord = c.total === 1 ? 'variant' : 'variants';
+  const imgPill = c.images > 0
+    ? `<span class="pill">${c.images} image${c.images !== 1 ? 's' : ''}</span>`
+    : '';
   el.innerHTML = `
-    <span class="pill">${c.total} variants</span>
+    <span class="pill">${c.total} ${variantWord}</span>
+    ${imgPill}
     <span class="pill p-approved">${c.approved} ✓ approved</span>
     <span class="pill p-rejected">${c.rejected} ✗ rejected</span>
     <span class="pill p-fav">${c.fav} ★ fav</span>
