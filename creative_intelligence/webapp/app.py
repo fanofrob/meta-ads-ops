@@ -1252,7 +1252,7 @@ def render_asset_image(asset_id: int) -> Any:
         ).fetchone()
         conn.close()
         if row is None:
-            abort(404)
+            return ("", 404)
 
         path     = row["asset_path_or_url"] or ""
         meta_raw = row["metadata_json"]
@@ -1298,8 +1298,11 @@ def render_asset_image(asset_id: int) -> Any:
             if cdn_url.startswith("http"):
                 return _redirect(cdn_url, code=302)
 
-        abort(404)
+        return ("", 404)
     except Exception as exc:
+        from werkzeug.exceptions import HTTPException as _HTTPExc
+        if isinstance(exc, _HTTPExc):
+            raise  # let Flask handle HTTP exceptions normally
         app.logger.exception("render_asset_image %s failed", asset_id)
         return jsonify({"error": str(exc)}), 500
 
