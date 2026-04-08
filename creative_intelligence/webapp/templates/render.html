@@ -301,6 +301,8 @@ let currentFocusedAssetId = null;
 let assetState = {};
 // currentSpecs: the render_specs array for the active render
 let currentSpecs = [];
+// currentDisplayedAssetIds: Set of asset IDs actually shown in cards (deduped, latest per variant)
+let currentDisplayedAssetIds = new Set();
 
 /* ─── Boot ──────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
@@ -450,6 +452,7 @@ async function selectRender(id) {
   assetState = {};
   currentSpecs = [];
   currentFocusedAssetId = null;
+  currentDisplayedAssetIds = new Set();
 
   try {
     const res  = await fetch(`/api/render/${id}`);
@@ -482,6 +485,8 @@ function renderDetail(data) {
       assetMap[a.variant_label] = a;
     }
   });
+  // Track only the deduplicated asset IDs (one per variant) for accurate counts
+  currentDisplayedAssetIds = new Set(Object.values(assetMap).map(a => a.id));
 
   // Compute initial summary counts
   const counts = computeCounts();
@@ -690,14 +695,15 @@ function applyCardState(card, st) {
 
 /* ─── Summary ───────────────────────────── */
 function computeCounts() {
-  const vals = Object.values(assetState);
+  // Only count assets that are currently displayed (latest per variant, deduped)
+  const displayed = [...currentDisplayedAssetIds].map(id => assetState[id]).filter(Boolean);
   return {
-    total:    currentSpecs.length,           // number of spec variants (1-5)
-    images:   vals.length,                   // number of generated images (may be > total if re-generated)
-    approved: vals.filter(s => s.review_status === 'approved').length,
-    rejected: vals.filter(s => s.review_status === 'rejected').length,
-    fav:      vals.filter(s => s.is_favorite).length,
-    ready:    vals.filter(s => s.is_ready_to_test).length,
+    total:    currentSpecs.length,
+    images:   currentDisplayedAssetIds.size,
+    approved: displayed.filter(s => s.review_status === 'approved').length,
+    rejected: displayed.filter(s => s.review_status === 'rejected').length,
+    fav:      displayed.filter(s => s.is_favorite).length,
+    ready:    displayed.filter(s => s.is_ready_to_test).length,
   };
 }
 
@@ -906,8 +912,10 @@ async function regenAsset(assetId) {
     const newAsset = data.asset;
     const newId    = data.new_asset_id;
 
-    // Update assetState with new asset
+    // Update assetState and displayed set with new asset
     assetState[newId] = { review_status: 'pending', is_favorite: 0, is_ready_to_test: 0 };
+    currentDisplayedAssetIds.delete(assetId);
+    currentDisplayedAssetIds.add(newId);
 
     // Swap the image in the card
     const card = document.querySelector(`[data-asset-id="${assetId}"]`);
@@ -917,9 +925,13 @@ async function regenAsset(assetId) {
       card.addEventListener('mouseenter', () => { currentFocusedAssetId = newId; });
       card.addEventListener('focus',      () => { currentFocusedAssetId = newId; });
 
-      // Replace image
-      const imgWrap = card.querySelector('.card-image-wrap img');
-      if (imgWrap) imgWrap.src = `/api/render/asset/${newId}/image`;
+      // Replace entire image wrap content (handles case where onerror replaced <img> with a div)
+      const imgWrap = card.querySelector('.card-image-wrap');
+      if (imgWrap) {
+        const readyBadge = imgWrap.querySelector('.ready-badge-corner');
+        imgWrap.innerHTML = `<img class="card-image" src="/api/render/asset/${newId}/image" alt="regenerated" loading="lazy" onerror="this.closest('.card-image-wrap').innerHTML='<div class=card-image-placeholder>Image unavailable</div>'">`;
+        if (readyBadge) imgWrap.appendChild(readyBadge);
+      }
 
       // Update button IDs and state
       ['approve','reject','fav','ready','edit'].forEach(action => {
