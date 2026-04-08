@@ -567,6 +567,9 @@ function buildCard(spec, asset) {
     downloadHtml = `<a class="download-link" href="/api/render/asset/${assetId}/image" download>↓ Download</a>`;
   }
 
+  // Spec detail ID — must be declared before actionsHtml uses it
+  const specId = `spec-body-${variantLabel}-${assetId||'noasset'}`;
+
   // Action buttons (only if there's an asset)
   let actionsHtml = '';
   if (assetId) {
@@ -592,7 +595,6 @@ function buildCard(spec, asset) {
 
   // Spec detail body
   const tags = (spec.style_tags || []).map(t => `<span class="style-tag">${esc(t)}</span>`).join('');
-  const specId = `spec-body-${variantLabel}-${assetId||'noasset'}`;
 
   card.innerHTML = `
     <div class="card-header">
