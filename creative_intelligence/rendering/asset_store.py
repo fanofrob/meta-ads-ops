@@ -4,7 +4,7 @@ Asset storage helpers for the static rendering layer.
 Handles:
 - Local render output directory management
 - Saving asset paths/URLs to the render_assets table
-- Downloading remote URLs to local files (skipped for mock:// paths)
+- HTTP URLs stored directly (no local download — works on ephemeral filesystems)
 
 Public API
 ----------
@@ -57,16 +57,19 @@ def save_asset(
     """
     Persist an asset reference to render_assets.
 
-    For real URLs  → downloads the file to
-        {CI_RENDER_OUTPUT_DIR}/{render_output_id}/{variant_label}.png
-        and stores the local path.
+    For real URLs  → stores the URL directly in asset_path_or_url.
+                     No local download — avoids ephemeral-filesystem loss on
+                     container restarts / redeploys (e.g. Railway).
+                     The /api/render/asset/<id>/image route redirects the
+                     browser to this URL, so images load directly from CDN.
+    For file://    → copies to local render dir (provider wrote raw bytes).
     For mock://    → stores the path string as-is (no download).
 
     Parameters
     ----------
     render_output_id : FK → render_outputs.id
     variant_label    : e.g. "minimal", "premium"
-    source           : URL (https://…) or mock path (mock://…)
+    source           : URL (https://…), file:// URI, or mock path (mock://…)
     conn             : open sqlite3 connection
     metadata         : optional dict serialised as JSON
 
@@ -78,22 +81,12 @@ def save_asset(
         # Mock path — store as-is, no download
         asset_path = source
     elif source.startswith("https://") or source.startswith("http://"):
-        # Download to local render dir; also store CDN URL as backup in metadata.
-        # If download fails (e.g. CDN rejects server-side fetch), fall back to
-        # storing the URL directly so the browser can try it.
-        out_dir = get_render_output_dir() / str(render_output_id)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        dest = out_dir / f"{variant_label}.png"
-        try:
-            _download_url(source, dest)
-            asset_path = str(dest)
-            # Store original CDN URL in metadata for fallback after redeploy
-            if metadata is None:
-                metadata = {}
-            metadata["cdn_url"] = source
-        except Exception:
-            # Download failed — store CDN URL directly as fallback
-            asset_path = source
+        # Store URL directly — the /image route will redirect the browser.
+        # This is reliable on ephemeral filesystems (Railway, Fly, etc.).
+        asset_path = source
+        if metadata is None:
+            metadata = {}
+        metadata["cdn_url"] = source  # explicit record for future use
     elif source.startswith("file://"):
         # Temp file written by provider for models that return raw bytes.
         # Copy to the render output dir so it survives for the current process.

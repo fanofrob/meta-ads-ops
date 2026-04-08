@@ -1235,7 +1235,14 @@ def render_asset_review(asset_id: int) -> Any:
 
 @app.get("/api/render/asset/<int:asset_id>/image")
 def render_asset_image(asset_id: int) -> Any:
-    """Serve a render asset image: local file if available, CDN redirect otherwise."""
+    """Serve a render asset image.
+
+    Priority order:
+    1. If path is an HTTP URL → 302 redirect (no local copy needed)
+    2. If path is a local file that exists → send_file
+    3. If local file missing → try metadata cdn_url redirect
+    4. Otherwise 404
+    """
     from flask import redirect as _redirect
     try:
         conn = _db()
@@ -1246,24 +1253,34 @@ def render_asset_image(asset_id: int) -> Any:
         conn.close()
         if row is None:
             abort(404)
-        path = row["asset_path_or_url"]
-        metadata = json.loads(row["metadata_json"] or "{}") if row["metadata_json"] else {}
 
-        # Try local file first
-        if path and not path.startswith("http") and not path.startswith("mock://"):
+        path     = row["asset_path_or_url"] or ""
+        meta_raw = row["metadata_json"]
+        metadata: dict = {}
+        if meta_raw:
+            try:
+                metadata = json.loads(meta_raw)
+            except Exception:
+                metadata = {}
+
+        # 1. HTTP/HTTPS URL stored directly → redirect browser to CDN
+        if path.startswith("http://") or path.startswith("https://"):
+            return _redirect(path, code=302)
+
+        # 2. Local file path
+        if path and not path.startswith("mock://"):
             p = Path(path)
             if p.exists():
                 mime = "image/png" if p.suffix.lower() in (".png", "") else "image/jpeg"
-                return send_file(p, mimetype=mime)
-            # Local file gone (e.g. after redeploy) — try CDN fallback
-            cdn_url = metadata.get("cdn_url")
-            if cdn_url:
-                return _redirect(cdn_url)
-            abort(404)
-        elif path and path.startswith("http"):
-            return _redirect(path)
+                return send_file(str(p), mimetype=mime)
+            # File gone (redeploy wiped it) → try CDN fallback from metadata
+            cdn_url = metadata.get("cdn_url") or ""
+            if cdn_url.startswith("http"):
+                return _redirect(cdn_url, code=302)
+
         abort(404)
     except Exception as exc:
+        app.logger.exception("render_asset_image %s failed", asset_id)
         return jsonify({"error": str(exc)}), 500
 
 
