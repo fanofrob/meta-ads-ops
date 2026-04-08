@@ -96,8 +96,12 @@ header .subtitle { font-size: 12px; color: var(--muted); }
 .style-tag { font-size: 10px; padding: 2px 7px; border-radius: 8px; background: var(--surface2); border: 1px solid var(--border); color: var(--muted); }
 
 /* Asset row */
-.asset-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 12px; }
-.asset-path { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; font-size: 11px; }
+.asset-row { display: flex; flex-direction: column; gap: 8px; padding: 10px 0; border-top: 1px solid var(--border); }
+.asset-img-wrap { width: 100%; border-radius: 6px; overflow: hidden; background: var(--surface2); border: 1px solid var(--border); }
+.asset-img { width: 100%; display: block; object-fit: contain; max-height: 420px; }
+.asset-img-placeholder { padding: 20px; text-align: center; color: var(--muted); font-size: 11px; font-family: monospace; word-break: break-all; }
+.asset-controls { display: flex; align-items: center; gap: 8px; }
+.asset-path { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; font-size: 10px; }
 .asset-review { display: flex; gap: 4px; }
 .review-btn { font-size: 10px; padding: 2px 7px; border-radius: 5px; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--muted); transition: all .1s; }
 .review-btn:hover { border-color: var(--accent); }
@@ -411,16 +415,30 @@ function buildSpecCard(spec, assets) {
   const tags = (spec.style_tags || []).map(t => `<span class="style-tag">${esc(t)}</span>`).join('');
 
   const assetHtml = assets.length
-    ? assets.map(a => `
-        <div class="asset-row">
-          <span class="asset-path" title="${esc(a.asset_path_or_url)}">${esc(a.asset_path_or_url)}</span>
-          <div class="asset-review">
-            <button class="review-btn${a.review_status==='preferred'?' preferred':''}"
-                    onclick="reviewAsset(${a.id},'preferred',this)">✓ Preferred</button>
-            <button class="review-btn${a.review_status==='rejected'?' rejected':''}"
-                    onclick="reviewAsset(${a.id},'rejected',this)">✗ Reject</button>
-          </div>
-        </div>`).join('')
+    ? assets.map(a => {
+        const p = a.asset_path_or_url || '';
+        // Determine image source: serve local files via API route; use HTTPS URLs directly
+        let imgSrc = null;
+        if (p && !p.startsWith('mock://')) {
+          imgSrc = p.startsWith('http') ? p : `/api/render/asset/${a.id}/image`;
+        }
+        const imgEl = imgSrc
+          ? `<div class="asset-img-wrap"><img class="asset-img" src="${imgSrc}" alt="${esc(a.variant_label)}" loading="lazy" onerror="this.closest('.asset-img-wrap').innerHTML='<div class=asset-img-placeholder>Image unavailable</div>'"></div>`
+          : (p ? `<div class="asset-img-wrap"><div class="asset-img-placeholder">${esc(p)}</div></div>` : '');
+        return `
+          <div class="asset-row">
+            ${imgEl}
+            <div class="asset-controls">
+              <span class="asset-path" title="${esc(p)}">${esc(p.split('/').pop() || p)}</span>
+              <div class="asset-review">
+                <button class="review-btn${a.review_status==='preferred'?' preferred':''}"
+                        onclick="reviewAsset(${a.id},'preferred',this)">✓ Preferred</button>
+                <button class="review-btn${a.review_status==='rejected'?' rejected':''}"
+                        onclick="reviewAsset(${a.id},'rejected',this)">✗ Reject</button>
+              </div>
+            </div>
+          </div>`;
+      }).join('')
     : '';
 
   return `
