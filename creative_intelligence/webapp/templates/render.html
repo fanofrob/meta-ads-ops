@@ -234,6 +234,14 @@ header .subtitle { font-size: 12px; color: var(--muted); }
       </select>
       <input class="model-custom" id="modelCustom" placeholder="owner/model-name or owner/model-name:version" />
 
+      <label style="margin-top:4px">Aspect Ratio</label>
+      <select class="model-select" id="aspectRatioSelect">
+        <option value="9:16">9:16 — Portrait / Stories</option>
+        <option value="4:5">4:5 — Feed Portrait</option>
+        <option value="1:1">1:1 — Square</option>
+        <option value="16:9">16:9 — Landscape</option>
+      </select>
+
       <label style="margin-top:4px">Variants to generate</label>
       <div class="variant-checks">
         <label class="variant-check-row">
@@ -386,6 +394,10 @@ function getSelectedVariants() {
   ).map(cb => cb.value);
 }
 
+function getSelectedAspectRatio() {
+  return document.getElementById('aspectRatioSelect')?.value || '9:16';
+}
+
 async function generateImages() {
   if (!currentRenderId) return;
   const variants = getSelectedVariants();
@@ -406,7 +418,7 @@ async function generateImages() {
         generate_images:      true,
         model:                model,
         variants:             variants,
-        aspect_ratio:         detail.render_specs?.[0]?.aspect_ratio || '9:16',
+        aspect_ratio:         getSelectedAspectRatio(),
       }),
     });
     const data = await res.json();
