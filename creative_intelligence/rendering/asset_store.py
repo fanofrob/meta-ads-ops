@@ -78,11 +78,22 @@ def save_asset(
         # Mock path — store as-is, no download
         asset_path = source
     elif source.startswith("https://") or source.startswith("http://"):
-        # Remote CDN URL (e.g. Replicate delivery URL) — store as-is.
-        # Do NOT download: Railway's filesystem is ephemeral so downloaded files
-        # disappear on every deploy/restart. CDN URLs remain valid for hours and
-        # are served directly to the browser.
-        asset_path = source
+        # Download to local render dir; also store CDN URL as backup in metadata.
+        # If download fails (e.g. CDN rejects server-side fetch), fall back to
+        # storing the URL directly so the browser can try it.
+        out_dir = get_render_output_dir() / str(render_output_id)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        dest = out_dir / f"{variant_label}.png"
+        try:
+            _download_url(source, dest)
+            asset_path = str(dest)
+            # Store original CDN URL in metadata for fallback after redeploy
+            if metadata is None:
+                metadata = {}
+            metadata["cdn_url"] = source
+        except Exception:
+            # Download failed — store CDN URL directly as fallback
+            asset_path = source
     elif source.startswith("file://"):
         # Temp file written by provider for models that return raw bytes.
         # Copy to the render output dir so it survives for the current process.

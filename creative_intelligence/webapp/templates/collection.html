@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Creative Collection</title>
+<style>
+:root {
+  --bg:       #0d0d14;
+  --surface:  #13131e;
+  --surface2: #1a1a2a;
+  --border:   #252535;
+  --text:     #e8e8f0;
+  --text2:    #b0b0c8;
+  --muted:    #6a6a88;
+  --muted2:   #44445a;
+  --accent:   #4f46e5;
+  --accent2:  #818cf8;
+  --green:    #4ade80;
+  --gold:     #fbbf24;
+  --orange:   #fb923c;
+  --blue:     #60a5fa;
+  --purple:   #c084fc;
+  --red:      #f87171;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { min-height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+
+header { display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
+header h1 { font-size: 15px; font-weight: 700; letter-spacing: -.3px; }
+.nav-link { font-size: 12px; color: var(--accent2); text-decoration: none; }
+.nav-link:hover { text-decoration: underline; }
+.nav-spacer { flex: 1; }
+
+.page-body { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+
+/* Stats bar */
+.stats-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; align-items: center; }
+.stat-pill { font-size: 12px; padding: 4px 12px; border-radius: 10px; border: 1px solid var(--border); color: var(--text2); background: var(--surface); }
+.stat-pill.p-ready    { border-color: #1e3a5f; color: var(--blue);  background: #071828; }
+.stat-pill.p-fav      { border-color: #92400e; color: var(--gold);  background: #1c1200; }
+.stat-pill.p-approved { border-color: #166534; color: var(--green); background: #052e16; }
+.loading-msg { color: var(--muted); font-size: 13px; }
+
+/* Tabs */
+.tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+.tab-btn { font-size: 12px; padding: 7px 14px; cursor: pointer; border: none; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); transition: all .12s; margin-bottom: -1px; }
+.tab-btn:hover { color: var(--text2); }
+.tab-btn.active { color: var(--accent2); border-bottom-color: var(--accent2); }
+
+/* Section */
+.section { margin-bottom: 32px; }
+.section-title { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin-bottom: 14px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.section-title.ready-title    { color: var(--blue);  border-color: #1e3a5f; }
+.section-title.fav-title      { color: var(--gold);  border-color: #92400e; }
+.section-title.approved-title { color: var(--green); border-color: #166534; }
+.empty-section { color: var(--muted2); font-size: 12px; padding: 12px 0; }
+
+/* Grid */
+.cards-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+@media (max-width: 900px)  { .cards-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px)  { .cards-grid { grid-template-columns: 1fr; } }
+
+/* Card */
+.col-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; transition: border-color .15s; }
+.col-card:hover { border-color: var(--accent2); }
+.col-card.state-ready    { border-left: 4px solid var(--blue); }
+.col-card.state-fav      { border-color: var(--gold); }
+.col-card.state-approved { border-left: 4px solid var(--green); background: #030f08; }
+
+.card-image-wrap { position: relative; background: var(--surface2); border-bottom: 1px solid var(--border); overflow: hidden; }
+.card-image { width: 100%; display: block; object-fit: contain; max-height: 320px; }
+.card-image-placeholder { padding: 40px 16px; text-align: center; color: var(--muted); font-size: 11px; }
+
+.badge-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px 4px; }
+.variant-badge { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 10px; text-transform: uppercase; letter-spacing: .5px; }
+.badge-minimal         { background: #0c2040; color: #5ba4e8; }
+.badge-premium         { background: #1a1a0c; color: #d4af37; }
+.badge-direct-response { background: #2a0a0a; color: #f87171; }
+.badge-reveal          { background: #0a1a2a; color: #60a5fa; }
+.badge-product-hero    { background: #1a2a0c; color: #7ecb5b; }
+.status-icons { margin-left: auto; display: flex; gap: 4px; font-size: 13px; }
+
+.card-info { padding: 0 12px 8px; }
+.card-concept { font-size: 12px; color: var(--text2); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-product { font-size: 11px; color: var(--muted); }
+
+.card-footer { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.card-link { font-size: 11px; color: var(--accent2); text-decoration: none; padding: 3px 7px; border-radius: 5px; border: 1px solid rgba(129,140,248,.25); }
+.card-link:hover { background: rgba(129,140,248,.1); }
+.dl-link { font-size: 11px; color: var(--muted); text-decoration: none; padding: 3px 7px; border-radius: 5px; border: 1px solid var(--border); margin-left: auto; }
+.dl-link:hover { color: var(--text); border-color: var(--accent); }
+
+/* Toast */
+#toast { position: fixed; bottom: 16px; right: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 12px; box-shadow: 0 4px 16px #0006; opacity: 0; transform: translateY(6px); transition: all .2s; pointer-events: none; z-index: 999; }
+#toast.show { opacity: 1; transform: translateY(0); }
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Creative Collection</h1>
+  <div class="nav-spacer"></div>
+  <a class="nav-link" href="/render">← Render Review</a>
+  <span style="color:var(--muted2);margin:0 6px">·</span>
+  <a class="nav-link" href="/copilot">← Copilot</a>
+</header>
+
+<div class="page-body">
+  <div class="stats-bar" id="statsBar">
+    <span class="loading-msg">Loading collection…</span>
+  </div>
+
+  <div class="tabs" id="tabBar" style="display:none">
+    <button class="tab-btn active" data-tab="ready" onclick="showTab('ready', this)">🧪 Ready to Test</button>
+    <button class="tab-btn" data-tab="fav"   onclick="showTab('fav', this)">⭐ Favorites</button>
+    <button class="tab-btn" data-tab="approved" onclick="showTab('approved', this)">✓ Approved</button>
+    <button class="tab-btn" data-tab="all"   onclick="showTab('all', this)">All</button>
+  </div>
+
+  <div id="sectionsContainer"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+let allAssets = [];
+let currentTab = 'ready';
+
+document.addEventListener('DOMContentLoaded', loadCollection);
+
+async function loadCollection() {
+  try {
+    const res = await fetch('/api/collection');
+    if (!res.ok) throw new Error(res.statusText);
+    allAssets = await res.json();
+    renderStats();
+    renderSections(currentTab);
+    document.getElementById('tabBar').style.display = 'flex';
+  } catch(e) {
+    document.getElementById('statsBar').innerHTML =
+      `<span style="color:var(--orange)">Failed to load: ${esc(e.message)}</span>`;
+  }
+}
+
+function renderStats() {
+  const ready    = allAssets.filter(a => a.is_ready_to_test).length;
+  const fav      = allAssets.filter(a => a.is_favorite).length;
+  const approved = allAssets.filter(a => a.review_status === 'approved').length;
+  const total    = allAssets.length;
+  document.getElementById('statsBar').innerHTML = `
+    <span class="stat-pill p-ready">${ready} 🧪 ready to test</span>
+    <span class="stat-pill p-fav">${fav} ⭐ favorites</span>
+    <span class="stat-pill p-approved">${approved} ✓ approved</span>
+    <span class="stat-pill">${total} total in collection</span>
+  `;
+}
+
+function showTab(tab, btn) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderSections(tab);
+}
+
+function renderSections(tab) {
+  const container = document.getElementById('sectionsContainer');
+
+  let ready    = allAssets.filter(a => a.is_ready_to_test);
+  let fav      = allAssets.filter(a => a.is_favorite && !a.is_ready_to_test);
+  let approved = allAssets.filter(a => a.review_status === 'approved' && !a.is_favorite && !a.is_ready_to_test);
+
+  if (tab === 'ready') {
+    container.innerHTML = '';
+    container.appendChild(buildSection('🧪 Ready to Test', ready, 'ready-title'));
+  } else if (tab === 'fav') {
+    container.innerHTML = '';
+    container.appendChild(buildSection('⭐ Favorites', fav, 'fav-title'));
+  } else if (tab === 'approved') {
+    container.innerHTML = '';
+    container.appendChild(buildSection('✓ Approved', approved, 'approved-title'));
+  } else {
+    // All
+    container.innerHTML = '';
+    container.appendChild(buildSection('🧪 Ready to Test', ready, 'ready-title'));
+    container.appendChild(buildSection('⭐ Favorites', fav, 'fav-title'));
+    container.appendChild(buildSection('✓ Approved', approved, 'approved-title'));
+  }
+}
+
+function buildSection(title, assets, titleClass) {
+  const sec = document.createElement('div');
+  sec.className = 'section';
+  sec.innerHTML = `<div class="section-title ${titleClass}">${title} (${assets.length})</div>`;
+
+  if (!assets.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-section';
+    empty.textContent = 'Nothing here yet.';
+    sec.appendChild(empty);
+    return sec;
+  }
+
+  const grid = document.createElement('div');
+  grid.className = 'cards-grid';
+  assets.forEach(a => grid.appendChild(buildCard(a)));
+  sec.appendChild(grid);
+  return sec;
+}
+
+function buildCard(a) {
+  const variantLabel = a.variant_label || '';
+  const badgeClass = {
+    minimal:         'badge-minimal',
+    premium:         'badge-premium',
+    direct_response: 'badge-direct-response',
+    reveal:          'badge-reveal',
+    product_hero:    'badge-product-hero',
+  }[variantLabel] || 'badge-minimal';
+  const badgeLabel = variantLabel.replace(/_/g,' ');
+
+  const card = document.createElement('div');
+  const stateClass = a.is_ready_to_test ? 'state-ready'
+                   : a.review_status === 'approved' ? 'state-approved'
+                   : a.is_favorite ? 'state-fav' : '';
+  card.className = `col-card ${stateClass}`;
+
+  // Image
+  const imgSrc = `/api/render/asset/${a.asset_id}/image`;
+  const imgHtml = `
+    <div class="card-image-wrap">
+      <img class="card-image" src="${imgSrc}" alt="${esc(variantLabel)}" loading="lazy"
+           onerror="this.closest('.card-image-wrap').innerHTML='<div class=card-image-placeholder>Image unavailable</div>'">
+    </div>`;
+
+  // Status icons
+  const icons = [
+    a.is_ready_to_test    ? '🧪' : '',
+    a.is_favorite         ? '⭐' : '',
+    a.review_status === 'approved' ? '✓' : '',
+  ].filter(Boolean).join(' ');
+
+  const concept = (a.concept_text || '').slice(0, 80) || '—';
+  const product = a.product_name || '';
+  const renderLink = `/render#${a.render_output_id}`;
+
+  card.innerHTML = `
+    ${imgHtml}
+    <div class="badge-row">
+      <span class="variant-badge ${badgeClass}">${esc(badgeLabel)}</span>
+      ${icons ? `<span class="status-icons">${icons}</span>` : ''}
+    </div>
+    <div class="card-info">
+      <div class="card-concept" title="${esc(a.concept_text || '')}">${esc(concept)}</div>
+      ${product ? `<div class="card-product">${esc(product)}</div>` : ''}
+    </div>
+    <div class="card-footer">
+      <a class="card-link" href="${esc(renderLink)}">View in Render →</a>
+      <a class="dl-link" href="${imgSrc}" download>↓ Download</a>
+    </div>
+  `;
+  return card;
+}
+</script>
+</body>
+</html>

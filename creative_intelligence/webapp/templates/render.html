@@ -146,7 +146,22 @@ header .subtitle { font-size: 12px; color: var(--muted); }
 
 /* Spec detail (collapsible) */
 .spec-detail { overflow: hidden; max-height: 0; transition: max-height .35s ease, padding .25s ease; padding: 0 12px; }
-.spec-detail.open { max-height: 3000px; padding: 10px 12px 14px; }
+.spec-detail.open { max-height: 6000px; padding: 10px 12px 14px; }
+
+/* Edit prompt panel */
+.edit-panel { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 8px; }
+.edit-panel label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; display: block; margin-bottom: 4px; }
+.edit-textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 8px 10px; font-size: 12px; line-height: 1.6; font-family: inherit; resize: vertical; min-height: 80px; }
+.edit-textarea:focus { outline: none; border-color: var(--accent); }
+.edit-notes { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text2); padding: 6px 10px; font-size: 12px; font-family: inherit; resize: none; height: 52px; margin-top: 6px; }
+.edit-notes:focus { outline: none; border-color: var(--accent); }
+.edit-actions { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+.btn-regen { font-size: 11px; padding: 5px 12px; border-radius: 6px; cursor: pointer; border: 1px solid var(--accent); background: transparent; color: var(--accent2); transition: all .1s; white-space: nowrap; }
+.btn-regen:hover { background: var(--accent); color: #fff; }
+.btn-regen:disabled { opacity: .4; cursor: not-allowed; }
+.btn-edit-cancel { font-size: 11px; padding: 5px 10px; border-radius: 6px; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--muted); }
+.btn-edit-cancel:hover { color: var(--text); border-color: var(--text2); }
+.regen-status { font-size: 11px; color: var(--muted); }
 .spec-section { margin-bottom: 10px; }
 .spec-section h5 { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; margin-bottom: 5px; }
 .spec-section p, .spec-section .prompt-text { font-size: 12px; line-height: 1.6; color: var(--text2); }
@@ -194,7 +209,8 @@ header .subtitle { font-size: 12px; color: var(--muted); }
 <header>
   <h1>Static Render Review</h1>
   <span class="subtitle">Spec-first rendering · per-variant decision layer</span>
-  <a class="nav-link" href="/copilot">← Copilot</a>
+  <a class="nav-link" href="/collection" style="margin-left:auto">Collection →</a>
+  <a class="nav-link" href="/copilot" style="margin-left:12px">← Copilot</a>
 </header>
 
 <div class="layout">
@@ -275,6 +291,8 @@ let currentViewMode   = 'grid'; // 'grid' | 'large'
 let currentFocusedAssetId = null;
 // assetState: { [assetId]: { review_status, is_favorite, is_ready_to_test } }
 let assetState = {};
+// currentSpecs: the render_specs array for the active render
+let currentSpecs = [];
 
 /* ─── Boot ──────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
@@ -418,6 +436,7 @@ async function selectRender(id) {
   const main = document.getElementById('mainArea');
   main.innerHTML = '<div class="empty-state"><p style="color:var(--muted)">Loading…</p></div>';
   assetState = {};
+  currentSpecs = [];
   currentFocusedAssetId = null;
 
   try {
@@ -434,10 +453,11 @@ async function selectRender(id) {
 function renderDetail(data) {
   const main   = document.getElementById('mainArea');
   const specs  = data.render_specs || [];
+  currentSpecs = specs;
   const assets = data.assets || [];
   const title  = data.concept_text ? data.concept_text.slice(0,60) : `Render #${data.id}`;
 
-  // Build asset state cache and map by variant_label
+  // Build asset state cache and map by variant_label (keep only latest per variant)
   const assetMap = {};
   assets.forEach(a => {
     assetState[a.id] = {
@@ -445,8 +465,10 @@ function renderDetail(data) {
       is_favorite:     a.is_favorite     || 0,
       is_ready_to_test: a.is_ready_to_test || 0,
     };
-    if (!assetMap[a.variant_label]) assetMap[a.variant_label] = [];
-    assetMap[a.variant_label].push(a);
+    // Keep only the most recent asset per variant (highest id)
+    if (!assetMap[a.variant_label] || a.id > assetMap[a.variant_label].id) {
+      assetMap[a.variant_label] = a;
+    }
   });
 
   // Compute initial summary counts
@@ -480,19 +502,12 @@ function renderDetail(data) {
     </div>
   `;
 
-  // Render all cards
+  // Render all cards — one card per spec variant (most recent asset if any)
   const gridEl = document.getElementById('cardsGrid');
   specs.forEach(spec => {
-    const specAssets = assetMap[spec.variant_label] || [];
-    specAssets.forEach(asset => {
-      const cardEl = buildCard(spec, asset);
-      gridEl.appendChild(cardEl);
-    });
-    // If no assets yet, show spec-only card with no image
-    if (!specAssets.length) {
-      const cardEl = buildCard(spec, null);
-      gridEl.appendChild(cardEl);
-    }
+    const asset = assetMap[spec.variant_label] || null;
+    const cardEl = buildCard(spec, asset);
+    gridEl.appendChild(cardEl);
   });
 
   updateSummaryUI();
@@ -525,7 +540,8 @@ function buildCard(spec, asset) {
     const p = asset.asset_path_or_url || '';
     let imgSrc = null;
     if (p && !p.startsWith('mock://')) {
-      imgSrc = p.startsWith('http') ? p : `/api/render/asset/${asset.id}/image`;
+      // Always route through the API endpoint — handles local files and CDN redirects
+      imgSrc = `/api/render/asset/${asset.id}/image`;
     }
     if (imgSrc) {
       imgHtml = `<img class="card-image" src="${imgSrc}" alt="${esc(variantLabel)}" loading="lazy"
@@ -545,15 +561,10 @@ function buildCard(spec, asset) {
   const readyBadge = (st && st.is_ready_to_test)
     ? `<span class="ready-badge-corner">🧪 Ready to Test</span>` : '';
 
-  // Download link
+  // Download link — always route through API endpoint
   let downloadHtml = '';
-  if (asset && asset.asset_path_or_url) {
-    const p = asset.asset_path_or_url;
-    if (p.startsWith('http')) {
-      downloadHtml = `<a class="download-link" href="${esc(p)}" target="_blank" rel="noopener">↓ Download</a>`;
-    } else if (!p.startsWith('mock://')) {
-      downloadHtml = `<a class="download-link" href="/api/render/asset/${assetId}/image" download>↓ Download</a>`;
-    }
+  if (asset && asset.asset_path_or_url && !asset.asset_path_or_url.startsWith('mock://')) {
+    downloadHtml = `<a class="download-link" href="/api/render/asset/${assetId}/image" download>↓ Download</a>`;
   }
 
   // Action buttons (only if there's an asset)
@@ -573,6 +584,8 @@ function buildCard(spec, asset) {
                 onclick="assetFavorite(${assetId})">★ Fav</button>
         <button class="action-btn ${readyClass}"   id="ab-ready-${assetId}"
                 onclick="assetReady(${assetId})">🧪 Ready</button>
+        <button class="action-btn" id="ab-edit-${assetId}"
+                onclick="toggleEditPanel('${specId}', ${assetId})">✏️ Edit</button>
         ${downloadHtml}
       </div>`;
   }
@@ -624,6 +637,20 @@ function buildCard(spec, asset) {
       ${spec.product_focus ? `<div class="spec-section"><h5>Product Focus</h5><p>${esc(spec.product_focus)}</p></div>` : ''}
       ${spec.text_hierarchy ? `<div class="spec-section"><h5>Text Hierarchy</h5><p>${esc(spec.text_hierarchy)}</p></div>` : ''}
       ${tags ? `<div class="spec-section"><h5>Style Tags</h5><div class="style-tags">${tags}</div></div>` : ''}
+      ${assetId ? `
+      <div class="edit-panel" id="edit-panel-${assetId}" style="display:none">
+        <label>Visual Prompt</label>
+        <textarea class="edit-textarea" id="edit-vp-${assetId}">${esc(spec.visual_prompt||'')}</textarea>
+        <label style="margin-top:8px">Negative Prompt</label>
+        <textarea class="edit-textarea" id="edit-np-${assetId}" style="min-height:56px">${esc(spec.negative_prompt||'')}</textarea>
+        <label style="margin-top:8px">Extra Notes <span style="color:var(--muted2);font-weight:400;text-transform:none">(appended to prompt)</span></label>
+        <textarea class="edit-notes" id="edit-notes-${assetId}" placeholder="e.g. warmer tones, add morning dew, darker background…"></textarea>
+        <div class="edit-actions">
+          <button class="btn-regen" id="regen-btn-${assetId}" onclick="regenAsset(${assetId})">🔄 Regenerate</button>
+          <button class="btn-edit-cancel" onclick="toggleEditPanel('${specId}', ${assetId})">Cancel</button>
+          <span class="regen-status" id="regen-status-${assetId}"></span>
+        </div>
+      </div>` : ''}
     </div>
   `;
 
@@ -651,7 +678,8 @@ function applyCardState(card, st) {
 function computeCounts() {
   const vals = Object.values(assetState);
   return {
-    total:    vals.length,
+    total:    currentSpecs.length,           // number of spec variants (1-5)
+    images:   vals.length,                   // number of generated images (may be > total if re-generated)
     approved: vals.filter(s => s.review_status === 'approved').length,
     rejected: vals.filter(s => s.review_status === 'rejected').length,
     fav:      vals.filter(s => s.is_favorite).length,
@@ -663,8 +691,13 @@ function updateSummaryUI() {
   const c = computeCounts();
   const el = document.getElementById('summaryPills');
   if (!el) return;
+  const variantWord = c.total === 1 ? 'variant' : 'variants';
+  const imgPill = c.images > 0
+    ? `<span class="pill">${c.images} image${c.images !== 1 ? 's' : ''}</span>`
+    : '';
   el.innerHTML = `
-    <span class="pill">${c.total} variants</span>
+    <span class="pill">${c.total} ${variantWord}</span>
+    ${imgPill}
     <span class="pill p-approved">${c.approved} ✓ approved</span>
     <span class="pill p-rejected">${c.rejected} ✗ rejected</span>
     <span class="pill p-fav">${c.fav} ★ fav</span>
@@ -814,6 +847,102 @@ async function toggleFav(id) {
     btn.classList.toggle('fav', data.is_favorite);
     loadRenderList();
     toast(data.is_favorite ? 'Saved ★' : 'Removed from saved');
+  }
+}
+
+/* ─── Edit prompt / Regenerate ─────────── */
+function toggleEditPanel(specId, assetId) {
+  // Open spec detail first
+  const specEl = document.getElementById(specId);
+  if (specEl && !specEl.classList.contains('open')) {
+    specEl.classList.add('open');
+    const btn = document.querySelector(`[onclick="toggleSpec('${specId}', this)"]`);
+    if (btn) btn.textContent = 'spec ▴';
+  }
+  const panel = document.getElementById(`edit-panel-${assetId}`);
+  if (!panel) return;
+  const isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'block';
+  const editBtn = document.getElementById(`ab-edit-${assetId}`);
+  if (editBtn) editBtn.classList.toggle('active-approve', !isOpen);
+  if (!isOpen) panel.querySelector('textarea')?.focus();
+}
+
+async function regenAsset(assetId) {
+  const btn    = document.getElementById(`regen-btn-${assetId}`);
+  const status = document.getElementById(`regen-status-${assetId}`);
+  const vp     = document.getElementById(`edit-vp-${assetId}`)?.value.trim();
+  const np     = document.getElementById(`edit-np-${assetId}`)?.value.trim();
+  const notes  = document.getElementById(`edit-notes-${assetId}`)?.value.trim();
+  const model  = getSelectedModel();
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Generating…';
+  if (status) status.textContent = '';
+
+  try {
+    const res  = await fetch(`/api/render/asset/${assetId}/regenerate`, {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body:    JSON.stringify({ visual_prompt: vp, negative_prompt: np, extra_notes: notes, model }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+
+    const newAsset = data.asset;
+    const newId    = data.new_asset_id;
+
+    // Update assetState with new asset
+    assetState[newId] = { review_status: 'pending', is_favorite: 0, is_ready_to_test: 0 };
+
+    // Swap the image in the card
+    const card = document.querySelector(`[data-asset-id="${assetId}"]`);
+    if (card) {
+      // Update card to reference new asset id
+      card.dataset.assetId = newId;
+      card.addEventListener('mouseenter', () => { currentFocusedAssetId = newId; });
+      card.addEventListener('focus',      () => { currentFocusedAssetId = newId; });
+
+      // Replace image
+      const imgWrap = card.querySelector('.card-image-wrap img');
+      if (imgWrap) imgWrap.src = `/api/render/asset/${newId}/image`;
+
+      // Update button IDs and state
+      ['approve','reject','fav','ready','edit'].forEach(action => {
+        const b = document.getElementById(`ab-${action}-${assetId}`);
+        if (b) {
+          b.id = `ab-${action}-${newId}`;
+          b.setAttribute('onclick', `asset${action.charAt(0).toUpperCase()+action.slice(1)}(${newId})`);
+        }
+      });
+      // Fix edit button onclick
+      const editBtn = document.getElementById(`ab-edit-${newId}`);
+      if (editBtn) {
+        const specId = card.querySelector('.spec-detail')?.id;
+        if (specId) editBtn.setAttribute('onclick', `toggleEditPanel('${specId}', ${newId})`);
+      }
+      // Fix regen button
+      const regenBtnNew = document.getElementById(`regen-btn-${assetId}`);
+      if (regenBtnNew) {
+        regenBtnNew.id = `regen-btn-${newId}`;
+        regenBtnNew.setAttribute('onclick', `regenAsset(${newId})`);
+      }
+      // Fix download link
+      const dlLink = card.querySelector('.download-link');
+      if (dlLink) dlLink.href = `/api/render/asset/${newId}/image`;
+
+      applyCardState(card, assetState[newId]);
+    }
+
+    if (status) status.textContent = '✓ New image ready';
+    toast('✓ Regenerated successfully');
+    updateSummaryUI();
+  } catch(e) {
+    if (status) status.textContent = 'Failed: ' + e.message;
+    toast('Regeneration failed: ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔄 Regenerate';
   }
 }
 
