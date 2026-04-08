@@ -42,6 +42,7 @@ def render_static_brief(
     aspect_ratio: str = "9:16",
     generate_images: bool | None = None,
     provider_name: str | None = None,
+    model: str | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """
@@ -137,10 +138,14 @@ def render_static_brief(
     if generate_images and not dry_run:
         try:
             for spec in specs:
+                generate_kwargs: dict[str, Any] = {}
+                if model:
+                    generate_kwargs["model"] = model
                 paths = provider.generate(
                     prompt=spec["visual_prompt"],
                     negative_prompt=spec["negative_prompt"],
                     aspect_ratio=spec["aspect_ratio"],
+                    **generate_kwargs,
                 )
                 for path in paths:
                     asset_id = save_asset(
