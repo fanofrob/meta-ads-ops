@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Static Render Review</title>
+<style>
+:root {
+  --bg:       #0d0d14;
+  --surface:  #13131e;
+  --surface2: #1a1a2a;
+  --border:   #252535;
+  --text:     #e8e8f0;
+  --text2:    #b0b0c8;
+  --muted:    #6a6a88;
+  --muted2:   #44445a;
+  --accent:   #4f46e5;
+  --accent2:  #818cf8;
+  --green:    #4ade80;
+  --gold:     #fbbf24;
+  --orange:   #fb923c;
+  --blue:     #60a5fa;
+  --purple:   #c084fc;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+
+/* ── Layout ── */
+header { display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
+header h1 { font-size: 15px; font-weight: 700; letter-spacing: -.3px; }
+header .subtitle { font-size: 12px; color: var(--muted); }
+.nav-link { margin-left: auto; font-size: 12px; color: var(--accent2); text-decoration: none; }
+.nav-link:hover { text-decoration: underline; }
+
+.layout { display: flex; height: calc(100vh - 44px); overflow: hidden; }
+
+/* ── Sidebar ── */
+.sidebar { width: 280px; flex-shrink: 0; border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+.sidebar-top { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.sidebar-top h3 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+.sidebar-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+.render-item { padding: 10px 16px; cursor: pointer; border-left: 2px solid transparent; transition: background .1s; }
+.render-item:hover { background: var(--surface2); }
+.render-item.active { border-left-color: var(--accent); background: var(--surface2); }
+.render-item .ri-concept { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.render-item .ri-meta { font-size: 11px; color: var(--muted); margin-top: 2px; display: flex; gap: 6px; align-items: center; }
+.status-badge { font-size: 10px; padding: 1px 6px; border-radius: 8px; border: 1px solid; }
+.status-spec-only   { border-color: var(--border); color: var(--muted); }
+.status-images-generated { border-color: #166534; color: var(--green); }
+.status-images-failed { border-color: #7c2d12; color: var(--orange); }
+.status-pending { border-color: var(--border); color: var(--muted); }
+
+/* ── Main ── */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); gap: 8px; }
+.empty-state h2 { font-size: 16px; }
+.empty-state p  { font-size: 13px; }
+
+/* ── Render detail ── */
+.render-detail { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.detail-header { padding: 14px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0; display: flex; align-items: center; gap: 10px; }
+.detail-header h2 { font-size: 14px; font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.detail-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.btn { font-size: 11px; padding: 5px 10px; border-radius: 6px; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--muted); transition: all .12s; }
+.btn:hover { border-color: var(--accent); color: var(--text); }
+.btn.approved { border-color: #166534; color: var(--green); background: #052e16; }
+.btn.fav { border-color: var(--gold); color: var(--gold); }
+.btn-export { background: var(--surface2); }
+
+.specs-feed { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+
+/* ── Spec cards ── */
+.spec-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.spec-card-header { display: flex; align-items: center; gap: 8px; padding: 10px 14px; cursor: pointer; user-select: none; }
+.spec-card-header:hover { background: var(--surface2); }
+.variant-badge { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 10px; text-transform: uppercase; letter-spacing: .5px; flex-shrink: 0; }
+.badge-minimal        { background: #0c2040; color: #5ba4e8; }
+.badge-premium        { background: #1a1a0c; color: #d4af37; }
+.badge-direct-response{ background: #2a0a0a; color: #f87171; }
+.badge-reveal         { background: #0a1a2a; color: #60a5fa; }
+.badge-product-hero   { background: #1a2a0c; color: #7ecb5b; }
+.spec-rationale { font-size: 12px; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.spec-chevron { font-size: 10px; color: var(--muted2); transition: transform .2s; }
+.spec-card.expanded .spec-chevron { transform: rotate(180deg); }
+
+.spec-body { max-height: 0; overflow: hidden; transition: max-height .3s ease, padding .3s ease; padding: 0 14px; }
+.spec-card.expanded .spec-body { max-height: 1400px; padding: 10px 14px 16px; }
+
+.spec-section { margin-bottom: 12px; }
+.spec-section h5 { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; margin-bottom: 5px; }
+.spec-section p, .spec-section .prompt-text { font-size: 12px; line-height: 1.6; color: var(--text2); }
+.prompt-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px; line-height: 1.6; color: var(--text2); font-family: inherit; }
+.overlay-grid { display: grid; grid-template-columns: 80px 1fr; gap: 4px 10px; font-size: 12px; }
+.overlay-label { color: var(--muted); font-size: 11px; }
+.style-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.style-tag { font-size: 10px; padding: 2px 7px; border-radius: 8px; background: var(--surface2); border: 1px solid var(--border); color: var(--muted); }
+
+/* Asset row */
+.asset-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 12px; }
+.asset-path { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; font-size: 11px; }
+.asset-review { display: flex; gap: 4px; }
+.review-btn { font-size: 10px; padding: 2px 7px; border-radius: 5px; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--muted); transition: all .1s; }
+.review-btn:hover { border-color: var(--accent); }
+.review-btn.preferred { border-color: #166534; color: var(--green); background: #052e16; }
+.review-btn.rejected  { border-color: #7c2d12; color: var(--orange); background: #2a0e07; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* Toast */
+#toast { position: fixed; bottom: 16px; right: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 12px; box-shadow: 0 4px 16px #0006; opacity: 0; transform: translateY(6px); transition: all .2s; pointer-events: none; z-index: 999; }
+#toast.show { opacity: 1; transform: translateY(0); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎨 Static Render Review</h1>
+  <span class="subtitle">Spec-first rendering · controlled validation phase</span>
+  <a class="nav-link" href="/copilot">← Copilot</a>
+</header>
+
+<div class="layout">
+  <!-- Sidebar: list of render outputs -->
+  <div class="sidebar">
+    <div class="sidebar-top"><h3>Render Outputs</h3></div>
+    <div class="sidebar-list" id="renderList">
+      <div style="padding:16px;color:var(--muted);font-size:12px">Loading…</div>
+    </div>
+  </div>
+
+  <!-- Main: spec/asset review -->
+  <div class="main" id="mainArea">
+    <div class="empty-state">
+      <h2>Select a render output</h2>
+      <p>Or go to <a href="/copilot" style="color:var(--accent2)">Copilot</a> → generate a Static Brief → click <strong>🎨 Render</strong></p>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ─── State ─────────────────────────────── */
+let currentRenderId = null;
+
+/* ─── Boot ──────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  loadRenderList();
+  // Auto-select from URL hash: /render#42
+  const hash = parseInt(location.hash.replace('#',''));
+  if (hash) setTimeout(() => selectRender(hash), 400);
+});
+
+/* ─── Helpers ───────────────────────────── */
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function toast(msg, err=false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.color = err ? 'var(--orange)' : 'var(--text)';
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+/* ─── Sidebar list ──────────────────────── */
+async function loadRenderList() {
+  const list = document.getElementById('renderList');
+  try {
+    const res   = await fetch('/api/render/list');
+    const items = await res.json();
+    if (!items.length) {
+      list.innerHTML = '<div style="padding:16px;color:var(--muted);font-size:12px">No render outputs yet.</div>';
+      return;
+    }
+    list.innerHTML = items.map(it => {
+      const statusClass = {
+        'spec_only':        'status-spec-only',
+        'images_generated': 'status-images-generated',
+        'images_failed':    'status-images-failed',
+        'pending':          'status-pending',
+      }[it.status] || 'status-pending';
+      const label = (it.status || 'pending').replace(/_/g,' ');
+      const concept = (it.concept_text || '—').slice(0, 60);
+      const date = (it.created_at || '').slice(0,10);
+      const fav  = it.is_favorite  ? ' ★' : '';
+      const appr = it.is_approved  ? ' ✓' : '';
+      return `
+        <div class="render-item" data-id="${it.id}" onclick="selectRender(${it.id})">
+          <div class="ri-concept">${esc(concept)}${fav}${appr}</div>
+          <div class="ri-meta">
+            <span class="status-badge ${statusClass}">${esc(label)}</span>
+            <span>${esc(date)}</span>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) {
+    list.innerHTML = '<div style="padding:16px;color:var(--orange);font-size:12px">Failed to load.</div>';
+  }
+}
+
+/* ─── Select a render output ─────────────── */
+async function selectRender(id) {
+  currentRenderId = id;
+  location.hash = id;
+
+  // Highlight sidebar item
+  document.querySelectorAll('.render-item').forEach(el => {
+    el.classList.toggle('active', parseInt(el.dataset.id) === id);
+  });
+
+  const main = document.getElementById('mainArea');
+  main.innerHTML = '<div class="empty-state"><p style="color:var(--muted)">Loading…</p></div>';
+
+  try {
+    const res  = await fetch(`/api/render/${id}`);
+    if (!res.ok) { main.innerHTML = `<div class="empty-state"><p style="color:var(--orange)">Not found.</p></div>`; return; }
+    const data = await res.json();
+    renderDetail(data);
+  } catch(e) {
+    main.innerHTML = `<div class="empty-state"><p style="color:var(--orange)">Error: ${esc(e.message)}</p></div>`;
+  }
+}
+
+/* ─── Render detail panel ────────────────── */
+function renderDetail(data) {
+  const main = document.getElementById('mainArea');
+  const specs = data.render_specs || [];
+  const assets = data.assets || [];
+  const concept = data.concept_text || `Render #${data.id}`;
+  const isApproved = data.is_approved;
+  const isFav = data.is_favorite;
+
+  // Build asset map: variant_label → [asset]
+  const assetMap = {};
+  assets.forEach(a => {
+    if (!assetMap[a.variant_label]) assetMap[a.variant_label] = [];
+    assetMap[a.variant_label].push(a);
+  });
+
+  const specsHtml = specs.map(spec => buildSpecCard(spec, assetMap[spec.variant_label] || [])).join('');
+
+  main.innerHTML = `
+    <div class="render-detail">
+      <div class="detail-header">
+        <h2>${esc(concept)}</h2>
+        <div class="detail-actions">
+          <button class="btn btn-approve${isApproved?' approved':''}" id="approveBtn"
+                  onclick="toggleApprove(${data.id})">${isApproved?'✓ Approved':'Approve'}</button>
+          <button class="btn${isFav?' fav':''}" id="favBtn"
+                  onclick="toggleFav(${data.id})">★</button>
+          <button class="btn btn-export" onclick="exportRender(${data.id},'md')">Export MD</button>
+          <button class="btn btn-export" onclick="exportRender(${data.id},'json')">Export JSON</button>
+        </div>
+      </div>
+      <div class="specs-feed">${specsHtml || '<p style="color:var(--muted);padding:20px">No specs.</p>'}</div>
+    </div>
+  `;
+}
+
+function buildSpecCard(spec, assets) {
+  const variantLabel = spec.variant_label || '';
+  const badgeClass = {
+    minimal:         'badge-minimal',
+    premium:         'badge-premium',
+    direct_response: 'badge-direct-response',
+    reveal:          'badge-reveal',
+    product_hero:    'badge-product-hero',
+  }[variantLabel] || 'badge-minimal';
+  const badgeLabel = variantLabel.replace(/_/g,' ');
+
+  const tags = (spec.style_tags || []).map(t => `<span class="style-tag">${esc(t)}</span>`).join('');
+
+  const assetHtml = assets.length
+    ? assets.map(a => `
+        <div class="asset-row">
+          <span class="asset-path" title="${esc(a.asset_path_or_url)}">${esc(a.asset_path_or_url)}</span>
+          <div class="asset-review">
+            <button class="review-btn${a.review_status==='preferred'?' preferred':''}"
+                    onclick="reviewAsset(${a.id},'preferred',this)">✓ Preferred</button>
+            <button class="review-btn${a.review_status==='rejected'?' rejected':''}"
+                    onclick="reviewAsset(${a.id},'rejected',this)">✗ Reject</button>
+          </div>
+        </div>`).join('')
+    : '';
+
+  return `
+    <div class="spec-card expanded" id="spec-${variantLabel}">
+      <div class="spec-card-header" onclick="toggleSpecCard(this.closest('.spec-card'))">
+        <span class="variant-badge ${badgeClass}">${esc(badgeLabel)}</span>
+        <span class="spec-rationale">${esc(spec.variant_rationale || '')}</span>
+        <span class="spec-chevron">▼</span>
+      </div>
+      <div class="spec-body">
+        <div class="spec-section">
+          <h5>Visual Prompt</h5>
+          <div class="prompt-box">${esc(spec.visual_prompt || '')}</div>
+        </div>
+        <div class="spec-section">
+          <h5>Negative Prompt</h5>
+          <div class="prompt-box">${esc(spec.negative_prompt || '')}</div>
+        </div>
+        <div class="spec-section">
+          <h5>Overlay Copy</h5>
+          <div class="overlay-grid">
+            <span class="overlay-label">Headline</span><span>${esc(spec.headline_overlay||'')}</span>
+            <span class="overlay-label">Body</span><span>${esc(spec.body_overlay||'')}</span>
+            <span class="overlay-label">CTA</span><span>${esc(spec.cta_text||'')}</span>
+          </div>
+        </div>
+        <div class="spec-section">
+          <h5>Composition · Shot: ${esc(spec.shot_type||'')}</h5>
+          <p>${esc(spec.composition||'')}</p>
+        </div>
+        <div class="spec-section">
+          <h5>Background Style</h5>
+          <p>${esc(spec.background_style||'')}</p>
+        </div>
+        <div class="spec-section">
+          <h5>Product Focus</h5>
+          <p>${esc(spec.product_focus||'')}</p>
+        </div>
+        ${spec.text_hierarchy ? `<div class="spec-section"><h5>Text Hierarchy</h5><p>${esc(spec.text_hierarchy)}</p></div>` : ''}
+        ${tags ? `<div class="spec-section"><h5>Style Tags</h5><div class="style-tags">${tags}</div></div>` : ''}
+        ${assetHtml ? `<div class="spec-section"><h5>Generated Assets</h5>${assetHtml}</div>` : ''}
+      </div>
+    </div>`;
+}
+
+function toggleSpecCard(card) { card.classList.toggle('expanded'); }
+
+/* ─── Actions ───────────────────────────── */
+async function toggleApprove(id) {
+  const res  = await fetch(`/api/render/${id}/approve`, {method:'POST'});
+  const data = await res.json();
+  if (data.ok) {
+    const btn = document.getElementById('approveBtn');
+    btn.classList.toggle('approved', data.is_approved);
+    btn.textContent = data.is_approved ? '✓ Approved' : 'Approve';
+    loadRenderList();
+    toast(data.is_approved ? 'Approved' : 'Approval removed');
+  }
+}
+
+async function toggleFav(id) {
+  const res  = await fetch(`/api/render/${id}/favorite`, {method:'POST'});
+  const data = await res.json();
+  if (data.ok) {
+    const btn = document.getElementById('favBtn');
+    btn.classList.toggle('fav', data.is_favorite);
+    loadRenderList();
+    toast(data.is_favorite ? 'Saved ★' : 'Removed from saved');
+  }
+}
+
+async function reviewAsset(assetId, status, btn) {
+  const res  = await fetch(`/api/render/asset/${assetId}/review`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({status}),
+  });
+  const data = await res.json();
+  if (data.ok) {
+    // Refresh all review buttons in the same row
+    const row = btn.closest('.asset-row');
+    row.querySelectorAll('.review-btn').forEach(b => {
+      b.classList.remove('preferred','rejected');
+      if (b.textContent.includes('Preferred') && status==='preferred') b.classList.add('preferred');
+      if (b.textContent.includes('Reject')    && status==='rejected')  b.classList.add('rejected');
+    });
+    toast(`Asset marked as ${status}`);
+  }
+}
+
+async function exportRender(id, format) {
+  const url  = `/api/render/${id}`;
+  const res  = await fetch(url);
+  const data = await res.json();
+  const specs = data.render_specs || [];
+
+  if (format === 'json') {
+    const blob = new Blob([JSON.stringify(specs, null, 2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `render_${id}_specs.json`;
+    a.click();
+  } else {
+    // MD — copy to clipboard
+    const md = specs.map(s => [
+      `## ${(s.variant_label||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())} Variant`,
+      `**Concept:** ${s.concept_title||''}`,
+      `**Aspect ratio:** ${s.aspect_ratio||''}  **Shot:** ${s.shot_type||''}`,
+      `### Visual Prompt\n${s.visual_prompt||''}`,
+      `### Negative Prompt\n${s.negative_prompt||''}`,
+      `### Overlay\n- Headline: ${s.headline_overlay||''}\n- Body: ${s.body_overlay||''}\n- CTA: ${s.cta_text||''}`,
+      `---`,
+    ].join('\n\n')).join('\n\n');
+
+    try {
+      await navigator.clipboard.writeText(md);
+      toast('Render specs copied to clipboard');
+    } catch {
+      // Fallback: download
+      const blob = new Blob([md], {type:'text/plain'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `render_${id}_specs.md`;
+      a.click();
+    }
+  }
+}
+</script>
+</body>
+</html>

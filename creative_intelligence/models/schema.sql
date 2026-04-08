@@ -505,3 +505,43 @@ CREATE TABLE IF NOT EXISTS production_packages (
 
 CREATE INDEX IF NOT EXISTS idx_prod_pkg_session  ON production_packages(session_id);
 CREATE INDEX IF NOT EXISTS idx_prod_pkg_approved ON production_packages(is_approved);
+
+-- ─────────────────────────────────────────────
+-- STATIC RENDERING LAYER  (v1.4)
+-- Converts StaticAdBrief production outputs into structured render specs
+-- and optional image-generation variants for internal review.
+-- ─────────────────────────────────────────────
+
+-- One row per render job (5 variant specs stored as a JSON array).
+-- source_production_output_id → production_outputs.id (output_type='static_brief')
+CREATE TABLE IF NOT EXISTS render_outputs (
+    id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_production_output_id INTEGER NOT NULL,
+    render_type                 TEXT NOT NULL DEFAULT 'static_spec',
+    render_spec_json            TEXT NOT NULL DEFAULT '[]',
+    -- status: 'spec_only' | 'images_generated' | 'images_failed'
+    status                      TEXT NOT NULL DEFAULT 'spec_only',
+    provider_name               TEXT,
+    is_approved                 INTEGER DEFAULT 0,
+    is_favorite                 INTEGER DEFAULT 0,
+    created_at                  TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_render_outputs_source
+    ON render_outputs(source_production_output_id);
+CREATE INDEX IF NOT EXISTS idx_render_outputs_status
+    ON render_outputs(status);
+
+-- One row per generated image asset (or mock placeholder path).
+-- review_status: 'pending' | 'preferred' | 'rejected'
+CREATE TABLE IF NOT EXISTS render_assets (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    render_output_id  INTEGER NOT NULL,
+    asset_type        TEXT NOT NULL DEFAULT 'image_variant',
+    variant_label     TEXT,            -- minimal|premium|direct_response|reveal|product_hero
+    asset_path_or_url TEXT,            -- local file path or remote URL (no binary blobs)
+    metadata_json     TEXT DEFAULT '{}',
+    review_status     TEXT DEFAULT 'pending',
+    created_at        TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_render_assets_output
+    ON render_assets(render_output_id);
