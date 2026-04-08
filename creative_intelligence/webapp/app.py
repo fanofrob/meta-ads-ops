@@ -1385,6 +1385,94 @@ def render_asset_notes(asset_id: int) -> Any:
         return jsonify({"error": str(exc)}), 500
 
 
+@app.post("/api/render/asset/<int:asset_id>/regenerate")
+def render_asset_regenerate(asset_id: int) -> Any:
+    """
+    Regenerate a single variant image, optionally with an edited prompt.
+
+    Body (all optional):
+      {
+        "visual_prompt":    str   — override the visual prompt
+        "negative_prompt":  str   — override the negative prompt
+        "model":            str   — Replicate model slug override
+        "extra_notes":      str   — appended to the visual prompt
+      }
+
+    Returns the new render_assets row id and asset path/URL.
+    """
+    from creative_intelligence.rendering.asset_store import save_asset
+    from creative_intelligence.rendering.providers import get_provider
+
+    try:
+        body = request.get_json(force=True) or {}
+        conn = _db()
+
+        # Fetch the source asset to get variant context
+        row = conn.execute(
+            """SELECT ra.*, ro.render_spec_json, ro.provider_name,
+                      ro.source_production_output_id
+               FROM render_assets ra
+               JOIN render_outputs ro ON ro.id = ra.render_output_id
+               WHERE ra.id = ?""",
+            (asset_id,),
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "asset not found"}), 404
+
+        d = dict(row)
+        render_output_id = d["render_output_id"]
+        variant_label    = d["variant_label"]
+
+        # Find the matching spec for this variant
+        specs = json.loads(d.get("render_spec_json") or "[]")
+        spec  = next((s for s in specs if s.get("variant_label") == variant_label), {})
+
+        # Allow caller to override prompts
+        visual_prompt    = body.get("visual_prompt")    or spec.get("visual_prompt", "")
+        negative_prompt  = body.get("negative_prompt")  or spec.get("negative_prompt", "")
+        extra_notes      = (body.get("extra_notes") or "").strip()
+        if extra_notes:
+            visual_prompt = f"{visual_prompt}. {extra_notes}"
+
+        model            = body.get("model") or d.get("provider_name") or None
+        aspect_ratio     = spec.get("aspect_ratio", "9:16")
+
+        provider = get_provider(model)
+        paths    = provider.generate(
+            prompt=visual_prompt,
+            negative_prompt=negative_prompt,
+            aspect_ratio=aspect_ratio,
+        )
+
+        if not paths:
+            conn.close()
+            return jsonify({"error": "provider returned no output"}), 500
+
+        new_asset_id = save_asset(
+            render_output_id=render_output_id,
+            variant_label=variant_label,
+            source=paths[0],
+            conn=conn,
+            metadata={
+                "concept_title":    spec.get("concept_title", ""),
+                "aspect_ratio":     aspect_ratio,
+                "edited_prompt":    True,
+                "custom_notes":     extra_notes,
+                "base_asset_id":    asset_id,
+            },
+        )
+        new_row = conn.execute(
+            "SELECT * FROM render_assets WHERE id = ?", (new_asset_id,)
+        ).fetchone()
+        conn.close()
+        return jsonify({"ok": True, "asset": dict(new_row), "new_asset_id": new_asset_id})
+
+    except Exception as exc:
+        app.logger.exception("regenerate failed")
+        return jsonify({"error": str(exc)}), 500
+
+
 @app.get("/api/render/summary/<int:render_output_id>")
 def render_summary(render_output_id: int) -> Any:
     """Return decision summary counts for all assets of a render output."""

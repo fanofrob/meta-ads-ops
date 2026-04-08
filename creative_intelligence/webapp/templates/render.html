@@ -146,7 +146,22 @@ header .subtitle { font-size: 12px; color: var(--muted); }
 
 /* Spec detail (collapsible) */
 .spec-detail { overflow: hidden; max-height: 0; transition: max-height .35s ease, padding .25s ease; padding: 0 12px; }
-.spec-detail.open { max-height: 3000px; padding: 10px 12px 14px; }
+.spec-detail.open { max-height: 6000px; padding: 10px 12px 14px; }
+
+/* Edit prompt panel */
+.edit-panel { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 8px; }
+.edit-panel label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; display: block; margin-bottom: 4px; }
+.edit-textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 8px 10px; font-size: 12px; line-height: 1.6; font-family: inherit; resize: vertical; min-height: 80px; }
+.edit-textarea:focus { outline: none; border-color: var(--accent); }
+.edit-notes { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text2); padding: 6px 10px; font-size: 12px; font-family: inherit; resize: none; height: 52px; margin-top: 6px; }
+.edit-notes:focus { outline: none; border-color: var(--accent); }
+.edit-actions { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+.btn-regen { font-size: 11px; padding: 5px 12px; border-radius: 6px; cursor: pointer; border: 1px solid var(--accent); background: transparent; color: var(--accent2); transition: all .1s; white-space: nowrap; }
+.btn-regen:hover { background: var(--accent); color: #fff; }
+.btn-regen:disabled { opacity: .4; cursor: not-allowed; }
+.btn-edit-cancel { font-size: 11px; padding: 5px 10px; border-radius: 6px; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--muted); }
+.btn-edit-cancel:hover { color: var(--text); border-color: var(--text2); }
+.regen-status { font-size: 11px; color: var(--muted); }
 .spec-section { margin-bottom: 10px; }
 .spec-section h5 { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; margin-bottom: 5px; }
 .spec-section p, .spec-section .prompt-text { font-size: 12px; line-height: 1.6; color: var(--text2); }
@@ -569,6 +584,8 @@ function buildCard(spec, asset) {
                 onclick="assetFavorite(${assetId})">★ Fav</button>
         <button class="action-btn ${readyClass}"   id="ab-ready-${assetId}"
                 onclick="assetReady(${assetId})">🧪 Ready</button>
+        <button class="action-btn" id="ab-edit-${assetId}"
+                onclick="toggleEditPanel('${specId}', ${assetId})">✏️ Edit</button>
         ${downloadHtml}
       </div>`;
   }
@@ -620,6 +637,20 @@ function buildCard(spec, asset) {
       ${spec.product_focus ? `<div class="spec-section"><h5>Product Focus</h5><p>${esc(spec.product_focus)}</p></div>` : ''}
       ${spec.text_hierarchy ? `<div class="spec-section"><h5>Text Hierarchy</h5><p>${esc(spec.text_hierarchy)}</p></div>` : ''}
       ${tags ? `<div class="spec-section"><h5>Style Tags</h5><div class="style-tags">${tags}</div></div>` : ''}
+      ${assetId ? `
+      <div class="edit-panel" id="edit-panel-${assetId}" style="display:none">
+        <label>Visual Prompt</label>
+        <textarea class="edit-textarea" id="edit-vp-${assetId}">${esc(spec.visual_prompt||'')}</textarea>
+        <label style="margin-top:8px">Negative Prompt</label>
+        <textarea class="edit-textarea" id="edit-np-${assetId}" style="min-height:56px">${esc(spec.negative_prompt||'')}</textarea>
+        <label style="margin-top:8px">Extra Notes <span style="color:var(--muted2);font-weight:400;text-transform:none">(appended to prompt)</span></label>
+        <textarea class="edit-notes" id="edit-notes-${assetId}" placeholder="e.g. warmer tones, add morning dew, darker background…"></textarea>
+        <div class="edit-actions">
+          <button class="btn-regen" id="regen-btn-${assetId}" onclick="regenAsset(${assetId})">🔄 Regenerate</button>
+          <button class="btn-edit-cancel" onclick="toggleEditPanel('${specId}', ${assetId})">Cancel</button>
+          <span class="regen-status" id="regen-status-${assetId}"></span>
+        </div>
+      </div>` : ''}
     </div>
   `;
 
@@ -816,6 +847,102 @@ async function toggleFav(id) {
     btn.classList.toggle('fav', data.is_favorite);
     loadRenderList();
     toast(data.is_favorite ? 'Saved ★' : 'Removed from saved');
+  }
+}
+
+/* ─── Edit prompt / Regenerate ─────────── */
+function toggleEditPanel(specId, assetId) {
+  // Open spec detail first
+  const specEl = document.getElementById(specId);
+  if (specEl && !specEl.classList.contains('open')) {
+    specEl.classList.add('open');
+    const btn = document.querySelector(`[onclick="toggleSpec('${specId}', this)"]`);
+    if (btn) btn.textContent = 'spec ▴';
+  }
+  const panel = document.getElementById(`edit-panel-${assetId}`);
+  if (!panel) return;
+  const isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'block';
+  const editBtn = document.getElementById(`ab-edit-${assetId}`);
+  if (editBtn) editBtn.classList.toggle('active-approve', !isOpen);
+  if (!isOpen) panel.querySelector('textarea')?.focus();
+}
+
+async function regenAsset(assetId) {
+  const btn    = document.getElementById(`regen-btn-${assetId}`);
+  const status = document.getElementById(`regen-status-${assetId}`);
+  const vp     = document.getElementById(`edit-vp-${assetId}`)?.value.trim();
+  const np     = document.getElementById(`edit-np-${assetId}`)?.value.trim();
+  const notes  = document.getElementById(`edit-notes-${assetId}`)?.value.trim();
+  const model  = getSelectedModel();
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Generating…';
+  if (status) status.textContent = '';
+
+  try {
+    const res  = await fetch(`/api/render/asset/${assetId}/regenerate`, {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body:    JSON.stringify({ visual_prompt: vp, negative_prompt: np, extra_notes: notes, model }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+
+    const newAsset = data.asset;
+    const newId    = data.new_asset_id;
+
+    // Update assetState with new asset
+    assetState[newId] = { review_status: 'pending', is_favorite: 0, is_ready_to_test: 0 };
+
+    // Swap the image in the card
+    const card = document.querySelector(`[data-asset-id="${assetId}"]`);
+    if (card) {
+      // Update card to reference new asset id
+      card.dataset.assetId = newId;
+      card.addEventListener('mouseenter', () => { currentFocusedAssetId = newId; });
+      card.addEventListener('focus',      () => { currentFocusedAssetId = newId; });
+
+      // Replace image
+      const imgWrap = card.querySelector('.card-image-wrap img');
+      if (imgWrap) imgWrap.src = `/api/render/asset/${newId}/image`;
+
+      // Update button IDs and state
+      ['approve','reject','fav','ready','edit'].forEach(action => {
+        const b = document.getElementById(`ab-${action}-${assetId}`);
+        if (b) {
+          b.id = `ab-${action}-${newId}`;
+          b.setAttribute('onclick', `asset${action.charAt(0).toUpperCase()+action.slice(1)}(${newId})`);
+        }
+      });
+      // Fix edit button onclick
+      const editBtn = document.getElementById(`ab-edit-${newId}`);
+      if (editBtn) {
+        const specId = card.querySelector('.spec-detail')?.id;
+        if (specId) editBtn.setAttribute('onclick', `toggleEditPanel('${specId}', ${newId})`);
+      }
+      // Fix regen button
+      const regenBtnNew = document.getElementById(`regen-btn-${assetId}`);
+      if (regenBtnNew) {
+        regenBtnNew.id = `regen-btn-${newId}`;
+        regenBtnNew.setAttribute('onclick', `regenAsset(${newId})`);
+      }
+      // Fix download link
+      const dlLink = card.querySelector('.download-link');
+      if (dlLink) dlLink.href = `/api/render/asset/${newId}/image`;
+
+      applyCardState(card, assetState[newId]);
+    }
+
+    if (status) status.textContent = '✓ New image ready';
+    toast('✓ Regenerated successfully');
+    updateSummaryUI();
+  } catch(e) {
+    if (status) status.textContent = 'Failed: ' + e.message;
+    toast('Regeneration failed: ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔄 Regenerate';
   }
 }
 
