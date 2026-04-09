@@ -1486,14 +1486,22 @@ def render_asset_regenerate(asset_id: int) -> Any:
         if extra_notes:
             visual_prompt = f"{visual_prompt}. {extra_notes}"
 
-        model            = body.get("model") or d.get("provider_name") or None
+        # model_slug is the Replicate owner/name slug from the UI (e.g.
+        # "google/nano-banana-pro"). get_provider expects "replicate" / provider
+        # name, NOT a model slug — pass the slug as a kwarg to generate() instead.
+        model_slug       = body.get("model") or None
+        provider_name    = d.get("provider_name") or None
         aspect_ratio     = spec.get("aspect_ratio", "9:16")
 
-        provider = get_provider(model)
+        provider = get_provider(provider_name)
+        gen_kwargs: dict = {}
+        if model_slug:
+            gen_kwargs["model"] = model_slug
         paths    = provider.generate(
             prompt=visual_prompt,
             negative_prompt=negative_prompt,
             aspect_ratio=aspect_ratio,
+            **gen_kwargs,
         )
 
         if not paths:
