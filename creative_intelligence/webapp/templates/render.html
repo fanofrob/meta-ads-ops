@@ -933,12 +933,21 @@ async function regenAsset(assetId) {
         if (readyBadge) imgWrap.appendChild(readyBadge);
       }
 
-      // Update button IDs and state
-      ['approve','reject','fav','ready','edit'].forEach(action => {
+      // Update button IDs and onclick handlers.
+      // Use explicit function names — auto-capitalising 'fav' → 'assetFav'
+      // but the real function is assetFavorite.
+      const ACTION_FN = {
+        approve: 'assetApprove',
+        reject:  'assetReject',
+        fav:     'assetFavorite',
+        ready:   'assetReady',
+        edit:    'assetEdit',
+      };
+      Object.keys(ACTION_FN).forEach(action => {
         const b = document.getElementById(`ab-${action}-${assetId}`);
         if (b) {
           b.id = `ab-${action}-${newId}`;
-          b.setAttribute('onclick', `asset${action.charAt(0).toUpperCase()+action.slice(1)}(${newId})`);
+          b.setAttribute('onclick', `${ACTION_FN[action]}(${newId})`);
         }
       });
       // Fix edit button onclick

@@ -1521,6 +1521,26 @@ def render_asset_regenerate(asset_id: int) -> Any:
                 "base_asset_id":    asset_id,
             },
         )
+
+        # Transfer collection flags (favorite / ready / approved) from the old
+        # asset to the new one, then clear them on the old asset.
+        # This keeps the new asset visible in the Collection after page reload.
+        with conn:
+            conn.execute(
+                """UPDATE render_assets
+                   SET is_favorite      = (SELECT is_favorite      FROM render_assets WHERE id = ?),
+                       is_ready_to_test = (SELECT is_ready_to_test FROM render_assets WHERE id = ?),
+                       review_status    = (SELECT review_status    FROM render_assets WHERE id = ?)
+                   WHERE id = ?""",
+                (asset_id, asset_id, asset_id, new_asset_id),
+            )
+            conn.execute(
+                """UPDATE render_assets
+                   SET is_favorite = 0, is_ready_to_test = 0, review_status = 'pending'
+                   WHERE id = ?""",
+                (asset_id,),
+            )
+
         new_row = conn.execute(
             "SELECT * FROM render_assets WHERE id = ?", (new_asset_id,)
         ).fetchone()
