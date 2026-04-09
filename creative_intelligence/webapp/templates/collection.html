@@ -71,6 +71,10 @@ header h1 { font-size: 15px; font-weight: 700; letter-spacing: -.3px; }
 .card-image-wrap { position: relative; background: var(--surface2); border-bottom: 1px solid var(--border); overflow: hidden; }
 .card-image { width: 100%; display: block; object-fit: contain; max-height: 320px; }
 .card-image-placeholder { padding: 40px 16px; text-align: center; color: var(--muted); font-size: 11px; }
+.card-image-expired { padding: 24px 16px; text-align: center; color: var(--muted); font-size: 11px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.btn-refresh-img { font-size: 11px; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text2); cursor: pointer; }
+.btn-refresh-img:hover { border-color: var(--accent); color: var(--text); }
+.btn-refresh-img:disabled { opacity: .5; cursor: wait; }
 
 .badge-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px 4px; }
 .variant-badge { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 10px; text-transform: uppercase; letter-spacing: .5px; }
@@ -242,9 +246,9 @@ function buildCard(a) {
   // Image
   const imgSrc = `/api/render/asset/${a.asset_id}/image`;
   const imgHtml = `
-    <div class="card-image-wrap">
+    <div class="card-image-wrap" data-asset-id="${a.asset_id}">
       <img class="card-image" src="${imgSrc}" alt="${esc(variantLabel)}" loading="lazy"
-           onerror="this.closest('.card-image-wrap').innerHTML='<div class=card-image-placeholder>Image unavailable</div>'">
+           onerror="collectionImgError(this, ${a.asset_id}, ${a.render_output_id})">
     </div>`;
 
   // Status icons
@@ -274,6 +278,48 @@ function buildCard(a) {
     </div>
   `;
   return card;
+}
+
+// Called by onerror on collection card images.
+// Shows an "Expired — Re-generate" button instead of just a dead placeholder.
+function collectionImgError(imgEl, assetId, renderOutputId) {
+  const wrap = imgEl.closest('.card-image-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = `
+    <div class="card-image-expired">
+      <span>Image expired</span>
+      <button class="btn-refresh-img" onclick="refreshCollectionImg(this, ${assetId}, ${renderOutputId})">
+        ↻ Re-generate
+      </button>
+    </div>`;
+}
+
+async function refreshCollectionImg(btn, assetId, renderOutputId) {
+  btn.disabled = true;
+  btn.textContent = 'Generating…';
+  try {
+    const res = await fetch(`/api/render/asset/${assetId}/regenerate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.new_asset_id) throw new Error(data.error || 'failed');
+    const newId = data.new_asset_id;
+    const wrap  = btn.closest('.card-image-wrap');
+    if (wrap) {
+      wrap.innerHTML = `<img class="card-image" src="/api/render/asset/${newId}/image"
+        loading="lazy"
+        onerror="collectionImgError(this, ${newId}, ${renderOutputId})">`;
+      // Also update the download link in the same card
+      const dlLink = wrap.closest('.col-card')?.querySelector('.dl-link');
+      if (dlLink) dlLink.href = `/api/render/asset/${newId}/image`;
+    }
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '↻ Re-generate';
+    btn.title = String(e);
+  }
 }
 </script>
 </body>
