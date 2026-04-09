@@ -4,7 +4,7 @@ Asset storage helpers for the static rendering layer.
 Handles:
 - Local render output directory management
 - Saving asset paths/URLs to the render_assets table
-- HTTP URLs stored directly (no local download — works on ephemeral filesystems)
+- HTTP URLs downloaded to the persistent volume for long-term availability
 
 Public API
 ----------
@@ -57,11 +57,11 @@ def save_asset(
     """
     Persist an asset reference to render_assets.
 
-    For real URLs  → stores the URL directly in asset_path_or_url.
-                     No local download — avoids ephemeral-filesystem loss on
-                     container restarts / redeploys (e.g. Railway).
-                     The /api/render/asset/<id>/image route redirects the
-                     browser to this URL, so images load directly from CDN.
+    For real URLs  → downloads to the persistent volume (Railway Volume /
+                     CI_RENDER_OUTPUT_DIR).  CDN URL kept in metadata["cdn_url"]
+                     as a fallback.  If download fails or yields a tiny file,
+                     the CDN URL is stored directly and the /image route will
+                     redirect the browser to it.
     For file://    → copies to local render dir (provider wrote raw bytes).
     For mock://    → stores the path string as-is (no download).
 
@@ -81,12 +81,34 @@ def save_asset(
         # Mock path — store as-is, no download
         asset_path = source
     elif source.startswith("https://") or source.startswith("http://"):
-        # Store URL directly — the /image route will redirect the browser.
-        # This is reliable on ephemeral filesystems (Railway, Fly, etc.).
-        asset_path = source
+        # Download to the persistent volume so the image survives CDN URL
+        # expiry (Replicate URLs expire after ~24 h).  Store the original CDN
+        # URL in metadata as a fallback in case the local file is ever missing.
         if metadata is None:
             metadata = {}
-        metadata["cdn_url"] = source  # explicit record for future use
+        metadata["cdn_url"] = source  # always preserve original URL
+
+        out_dir = get_render_output_dir() / str(render_output_id)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        # Use a counter suffix so concurrent regenerations don't overwrite each
+        # other before the DB row is committed.
+        import time as _time
+        dest = out_dir / f"{variant_label}_{int(_time.time())}.png"
+        try:
+            _download_url(source, dest)
+            # Sanity-check: a real AI image is at least ~10 KB.
+            if dest.exists() and dest.stat().st_size >= 10_000:
+                asset_path = str(dest)
+            else:
+                # Tiny / corrupt file — fall back to CDN redirect.
+                if dest.exists():
+                    dest.unlink(missing_ok=True)
+                asset_path = source
+        except Exception:
+            # Download failed — use CDN URL directly; /image will redirect.
+            if dest.exists():
+                dest.unlink(missing_ok=True)
+            asset_path = source
     elif source.startswith("file://"):
         # Temp file written by provider for models that return raw bytes.
         # Copy to the render output dir so it survives for the current process.
