@@ -633,9 +633,12 @@ function applyUrlParams() {
   }
   try { await loadList(); } catch(e) { console.warn('loadList', e); }
 
-  // Auto-generate if concept came from URL
+  // Auto-generate if concept came from URL (only once — strip autogen so reloads don't re-trigger)
   const params = new URLSearchParams(window.location.search);
   if (params.get('concept') && params.get('autogen') === '1') {
+    params.delete('autogen');
+    const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+    history.replaceState(null, '', newUrl);
     generateStoryboard();
   }
 
