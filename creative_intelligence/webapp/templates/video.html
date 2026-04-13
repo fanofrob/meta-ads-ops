@@ -633,12 +633,17 @@ function applyUrlParams() {
   }
   try { await loadList(); } catch(e) { console.warn('loadList', e); }
 
-  // Auto-generate if concept came from URL (only once — strip autogen so reloads don't re-trigger)
+  // Auto-generate if concept came from URL — fire ONCE only.
+  // Two guards: remove autogen from URL + sessionStorage flag so reloads never re-trigger.
   const params = new URLSearchParams(window.location.search);
-  if (params.get('concept') && params.get('autogen') === '1') {
+  const concept = params.get('concept') || '';
+  const autogenFlag = concept ? ('autogen_done_' + concept.slice(0, 30)) : null;
+  const shouldAutogen = concept && params.get('autogen') === '1'
+                        && autogenFlag && !sessionStorage.getItem(autogenFlag);
+  if (shouldAutogen) {
+    if (autogenFlag) sessionStorage.setItem(autogenFlag, '1');
     params.delete('autogen');
-    const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
-    history.replaceState(null, '', newUrl);
+    history.replaceState(null, '', window.location.pathname + (params.toString() ? '?' + params.toString() : ''));
     generateStoryboard();
   }
 

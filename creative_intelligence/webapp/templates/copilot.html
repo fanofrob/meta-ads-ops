@@ -556,6 +556,23 @@ async function loadSession(sid) {
 
     clearFeed();
     r.iterations.forEach(it => appendCard(it));
+
+    // Restore production output cards for this session
+    if (r.production_outputs && r.production_outputs.length) {
+      r.production_outputs.forEach(po => {
+        // Build a result object that appendProductionCard expects
+        const outputData = po.output_data || {};
+        appendProductionCard({
+          id:          po.id,
+          output_type: po.output_type,
+          output_json: po.output_json,
+          is_approved: po.is_approved,
+          is_favorite: po.is_favorite,
+          ...outputData,
+        });
+      });
+    }
+
     markActiveSession();
     toast(`Loaded session (${r.iterations.length} concepts)`);
   } catch(e) {
@@ -704,6 +721,7 @@ function appendCard(it) {
           ? `<span class="card-tag">${[meta.hook_type, meta.angle].filter(t => t && t !== 'unknown').join(' × ')}</span>`
           : (meta.pattern_name ? `<span class="card-tag">${esc(meta.pattern_name)}</span>` : '')
         }
+        ${meta.hu_tag ? `<span class="card-tag" style="color:#a78bfa;border-color:#4c1d95;background:#1e0a40" title="Hook University formula">${esc(meta.hu_tag)}</span>` : ''}
         <div class="card-actions">
           <button class="card-btn star${it.is_favorite ? ' active' : ''}" onclick="toggleFavorite(${it.id}, this)" title="Save as favourite">★</button>
           <button class="card-btn use-btn" data-text="${esc(it.concept_text)}" data-iter="${it.id}">Use this ↑</button>

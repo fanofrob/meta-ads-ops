@@ -535,6 +535,7 @@ def copilot_action() -> Any:
         )
 
         results     = action_result["results"]
+        hu_tags     = action_result.get("hu_tags", [])   # parallel list of HU formula tags
         is_rich     = action_type in ("ugc_concepts", "static_concepts", "script", "creator_brief")
         iterations: list[dict[str, Any]] = []
 
@@ -542,12 +543,16 @@ def copilot_action() -> Any:
                          "curiosity", "mainstream", "adapt_audience"}
 
         with conn:
-            for item in results:
+            for idx, item in enumerate(results):
                 if action_type in _HOOK_ACTIONS:
                     # Plain hook string — score it
                     hook_text = item if isinstance(item, str) else str(item)
                     sc = score_concept(hook_text, conn)
                     predicted = sc["overall"]
+                    # Attach Hook University tag if present
+                    hu_tag = hu_tags[idx] if idx < len(hu_tags) else ""
+                    if hu_tag:
+                        sc["hu_tag"] = hu_tag
                     meta = json.dumps(sc)
                     concept_text = hook_text
                 else:
@@ -692,6 +697,17 @@ def copilot_session_history(session_id: str) -> Any:
             " ORDER BY i.created_at ASC",
             (session_id,),
         ).fetchall()
+
+        # Also load production outputs for this session
+        prod_rows = conn.execute(
+            """SELECT po.id, po.output_type, po.concept_text, po.output_json,
+                      po.is_approved, po.is_favorite, po.created_at
+               FROM production_outputs po
+               WHERE po.session_id = ?
+               ORDER BY po.created_at ASC""",
+            (session_id,),
+        ).fetchall()
+
         conn.close()
 
         iterations = []
@@ -703,7 +719,17 @@ def copilot_session_history(session_id: str) -> Any:
                 d["metadata"] = {}
             iterations.append(d)
 
-        return jsonify({"session": dict(sess), "iterations": iterations})
+        production_outputs = []
+        for row in prod_rows:
+            d = dict(row)
+            try:
+                d["output_data"] = json.loads(d.get("output_json") or "{}")
+            except Exception:
+                d["output_data"] = {}
+            production_outputs.append(d)
+
+        return jsonify({"session": dict(sess), "iterations": iterations,
+                        "production_outputs": production_outputs})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
