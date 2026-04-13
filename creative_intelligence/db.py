@@ -53,6 +53,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "ALTER TABLE render_assets ADD COLUMN is_ready_to_test INTEGER DEFAULT 0",
         "ALTER TABLE render_assets ADD COLUMN review_notes TEXT DEFAULT ''",
         "ALTER TABLE render_assets ADD COLUMN reviewed_at TEXT",
+        # render_outputs: store generation error for visibility without log access
+        "ALTER TABLE render_outputs ADD COLUMN error_message TEXT",
     ]
     for stmt in migrations:
         try:

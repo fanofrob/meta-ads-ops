@@ -1129,6 +1129,18 @@ def render_generate() -> Any:
         return jsonify({"error": str(exc)}), 404
     except Exception as exc:
         app.logger.exception("render/generate failed")
+        # Store the error message in render_outputs so it's visible without logs
+        try:
+            _ec = _db()
+            _ec.execute(
+                """UPDATE render_outputs SET error_message = ? WHERE id = (
+                       SELECT MAX(id) FROM render_outputs WHERE provider_name IS NOT NULL
+                   )""",
+                (str(exc)[:500],),
+            )
+            _ec.commit(); _ec.close()
+        except Exception:
+            pass
         return jsonify({"error": str(exc)}), 500
 
 
@@ -1647,6 +1659,148 @@ def collection_api() -> Any:
         conn.close()
         return jsonify([dict(r) for r in rows])
     except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ─────────────────────────────────────────────
+# Storage / maintenance
+# ─────────────────────────────────────────────
+
+@app.get("/api/admin/storage")
+def admin_storage_info() -> Any:
+    """Return disk usage and DB size. No auth required (read-only)."""
+    import shutil as _shutil
+    from creative_intelligence.rendering.asset_store import get_render_output_dir
+    from creative_intelligence import config as _cfg
+    try:
+        render_dir = get_render_output_dir()
+        total_b, used_b, free_b = _shutil.disk_usage(str(render_dir))
+        # Count image files
+        img_files = list(render_dir.rglob("*"))
+        img_files = [f for f in img_files if f.is_file()]
+        img_bytes  = sum(f.stat().st_size for f in img_files)
+        # DB size
+        db_path = Path(_cfg.CI_DB_PATH) if _cfg.CI_DB_PATH else None
+        db_bytes = db_path.stat().st_size if db_path and db_path.exists() else 0
+        return jsonify({
+            "disk_total_mb":  round(total_b / 1_048_576),
+            "disk_used_mb":   round(used_b  / 1_048_576),
+            "disk_free_mb":   round(free_b  / 1_048_576),
+            "disk_used_pct":  round(used_b / total_b * 100, 1),
+            "images_count":   len(img_files),
+            "images_mb":      round(img_bytes / 1_048_576, 1),
+            "db_mb":          round(db_bytes  / 1_048_576, 1),
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/admin/cleanup")
+def admin_cleanup() -> Any:
+    """
+    Free up disk space while keeping every protected image.
+
+    SAFE TO DELETE — image files for render_outputs where:
+      - No asset has is_favorite=1, review_status='approved', or is_ready_to_test=1
+      - AND the render_output was created more than `keep_days` days ago (default 7)
+      - OR the file is corrupt (< 2 KB)
+
+    NEVER DELETED — any file whose asset_id is protected (fav / approved / ready).
+    DB rows are never deleted; only files on disk.
+
+    Body (all optional): { keep_days: int (default 7) }
+    """
+    import shutil as _shutil
+    from creative_intelligence.rendering.asset_store import get_render_output_dir
+    from creative_intelligence import config as _cfg
+    try:
+        body      = request.get_json(force=True, silent=True) or {}
+        keep_days = int(body.get("keep_days", 7))
+        conn      = _db()
+
+        # 1. Find all asset file paths that ARE protected
+        protected_paths = set()
+        prot_rows = conn.execute(
+            """SELECT ra.asset_path_or_url
+               FROM render_assets ra
+               WHERE ra.is_favorite = 1
+                  OR ra.review_status = 'approved'
+                  OR ra.is_ready_to_test = 1"""
+        ).fetchall()
+        for r in prot_rows:
+            p = r["asset_path_or_url"] or ""
+            if p and not p.startswith("http") and not p.startswith("mock://"):
+                protected_paths.add(str(Path(p).resolve()))
+
+        # 2. Collect ALL image files on disk
+        render_dir = get_render_output_dir()
+        all_files  = [f for f in render_dir.rglob("*") if f.is_file()]
+
+        deleted_files, deleted_bytes, kept_files = [], 0, 0
+        corrupt_deleted = 0
+
+        import time as _time
+        cutoff = _time.time() - keep_days * 86_400
+
+        for f in all_files:
+            resolved = str(f.resolve())
+            fsize    = f.stat().st_size
+
+            # Always keep protected files
+            if resolved in protected_paths:
+                kept_files += 1
+                continue
+
+            # Delete corrupt files (< 2 KB — HTML error pages etc.) immediately
+            if fsize < 2048:
+                f.unlink(missing_ok=True)
+                corrupt_deleted += 1
+                deleted_bytes += fsize
+                deleted_files.append(str(f))
+                continue
+
+            # Delete unprotected files older than keep_days
+            if f.stat().st_mtime < cutoff:
+                deleted_bytes += fsize
+                f.unlink(missing_ok=True)
+                deleted_files.append(str(f))
+            else:
+                kept_files += 1
+
+        # 3. Remove empty directories
+        for d in sorted(render_dir.rglob("*"), reverse=True):
+            if d.is_dir():
+                try:
+                    d.rmdir()   # only succeeds if empty
+                except OSError:
+                    pass
+
+        # 4. VACUUM the SQLite database to reclaim space from deleted rows
+        db_path = Path(_cfg.CI_DB_PATH) if _cfg.CI_DB_PATH else None
+        db_before = db_path.stat().st_size if db_path and db_path.exists() else 0
+        try:
+            conn.execute("VACUUM")
+            conn.commit()
+        except Exception:
+            pass
+        db_after = db_path.stat().st_size if db_path and db_path.exists() else 0
+        conn.close()
+
+        total_b, used_b, free_b = _shutil.disk_usage(str(render_dir))
+        return jsonify({
+            "ok":               True,
+            "files_deleted":    len(deleted_files),
+            "corrupt_deleted":  corrupt_deleted,
+            "files_kept":       kept_files,
+            "freed_mb":         round(deleted_bytes / 1_048_576, 1),
+            "db_vacuumed_mb":   round((db_before - db_after) / 1_048_576, 1),
+            "disk_free_mb_now": round(free_b / 1_048_576),
+            "disk_used_pct_now":round(used_b / total_b * 100, 1),
+            "keep_days":        keep_days,
+            "protected_count":  len(protected_paths),
+        })
+    except Exception as exc:
+        app.logger.exception("cleanup failed")
         return jsonify({"error": str(exc)}), 500
 
 
