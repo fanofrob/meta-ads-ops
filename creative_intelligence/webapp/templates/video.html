@@ -242,16 +242,26 @@ function cleanLabel(raw) {
 }
 
 async function loadProducts() {
+  const sel = document.getElementById('productSelect');
   try {
-    const products = await api('/api/products');
-    const sel = document.getElementById('productSelect');
+    const r = await fetch('/api/products');
+    const products = await r.json();
+    if (!Array.isArray(products)) throw new Error('bad response');
     products.forEach(p => {
       const opt = document.createElement('option');
       opt.value = p.id;
       opt.textContent = p.display_name || cleanLabel(p.label || p.name);
       sel.appendChild(opt);
     });
-  } catch(e) { console.warn('Could not load products', e); }
+  } catch(e) {
+    // Show a visible error option so user knows products didn't load
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '⚠ Could not load products';
+    opt.disabled = true;
+    sel.appendChild(opt);
+    console.warn('Could not load products', e);
+  }
 }
 
 /* ── Load storyboard list ── */
@@ -462,13 +472,13 @@ async function generateFrames(sbId) {
 /* ── Read concept/product from URL params (from Copilot → Video) ── */
 function applyUrlParams() {
   const params = new URLSearchParams(window.location.search);
-  const concept    = params.get('concept');
-  const productId  = params.get('product_id');
+  // URLSearchParams.get() already URL-decodes — do NOT call decodeURIComponent again
+  const concept   = params.get('concept') || '';
+  const productId = params.get('product_id') || '';
   if (concept) {
-    document.getElementById('conceptInput').value = decodeURIComponent(concept);
+    document.getElementById('conceptInput').value = concept;
   }
   if (productId) {
-    // Will be applied after products load
     window._presetProductId = productId;
   }
 }
@@ -481,7 +491,7 @@ function applyUrlParams() {
   if (window._presetProductId) {
     document.getElementById('productSelect').value = window._presetProductId;
   }
-  await loadList();
+  try { await loadList(); } catch(e) { console.warn('loadList', e); }
 
   // Auto-generate if concept came from URL
   const params = new URLSearchParams(window.location.search);

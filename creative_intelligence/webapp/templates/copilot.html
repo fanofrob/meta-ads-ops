@@ -860,8 +860,14 @@ function toast(msg, isErr) {
 /* ── Production Handoff ─────────────────────────────── */
 
 function goVideoStoryboard() {
-  const concept = (document.getElementById('concept').value || '').trim();
-  if (!concept) { toast('Enter a concept first', true); return; }
+  // Read from textarea OR from the displayed concept text at top of action bar
+  const conceptEl = document.getElementById('concept');
+  const concept = (conceptEl ? conceptEl.value : '').trim();
+  if (!concept) {
+    toast('Type or paste a concept into the box above first, then click Video Storyboard', true);
+    if (conceptEl) conceptEl.focus();
+    return;
+  }
   const params = new URLSearchParams({
     concept:    concept,
     product_id: productId || '',
