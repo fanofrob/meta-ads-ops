@@ -502,7 +502,7 @@ function renderStoryboard(sb, detail) {
       ${scenes.map(s => renderScene(s, sb.id || detail.storyboard_id)).join('')}
     </div>
 
-    ${ugc && Object.keys(ugc).length ? renderScript(ugc) : ''}
+    ${ugc && Object.keys(ugc).length ? renderScript(ugc, vtype) : ''}
 
     <div class="video-output-section" id="videoOutputSection">
       <div class="video-output-header">
@@ -569,33 +569,70 @@ function renderScene(s, sbId) {
     </div>`;
 }
 
-function renderScript(ugc) {
+// Script section labels and title per video type
+const _SCRIPT_CONFIG = {
+  ugc: {
+    icon:       '🎤',
+    title:      'UGC Script',
+    opening:    'Opening Line (say this to camera)',
+    points:     'Talking Points',
+    actions:    'Demo Actions (show on camera)',
+    cta:        'Closing CTA (say this to camera)',
+  },
+  farm_origin: {
+    icon:       '📖',
+    title:      'Narration / Voiceover',
+    opening:    'Opening Narration',
+    points:     'Story Beats',
+    actions:    'Visual Cues',
+    cta:        'Closing Line',
+  },
+  product_hero: {
+    icon:       '✏️',
+    title:      'On-Screen Copy / Voiceover',
+    opening:    'Opening Text / Voiceover',
+    points:     'Key Copy Points',
+    actions:    'Visual Focus Moments',
+    cta:        'CTA Copy',
+  },
+  comparison_reveal: {
+    icon:       '🔄',
+    title:      'Script / Voiceover',
+    opening:    'Hook (contrast opener)',
+    points:     'Comparison Points',
+    actions:    'Visual Reveal Beats',
+    cta:        'Closing CTA',
+  },
+};
+
+function renderScript(ugc, vtype) {
+  const cfg         = _SCRIPT_CONFIG[vtype] || _SCRIPT_CONFIG.ugc;
   const talkingPoints = ugc.talking_points || [];
   const demoActions   = ugc.demo_actions   || [];
 
   return `
     <div class="script-section">
       <div class="script-header">
-        <span>🎤</span>
-        <h2>UGC Script</h2>
+        <span>${cfg.icon}</span>
+        <h2>${cfg.title}</h2>
       </div>
       <div class="script-body">
         <div class="script-block">
-          <label>Opening Line (say this to camera)</label>
+          <label>${cfg.opening}</label>
           <p class="opening-line">"${esc(ugc.opening_line || '')}"</p>
         </div>
         ${talkingPoints.length ? `
         <div class="script-block">
-          <label>Talking Points</label>
+          <label>${cfg.points}</label>
           <ul>${talkingPoints.map(p => `<li>${esc(p)}</li>`).join('')}</ul>
         </div>` : ''}
         ${demoActions.length ? `
         <div class="script-block">
-          <label>Demo Actions (show on camera)</label>
+          <label>${cfg.actions}</label>
           <ul>${demoActions.map(a => `<li>${esc(a)}</li>`).join('')}</ul>
         </div>` : ''}
         <div class="script-block">
-          <label>Closing CTA (say this to camera)</label>
+          <label>${cfg.cta}</label>
           <p class="cta-line">"${esc(ugc.closing_cta || '')}"</p>
         </div>
       </div>
