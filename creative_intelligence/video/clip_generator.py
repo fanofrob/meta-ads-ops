@@ -145,6 +145,7 @@ def generate_scene_clip(
     )
 
     is_mock = clip_path and clip_path.startswith("mock://")
+    is_url  = clip_path and clip_path.startswith(("http://", "https://"))
     status = "ok" if clip_path else "error"
     error_msg = None if clip_path else "Provider returned no clip"
 
@@ -157,8 +158,8 @@ def generate_scene_clip(
             provider=provider.name,
             model=getattr(provider, "_model", provider.name),
             prompt=prompt,
-            clip_local_path=None if is_mock else clip_path,
-            clip_url=None,
+            clip_local_path=None if (is_mock or is_url) else clip_path,
+            clip_url=clip_path if is_url else None,
             duration_seconds=duration,
             aspect_ratio=aspect_ratio,
             status=status,
@@ -312,8 +313,9 @@ def generate_storyboard_clips(
     if not dry_run:
         for r in results:
             if r.get("status") in ("ok", "error") and r.get("_scene"):
-                scene   = r["_scene"]
-                is_mock = r["clip_path"] and r["clip_path"].startswith("mock://")
+                clip_path = r["clip_path"]
+                is_mock   = clip_path and clip_path.startswith("mock://")
+                is_url    = clip_path and clip_path.startswith(("http://", "https://"))
                 _upsert_scene_clip(
                     conn=conn,
                     storyboard_id=storyboard_id,
@@ -322,8 +324,8 @@ def generate_storyboard_clips(
                     provider=provider.name,
                     model=getattr(provider, "_model", provider.name),
                     prompt=r["prompt"] or "",
-                    clip_local_path=None if is_mock else r["clip_path"],
-                    clip_url=None,
+                    clip_local_path=None if (is_mock or is_url) else clip_path,
+                    clip_url=clip_path if is_url else None,
                     duration_seconds=r.get("_duration", 5.0),
                     aspect_ratio=aspect_ratio,
                     status=r["status"],
