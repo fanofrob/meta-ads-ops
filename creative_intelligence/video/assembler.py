@@ -309,6 +309,161 @@ def _make_scene_frames(
     return frames
 
 
+# ─────────────────────────────────────────────
+# AI image-to-video helpers
+# ─────────────────────────────────────────────
+
+def _image_to_data_uri(path_or_url: str) -> str | None:
+    """Read an image (local path, file://, or http URL) and return a base64 data URI.
+
+    Returns None for mock:// paths or on any read error.
+    """
+    import base64, urllib.request
+    try:
+        if path_or_url.startswith("mock://"):
+            return None
+        if path_or_url.startswith("file://"):
+            path_or_url = path_or_url[7:]
+        if path_or_url.startswith(("http://", "https://")):
+            with urllib.request.urlopen(path_or_url, timeout=30) as r:
+                data = r.read()
+                ct = r.headers.get("Content-Type", "image/jpeg")
+                mime = ct.split(";")[0].strip()
+        else:
+            with open(path_or_url, "rb") as f:
+                data = f.read()
+            mime = "image/png" if data[:4] == b"\x89PNG" else "image/jpeg"
+        return f"data:{mime};base64,{base64.b64encode(data).decode()}"
+    except Exception:
+        return None
+
+
+def _download_video_clip(url: str, dest: Path) -> bool:
+    """Download a video URL to dest path. Returns True on success."""
+    import urllib.request
+    try:
+        urllib.request.urlretrieve(url, str(dest))
+        return dest.exists() and dest.stat().st_size > 0
+    except Exception:
+        return False
+
+
+def _animate_scene(
+    img_path: str,
+    prompt: str,
+    motion_model: str,
+    api_key: str,
+    tmp_dir: Path,
+    scene_id: int,
+) -> Path | None:
+    """Call a Replicate image-to-video model for one scene.
+
+    Supports:
+      minimax/video-01-live           — first_frame_image + prompt → ~6s HD clip
+      stability-ai/stable-video-*    — image → ~4s clip
+      wan-video/*                    — image + prompt → ~5s clip
+      any other model                — tries common input keys, skips unknowns
+
+    Returns local Path to downloaded MP4, or None on any failure.
+    """
+    import replicate
+
+    img_input = (
+        img_path
+        if img_path.startswith(("http://", "https://"))
+        else _image_to_data_uri(img_path)
+    )
+    if not img_input:
+        return None
+
+    client = replicate.Client(api_token=api_key)
+    model_lower = motion_model.lower()
+
+    try:
+        if "minimax" in model_lower or "video-01" in model_lower:
+            output = client.run(
+                motion_model,
+                input={"prompt": prompt, "first_frame_image": img_input},
+            )
+        elif "stable-video" in model_lower or "svd" in model_lower:
+            output = client.run(
+                motion_model,
+                input={
+                    "image": img_input,
+                    "video_length": "25_frames_with_svd_xt",
+                    "fps": 8,
+                    "motion_bucket_id": 100,
+                    "cond_aug": 0.02,
+                },
+            )
+        elif "wan" in model_lower:
+            output = client.run(
+                motion_model,
+                input={"image": img_input, "prompt": prompt},
+            )
+        else:
+            # Generic: try all common keys; models ignore unknown ones
+            output = client.run(
+                motion_model,
+                input={"image": img_input, "prompt": prompt,
+                       "first_frame_image": img_input},
+            )
+    except Exception:
+        return None
+
+    # Extract URL from varied output shapes
+    video_url: str | None = None
+    if isinstance(output, str) and output.startswith("http"):
+        video_url = output
+    elif hasattr(output, "url"):
+        video_url = str(output.url)
+    elif isinstance(output, (list, tuple)) and output:
+        item = output[0]
+        video_url = str(item) if isinstance(item, str) else (
+            item.url if hasattr(item, "url") else str(item)
+        )
+
+    if not video_url:
+        return None
+
+    dest = tmp_dir / f"scene_{scene_id}_ai.mp4"
+    return dest if _download_video_clip(video_url, dest) else None
+
+
+def _animate_scenes_parallel(
+    scenes_with_paths: list[tuple[dict, str]],   # (scene_row, img_path)
+    motion_model: str,
+    api_key: str,
+    tmp_dir: Path,
+    max_workers: int = 4,
+) -> dict[int, Path]:
+    """Animate multiple scenes in parallel. Returns {scene_index: clip_path}."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    results: dict[int, Path] = {}
+
+    def _worker(scene: dict, img_path: str) -> tuple[int, Path | None]:
+        idx = scene.get("scene_index", scene.get("id", 0))
+        prompt = scene.get("visual_description", "")
+        clip = _animate_scene(img_path, prompt, motion_model, api_key, tmp_dir, idx)
+        return idx, clip
+
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = {
+            ex.submit(_worker, scene, path): scene
+            for scene, path in scenes_with_paths
+        }
+        for fut in as_completed(futures):
+            try:
+                idx, clip = fut.result()
+                if clip:
+                    results[idx] = clip
+            except Exception:
+                pass
+
+    return results
+
+
 def _resolve_image_path(asset_path_or_url: str) -> str | None:
     """
     Resolve an asset_path_or_url to a local file path.
@@ -382,6 +537,7 @@ def assemble_video(
     fps: int = 24,
     add_text_overlays: bool = True,
     text_overlay_style: str | None = None,   # None → infer from video_type
+    motion_mode: str = "ken_burns",          # "ken_burns" | "ai_video"
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """
@@ -397,6 +553,7 @@ def assemble_video(
     fps             : Output frames per second (default 24)
     add_text_overlays: Draw scene text_overlay on each clip
     text_overlay_style: Override style from video_type config
+    motion_mode     : "ken_burns" (zoom/pan on stills) | "ai_video" (Replicate i2v)
     dry_run         : If True, do not write MP4 or DB row
 
     Returns
@@ -462,38 +619,118 @@ def assemble_video(
     total_duration: float = 0.0
     scenes_used: int = 0
 
+    # Resolve all image paths first
+    scene_paths: list[tuple[dict, str]] = []
     for scene in scenes:
         asset_url = scene.get("asset_path_or_url") or ""
         img_path = _resolve_image_path(asset_url)
+        if img_path:
+            scene_paths.append((scene, img_path))
 
-        if not img_path:
-            # No frame for this scene — skip
-            continue
+    if not scene_paths:
+        return {"output_id": None, "output_path": None, "duration": 0,
+                "scene_count": scene_count, "scenes_used": 0,
+                "status": "no_frames",
+                "error": "No scene frames available — generate frames first"}
 
-        duration = float(scene.get("duration_seconds") or cfg.avg_scene_seconds)
-        purpose  = (scene.get("purpose") or "demo").lower()
-        movement = scene.get("movement") or cfg.ken_burns_map.get(purpose, cfg.default_movement)
-        text     = scene.get("text_overlay") or ""
+    # ── AI video mode: animate each frame into a real video clip ─────
+    import tempfile
+    tmp_dir = Path(tempfile.mkdtemp(prefix="ci_aivideo_"))
 
-        try:
-            frame_arrays = _make_scene_frames(img_path, duration, movement, target_w, target_h, fps)
-        except Exception as exc:
-            # Skip unreadable frames rather than abort
-            continue
+    if motion_mode == "ai_video":
+        from creative_intelligence import config as _cfg
+        api_key = _cfg.CI_REPLICATE_API_KEY
+        motion_model = _cfg.CI_VIDEO_MOTION_MODEL
 
-        if add_text_overlays and text:
-            frame_arrays = _draw_text_on_frames(frame_arrays, text, overlay_style, target_w, target_h)
+        if not api_key:
+            return {"output_id": None, "output_path": None, "duration": 0,
+                    "scene_count": scene_count, "scenes_used": 0,
+                    "status": "error",
+                    "error": "CI_REPLICATE_API_KEY not set — cannot generate AI video"}
 
-        clip = ImageSequenceClip(frame_arrays, fps=fps)
-        clips.append(clip)
-        total_duration += duration
-        scenes_used += 1
+        ai_clips: dict[int, Path] = _animate_scenes_parallel(
+            scene_paths, motion_model, api_key, tmp_dir
+        )
+
+        for scene, img_path in scene_paths:
+            idx = scene.get("scene_index", scene.get("id", 0))
+            clip_path = ai_clips.get(idx)
+            duration = float(scene.get("duration_seconds") or cfg.avg_scene_seconds)
+            text = scene.get("text_overlay") or ""
+
+            if clip_path:
+                # Load AI-generated clip and resize to target dimensions
+                try:
+                    from moviepy.editor import VideoFileClip
+                    vc = VideoFileClip(str(clip_path))
+                    # Resize to target (maintain aspect, crop/pad to exact size)
+                    vc_resized = vc.resize((target_w, target_h))
+                    if add_text_overlays and text:
+                        # Draw text on each frame via PIL then rebuild clip
+                        raw_frames = [
+                            vc_resized.get_frame(t)
+                            for t in [i / fps for i in range(int(vc_resized.duration * fps))]
+                        ]
+                        raw_frames = _draw_text_on_frames(
+                            raw_frames, text, overlay_style, target_w, target_h
+                        )
+                        clip = ImageSequenceClip(raw_frames, fps=fps)
+                        vc_resized.close()
+                    else:
+                        clip = vc_resized
+                    clips.append(clip)
+                    total_duration += vc.duration
+                    scenes_used += 1
+                    vc.close()
+                except Exception:
+                    # AI clip failed to load — fall back to Ken Burns for this scene
+                    pass
+
+            if not clip_path or len(clips) < scenes_used + (1 if clip_path else 0):
+                # Fallback: Ken Burns for scenes where AI generation failed
+                try:
+                    frame_arrays = _make_scene_frames(
+                        img_path, duration,
+                        scene.get("movement") or cfg.ken_burns_map.get(
+                            (scene.get("purpose") or "demo").lower(), cfg.default_movement
+                        ),
+                        target_w, target_h, fps
+                    )
+                    if add_text_overlays and text:
+                        frame_arrays = _draw_text_on_frames(
+                            frame_arrays, text, overlay_style, target_w, target_h
+                        )
+                    clips.append(ImageSequenceClip(frame_arrays, fps=fps))
+                    total_duration += duration
+                    scenes_used += 1
+                except Exception:
+                    pass
+
+    else:
+        # ── Ken Burns mode (default) ──────────────────────────────────
+        for scene, img_path in scene_paths:
+            duration = float(scene.get("duration_seconds") or cfg.avg_scene_seconds)
+            purpose  = (scene.get("purpose") or "demo").lower()
+            movement = scene.get("movement") or cfg.ken_burns_map.get(purpose, cfg.default_movement)
+            text     = scene.get("text_overlay") or ""
+
+            try:
+                frame_arrays = _make_scene_frames(img_path, duration, movement, target_w, target_h, fps)
+            except Exception:
+                continue
+
+            if add_text_overlays and text:
+                frame_arrays = _draw_text_on_frames(frame_arrays, text, overlay_style, target_w, target_h)
+
+            clips.append(ImageSequenceClip(frame_arrays, fps=fps))
+            total_duration += duration
+            scenes_used += 1
 
     if not clips:
         return {"output_id": None, "output_path": None, "duration": 0,
                 "scene_count": scene_count, "scenes_used": 0,
                 "status": "no_frames",
-                "error": "No scene frames available — generate frames first"}
+                "error": "No scene frames could be assembled"}
 
     # ── Concatenate ───────────────────────────────────────────────────
     final = concatenate_videoclips(clips, method="compose")
@@ -542,6 +779,7 @@ def assemble_video(
         "scenes_used":   scenes_used,
         "duration":      total_duration,
         "video_type":    video_type,
+        "motion_mode":   motion_mode,
     }
     with conn:
         output_id = _save_video_output(
