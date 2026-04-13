@@ -99,17 +99,39 @@ def test_page() -> Any:
     return render_template("test.html")
 
 
+def _clean_product_display_name(raw_name: str, category: str | None) -> str:
+    """Return a clean display name for product dropdowns.
+
+    Priority:
+    1. Category un-inverted:  "Fruit: Orange, Blood" → "Fruit: Blood Orange"
+    2. Raw name stripped of weight/SKU/offer tokens: "1LB Kumquat 50% Off" → "Kumquat"
+    """
+    import re as _re
+    if category:
+        colon = category.find(":")
+        if colon != -1:
+            prefix = category[:colon + 1]           # "Fruit:"
+            rest   = category[colon + 1:].strip()   # "Orange, Blood"
+            parts  = [p.strip() for p in rest.split(",") if p.strip()]
+            name   = " ".join(reversed(parts)) if len(parts) > 1 else rest
+            return f"{prefix} {name}"               # "Fruit: Blood Orange"
+        return category
+    # No category — strip weight/offer noise from raw Shopify name
+    name = _re.sub(r"^\d+(\.\d+)?\s*(lb|lbs|oz|g|kg|pound|pounds)\b[\s\-]*", "", raw_name, flags=_re.I)
+    name = _re.sub(r"[\s\-]*([\d]+%\s*off|sale|deal|promo|discount|free\s*shipping)[\s\S]*$", "", name, flags=_re.I)
+    return name.strip() or raw_name
+
+
 @app.get("/api/products")
 def api_products() -> Any:
     """Return one representative product per category, sorted by category name."""
     try:
         conn = _db()
-        # Pick the product with the lowest id (most canonical) per category.
-        # Products without a category fall back to their own name as the label.
         rows = conn.execute(
             """SELECT MIN(id) as id,
                       COALESCE(category, name) as label,
                       category,
+                      MIN(name) as raw_name,
                       AVG(price) as price
                FROM products
                WHERE active = 1
@@ -117,7 +139,12 @@ def api_products() -> Any:
                ORDER BY label"""
         ).fetchall()
         conn.close()
-        return jsonify([dict(r) for r in rows])
+        results = []
+        for r in rows:
+            d = dict(r)
+            d["display_name"] = _clean_product_display_name(d["raw_name"], d.get("category"))
+            results.append(d)
+        return jsonify(results)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -508,6 +535,7 @@ def copilot_action() -> Any:
         )
 
         results     = action_result["results"]
+        hu_tags     = action_result.get("hu_tags", [])   # parallel list of HU formula tags
         is_rich     = action_type in ("ugc_concepts", "static_concepts", "script", "creator_brief")
         iterations: list[dict[str, Any]] = []
 
@@ -515,12 +543,16 @@ def copilot_action() -> Any:
                          "curiosity", "mainstream", "adapt_audience"}
 
         with conn:
-            for item in results:
+            for idx, item in enumerate(results):
                 if action_type in _HOOK_ACTIONS:
                     # Plain hook string — score it
                     hook_text = item if isinstance(item, str) else str(item)
                     sc = score_concept(hook_text, conn)
                     predicted = sc["overall"]
+                    # Attach Hook University tag if present
+                    hu_tag = hu_tags[idx] if idx < len(hu_tags) else ""
+                    if hu_tag:
+                        sc["hu_tag"] = hu_tag
                     meta = json.dumps(sc)
                     concept_text = hook_text
                 else:
@@ -665,6 +697,17 @@ def copilot_session_history(session_id: str) -> Any:
             " ORDER BY i.created_at ASC",
             (session_id,),
         ).fetchall()
+
+        # Also load production outputs for this session
+        prod_rows = conn.execute(
+            """SELECT po.id, po.output_type, po.concept_text, po.output_json,
+                      po.is_approved, po.is_favorite, po.created_at
+               FROM production_outputs po
+               WHERE po.session_id = ?
+               ORDER BY po.created_at ASC""",
+            (session_id,),
+        ).fetchall()
+
         conn.close()
 
         iterations = []
@@ -676,7 +719,17 @@ def copilot_session_history(session_id: str) -> Any:
                 d["metadata"] = {}
             iterations.append(d)
 
-        return jsonify({"session": dict(sess), "iterations": iterations})
+        production_outputs = []
+        for row in prod_rows:
+            d = dict(row)
+            try:
+                d["output_data"] = json.loads(d.get("output_json") or "{}")
+            except Exception:
+                d["output_data"] = {}
+            production_outputs.append(d)
+
+        return jsonify({"session": dict(sess), "iterations": iterations,
+                        "production_outputs": production_outputs})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -1129,6 +1182,18 @@ def render_generate() -> Any:
         return jsonify({"error": str(exc)}), 404
     except Exception as exc:
         app.logger.exception("render/generate failed")
+        # Store the error message in render_outputs so it's visible without logs
+        try:
+            _ec = _db()
+            _ec.execute(
+                """UPDATE render_outputs SET error_message = ? WHERE id = (
+                       SELECT MAX(id) FROM render_outputs WHERE provider_name IS NOT NULL
+                   )""",
+                (str(exc)[:500],),
+            )
+            _ec.commit(); _ec.close()
+        except Exception:
+            pass
         return jsonify({"error": str(exc)}), 500
 
 
@@ -1235,7 +1300,14 @@ def render_asset_review(asset_id: int) -> Any:
 
 @app.get("/api/render/asset/<int:asset_id>/image")
 def render_asset_image(asset_id: int) -> Any:
-    """Serve a render asset image: local file if available, CDN redirect otherwise."""
+    """Serve a render asset image.
+
+    Priority order:
+    1. If path is an HTTP URL → 302 redirect (no local copy needed)
+    2. If path is a local file that exists → send_file
+    3. If local file missing → try metadata cdn_url redirect
+    4. Otherwise 404
+    """
     from flask import redirect as _redirect
     try:
         conn = _db()
@@ -1245,25 +1317,69 @@ def render_asset_image(asset_id: int) -> Any:
         ).fetchone()
         conn.close()
         if row is None:
-            abort(404)
-        path = row["asset_path_or_url"]
-        metadata = json.loads(row["metadata_json"] or "{}") if row["metadata_json"] else {}
+            return ("", 404)
 
-        # Try local file first
-        if path and not path.startswith("http") and not path.startswith("mock://"):
+        path     = row["asset_path_or_url"] or ""
+        meta_raw = row["metadata_json"]
+        metadata: dict = {}
+        if meta_raw:
+            try:
+                metadata = json.loads(meta_raw)
+            except Exception:
+                metadata = {}
+
+        # 1. HTTP/HTTPS URL stored directly → redirect browser to CDN
+        if path.startswith("http://") or path.startswith("https://"):
+            return _redirect(path, code=302)
+
+        # 2. Local file path
+        if path and not path.startswith("mock://"):
             p = Path(path)
-            if p.exists():
-                mime = "image/png" if p.suffix.lower() in (".png", "") else "image/jpeg"
-                return send_file(p, mimetype=mime)
-            # Local file gone (e.g. after redeploy) — try CDN fallback
-            cdn_url = metadata.get("cdn_url")
-            if cdn_url:
-                return _redirect(cdn_url)
-            abort(404)
-        elif path and path.startswith("http"):
-            return _redirect(path)
-        abort(404)
+            _exists = p.exists()
+            _fsize  = p.stat().st_size if _exists else -1
+            app.logger.info(
+                "render_asset_image %s: path=%s exists=%s size=%s",
+                asset_id, path, _exists, _fsize,
+            )
+            if _exists:
+                with open(p, "rb") as _f:
+                    _hdr = _f.read(12)
+                # Detect MIME type from magic bytes; fall back to jpeg for
+                # unknown formats (browser content-sniffing handles the rest).
+                # Reject only tiny files that are clearly not images (< 2KB).
+                if _fsize < 2048:
+                    app.logger.warning(
+                        "render_asset_image %s: file too small (%s bytes), "
+                        "treating as corrupt", asset_id, _fsize
+                    )
+                else:
+                    if _hdr.startswith(b"\x89PNG"):
+                        mime = "image/png"
+                    elif _hdr.startswith(b"\xff\xd8\xff"):
+                        mime = "image/jpeg"
+                    elif _hdr[:4] == b"RIFF" and _hdr[8:12] == b"WEBP":
+                        mime = "image/webp"
+                    else:
+                        # Unknown format — serve as image/jpeg; modern browsers
+                        # sniff the real content type from the bytes regardless.
+                        app.logger.warning(
+                            "render_asset_image %s: unknown magic=%s size=%s, "
+                            "serving as image/jpeg for browser sniff",
+                            asset_id, _hdr[:8].hex(), _fsize,
+                        )
+                        mime = "image/jpeg"
+                    return send_file(str(p), mimetype=mime)
+            # File gone or corrupt → try CDN fallback from metadata
+            cdn_url = metadata.get("cdn_url") or ""
+            if cdn_url.startswith("http"):
+                return _redirect(cdn_url, code=302)
+
+        return ("", 404)
     except Exception as exc:
+        from werkzeug.exceptions import HTTPException as _HTTPExc
+        if isinstance(exc, _HTTPExc):
+            raise  # let Flask handle HTTP exceptions normally
+        app.logger.exception("render_asset_image %s failed", asset_id)
         return jsonify({"error": str(exc)}), 500
 
 
@@ -1435,14 +1551,22 @@ def render_asset_regenerate(asset_id: int) -> Any:
         if extra_notes:
             visual_prompt = f"{visual_prompt}. {extra_notes}"
 
-        model            = body.get("model") or d.get("provider_name") or None
+        # model_slug is the Replicate owner/name slug from the UI (e.g.
+        # "google/nano-banana-pro"). get_provider expects "replicate" / provider
+        # name, NOT a model slug — pass the slug as a kwarg to generate() instead.
+        model_slug       = body.get("model") or None
+        provider_name    = d.get("provider_name") or None
         aspect_ratio     = spec.get("aspect_ratio", "9:16")
 
-        provider = get_provider(model)
+        provider = get_provider(provider_name)
+        gen_kwargs: dict = {}
+        if model_slug:
+            gen_kwargs["model"] = model_slug
         paths    = provider.generate(
             prompt=visual_prompt,
             negative_prompt=negative_prompt,
             aspect_ratio=aspect_ratio,
+            **gen_kwargs,
         )
 
         if not paths:
@@ -1462,6 +1586,26 @@ def render_asset_regenerate(asset_id: int) -> Any:
                 "base_asset_id":    asset_id,
             },
         )
+
+        # Transfer collection flags (favorite / ready / approved) from the old
+        # asset to the new one, then clear them on the old asset.
+        # This keeps the new asset visible in the Collection after page reload.
+        with conn:
+            conn.execute(
+                """UPDATE render_assets
+                   SET is_favorite      = (SELECT is_favorite      FROM render_assets WHERE id = ?),
+                       is_ready_to_test = (SELECT is_ready_to_test FROM render_assets WHERE id = ?),
+                       review_status    = (SELECT review_status    FROM render_assets WHERE id = ?)
+                   WHERE id = ?""",
+                (asset_id, asset_id, asset_id, new_asset_id),
+            )
+            conn.execute(
+                """UPDATE render_assets
+                   SET is_favorite = 0, is_ready_to_test = 0, review_status = 'pending'
+                   WHERE id = ?""",
+                (asset_id,),
+            )
+
         new_row = conn.execute(
             "SELECT * FROM render_assets WHERE id = ?", (new_asset_id,)
         ).fetchone()
@@ -1542,7 +1686,9 @@ def collection_api() -> Any:
     """Return all approved/favorite/ready assets with their context."""
     try:
         conn = _db()
-        rows = conn.execute(
+
+        # Image render assets
+        image_rows = conn.execute(
             """SELECT
                 ra.id as asset_id,
                 ra.variant_label,
@@ -1565,9 +1711,861 @@ def collection_api() -> Any:
             WHERE ra.review_status = 'approved' OR ra.is_favorite = 1 OR ra.is_ready_to_test = 1
             ORDER BY ra.is_ready_to_test DESC, ra.is_favorite DESC, ra.id DESC"""
         ).fetchall()
+
+        # Video storyboards
+        video_rows = conn.execute(
+            """SELECT
+                vs.id as storyboard_id,
+                vs.concept_text,
+                vs.product_id,
+                vs.total_duration_seconds,
+                vs.source_output_type,
+                vs.is_favorite,
+                vs.is_approved,
+                vs.created_at,
+                p.name as product_name,
+                COUNT(sc.id) as scene_count,
+                SUM(CASE WHEN sc.render_asset_id IS NOT NULL THEN 1 ELSE 0 END) as frames_count
+            FROM video_storyboards vs
+            LEFT JOIN products p ON p.id = vs.product_id
+            LEFT JOIN video_scenes sc ON sc.storyboard_id = vs.id
+            WHERE vs.is_favorite = 1 OR vs.is_approved = 1
+            GROUP BY vs.id
+            ORDER BY vs.id DESC"""
+        ).fetchall()
+
+        conn.close()
+        return jsonify({
+            "images": [dict(r) for r in image_rows],
+            "videos": [dict(r) for r in video_rows],
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ─────────────────────────────────────────────
+# Video storyboard
+# ─────────────────────────────────────────────
+
+@app.get("/video")
+def video_page() -> Any:
+    return render_template("video.html")
+
+
+@app.get("/api/video/packages")
+def video_available_packages() -> Any:
+    """Return the best available upstream package for a concept/session.
+
+    Query params:
+      concept     str  — concept text (used for fuzzy match)
+      session_id  str? — copilot session id (narrows search)
+
+    Returns the most relevant script_package or ugc_brief if one exists,
+    so the UI can show "Build from Script" / "Build from UGC Brief" labels.
+    """
+    try:
+        concept    = request.args.get("concept", "").strip()
+        session_id = request.args.get("session_id") or None
+        if not concept:
+            return jsonify({"package": None})
+
+        conn = _db()
+        # Look for Video Brief first (unified), then Script Package, then UGC Brief
+        row = conn.execute(
+            """SELECT id, output_type, concept_text, created_at
+               FROM production_outputs
+               WHERE output_type IN ('video_brief', 'script_package', 'ugc_brief')
+                 AND (concept_text = ?
+                      OR concept_text LIKE ?
+                      OR (? IS NOT NULL AND session_id = ?))
+               ORDER BY
+                 CASE output_type
+                   WHEN 'video_brief'    THEN 0
+                   WHEN 'script_package' THEN 1
+                   ELSE 2
+                 END,
+                 id DESC
+               LIMIT 1""",
+            (concept, f"%{concept[:40]}%", session_id, session_id),
+        ).fetchone()
+        conn.close()
+        return jsonify({"package": dict(row) if row else None})
+    except Exception as exc:
+        return jsonify({"error": str(exc), "package": None}), 500
+
+
+@app.post("/api/video/storyboard")
+def video_storyboard_create() -> Any:
+    """Generate a video storyboard from a concept or production package.
+
+    Body:
+      concept                      str  — the hook / concept text (required)
+      product_id                   str? — product for context
+      source_production_output_id  int? — explicit package to use as input
+      source_output_type           str? — hint for the source type
+      session_id                   str? — used for auto-package resolution
+      video_type                   str? — ugc|farm_origin|product_hero|comparison_reveal
+      aspect_ratio                 str? — default "9:16"
+      generate_frames              bool?— generate scene images (default false)
+      model                        str? — Replicate model slug override
+      dry_run                      bool?— skip DB writes (default false)
+    """
+    from creative_intelligence.video.storyboard_builder import build_storyboard
+    try:
+        body           = request.get_json(force=True) or {}
+        concept        = (body.get("concept") or "").strip()
+        if not concept:
+            return jsonify({"error": "concept is required"}), 400
+
+        product_id     = body.get("product_id") or None
+        source_id_raw  = body.get("source_production_output_id")
+        source_id      = int(source_id_raw) if source_id_raw else None
+        source_type    = body.get("source_output_type") or None
+        session_id     = body.get("session_id") or None
+        video_type     = body.get("video_type") or "ugc"
+        aspect_ratio   = body.get("aspect_ratio", "9:16")
+        generate_frames= bool(body.get("generate_frames", False))
+        model          = body.get("model") or None
+        dry_run        = bool(body.get("dry_run", False))
+
+        conn   = _db()
+        result = build_storyboard(
+            concept                      = concept,
+            product_id                   = product_id,
+            conn                         = conn,
+            source_production_output_id  = source_id,
+            source_output_type           = source_type,
+            session_id                   = session_id,
+            video_type                   = video_type,
+            aspect_ratio                 = aspect_ratio,
+            generate_frames              = generate_frames,
+            model                        = model,
+            dry_run                      = dry_run,
+        )
+        conn.close()
+        return jsonify(result)
+    except Exception as exc:
+        app.logger.exception("video/storyboard failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/video/storyboard/<int:storyboard_id>")
+def video_storyboard_fetch(storyboard_id: int) -> Any:
+    """Fetch a storyboard with its scenes and asset image paths."""
+    try:
+        conn = _db()
+        sb = conn.execute(
+            "SELECT * FROM video_storyboards WHERE id = ?", (storyboard_id,)
+        ).fetchone()
+        if not sb:
+            conn.close()
+            return jsonify({"error": "not found"}), 404
+
+        scenes = conn.execute(
+            """SELECT vs.*, ra.asset_path_or_url, ra.metadata_json
+               FROM video_scenes vs
+               LEFT JOIN render_assets ra ON ra.id = vs.render_asset_id
+               WHERE vs.storyboard_id = ?
+               ORDER BY vs.scene_index""",
+            (storyboard_id,),
+        ).fetchall()
+        conn.close()
+
+        result = dict(sb)
+        result["scenes_detail"] = []
+        for s in scenes:
+            sd = dict(s)
+            # Add image URL if asset exists
+            if sd.get("render_asset_id"):
+                sd["image_url"] = f"/api/render/asset/{sd['render_asset_id']}/image"
+            result["scenes_detail"].append(sd)
+
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+def _build_video_visual_seed(scenes: list[dict]) -> str:
+    """Build a concise style/character anchor for visual consistency across frames.
+
+    Returns a SHORT style prefix (NOT a full scene description) to prepend to
+    each scene's image generation prompt. The prefix describes WHO and STYLE only
+    — no actions, no objects — so the model doesn't try to render two competing
+    scenes in a single image.
+    """
+    if not scenes:
+        return ""
+
+    # Lighting: use lighting_style column (set by storyboard builder per scene)
+    lighting = next(
+        (s.get("lighting_style", "").strip() for s in scenes if s.get("lighting_style", "").strip()),
+        "warm natural daylight",
+    )
+
+    # Background: infer from first scene's visual_description
+    _BG_MAP = {
+        "white background": "clean white background",
+        "neutral background": "clean neutral background",
+        "studio": "clean studio background",
+        "kitchen": "kitchen setting",
+        "bedroom": "bedroom setting",
+        "living room": "living room setting",
+        "outdoor": "outdoor natural setting",
+        "garden": "outdoor garden setting",
+    }
+    background = "clean neutral background"
+    for s in scenes:
+        vd_lower = (s.get("visual_description") or "").lower()
+        for kw, label in _BG_MAP.items():
+            if kw in vd_lower:
+                background = label
+                break
+        if background != "clean neutral background":
+            break
+
+    # Person type: infer from first person-facing scene (no action words)
+    _PERSON_WORDS = ["talent", "creator", "woman", "man", "person", "girl", "guy", "model"]
+    person_desc = ""
+    for s in scenes:
+        vd_lower = (s.get("visual_description") or "").lower()
+        if any(w in vd_lower for w in _PERSON_WORDS):
+            if "woman" in vd_lower or "girl" in vd_lower or "female" in vd_lower:
+                person_desc = "young woman"
+            elif "man" in vd_lower or "guy" in vd_lower or "male" in vd_lower:
+                person_desc = "young man"
+            else:
+                person_desc = "creator on camera"
+            break
+
+    parts = []
+    if person_desc:
+        parts.append(person_desc)
+    parts.append(background)
+    parts.append(lighting)
+    parts.append(
+        "realistic UGC photo style, natural skin tones, consistent look throughout, "
+        "single frame, single subject, natural proportions"
+    )
+    return ", ".join(parts) + ". "
+
+
+@app.post("/api/video/storyboard/<int:storyboard_id>/generate-frames")
+def video_generate_frames(storyboard_id: int) -> Any:
+    """Generate scene frame images for an existing storyboard (parallel, visually consistent)."""
+    from creative_intelligence.rendering.providers import get_provider
+    from creative_intelligence.rendering.asset_store import save_asset
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import threading
+
+    try:
+        body  = request.get_json(force=True, silent=True) or {}
+        model = body.get("model") or None
+        aspect_ratio = body.get("aspect_ratio", "9:16")
+        # Optional: override specific scene indices (default: all)
+        scene_indices = body.get("scene_indices") or None  # list[int] or None = all
+
+        conn = _db()
+        scene_rows = conn.execute(
+            "SELECT * FROM video_scenes WHERE storyboard_id = ? ORDER BY scene_index",
+            (storyboard_id,),
+        ).fetchall()
+        if not scene_rows:
+            conn.close()
+            return jsonify({"error": "storyboard not found or has no scenes"}), 404
+
+        scenes = [dict(s) for s in scene_rows]
+
+        # Build visual consistency seed from first scene
+        # This anchors person/setting/lighting across all generated frames
+        visual_seed = _build_video_visual_seed(scenes)
+
+        provider   = get_provider(None)
+        gen_kwargs: dict = {}
+        if model:
+            gen_kwargs["model"] = model
+
+        negative = (
+            "text overlays, watermarks, blurry, low quality, distorted, "
+            "generic stock photo, fake-looking, oversaturated, pixelated, "
+            "collage, multiple photos in one image, split screen, storyboard panels, "
+            "grid layout, picture-in-picture, montage, side by side, 4 images, "
+            "5 images, multiple frames, comic strip, contact sheet, "
+            "disproportionate scale, giant fruit, giant product, unrealistic size"
+        )
+
+        # Fixed seed across all scenes for consistent character/style
+        # Derived from storyboard_id so it's stable on regeneration
+        style_seed = (storyboard_id * 7919) % (2**31 - 1)
+
+        # Determine which scenes need generation
+        to_generate = []
+        skipped = []
+        for s in scenes:
+            if scene_indices is not None and s["scene_index"] not in scene_indices:
+                continue
+            if s.get("render_asset_id"):
+                skipped.append({"scene_index": s["scene_index"], "skipped": True,
+                                 "render_asset_id": s["render_asset_id"]})
+            else:
+                to_generate.append(s)
+
+        # Thread-safe DB connection factory (each thread gets its own connection)
+        db_path = None
+        try:
+            from creative_intelligence.db import get_db_path
+            db_path = get_db_path()
+        except Exception:
+            pass
+
+        lock = threading.Lock()
+        results = list(skipped)
+
+        def gen_scene(s):
+            from creative_intelligence.db import get_connection
+            thread_conn = get_connection(db_path) if db_path else _db()
+            try:
+                vd = s.get("visual_description", "")
+                lower_vd = vd.lower()
+                # Prepend style anchor for person-facing shots; product-only shots
+                # get a lighter prefix so we don't force a person into a macro shot
+                _PERSON_WORDS = ["talent", "creator", "person", "face", "smile", "camera", "speaking", "holding"]
+                _PRODUCT_ONLY = ["macro", "b-roll", "b roll", "product only", "no person"]
+                is_person_shot = any(w in lower_vd for w in _PERSON_WORDS)
+                is_product_only = any(w in lower_vd for w in _PRODUCT_ONLY) and not is_person_shot
+                if visual_seed and is_person_shot:
+                    prompt = visual_seed + vd
+                elif visual_seed and not is_product_only:
+                    # Light style prefix only (drop person description)
+                    style_only = ", ".join(visual_seed.rstrip(". ").split(", ")[1:]) + ". " if ", " in visual_seed else ""
+                    prompt = style_only + vd
+                else:
+                    prompt = vd
+
+                scene_gen_kwargs = dict(gen_kwargs)
+                scene_gen_kwargs["seed"] = style_seed  # same seed → consistent style/character
+
+                paths = provider.generate(
+                    prompt=prompt,
+                    negative_prompt=negative,
+                    aspect_ratio=aspect_ratio,
+                    **scene_gen_kwargs,
+                )
+                if not paths:
+                    return {"scene_index": s["scene_index"], "error": "no paths returned"}
+
+                asset_id = save_asset(
+                    render_output_id=0,
+                    variant_label=f"video_scene_{s['scene_index']}",
+                    source=paths[0],
+                    conn=thread_conn,
+                    metadata={
+                        "storyboard_id": storyboard_id,
+                        "scene_id":      s["scene_index"],
+                        "purpose":       s.get("purpose", ""),
+                        "aspect_ratio":  aspect_ratio,
+                    },
+                )
+                with thread_conn:
+                    thread_conn.execute(
+                        "UPDATE video_scenes SET render_asset_id=? WHERE id=?",
+                        (asset_id, s["id"]),
+                    )
+                return {"scene_index": s["scene_index"], "render_asset_id": asset_id,
+                        "image_url": f"/api/render/asset/{asset_id}/image"}
+            except Exception as fe:
+                return {"scene_index": s["scene_index"], "error": str(fe)}
+            finally:
+                try:
+                    thread_conn.close()
+                except Exception:
+                    pass
+
+        # Generate all scenes in parallel (max 5 workers)
+        with ThreadPoolExecutor(max_workers=min(5, len(to_generate) or 1)) as executor:
+            futures = {executor.submit(gen_scene, s): s for s in to_generate}
+            for future in as_completed(futures):
+                with lock:
+                    results.append(future.result())
+
+        conn.close()
+        return jsonify({"ok": True, "storyboard_id": storyboard_id, "frames": results})
+    except Exception as exc:
+        app.logger.exception("video/generate-frames failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/video/list")
+def video_list() -> Any:
+    """List all storyboards, newest first."""
+    try:
+        conn = _db()
+        rows = conn.execute(
+            """SELECT vs.id, vs.concept_text, vs.product_id, vs.total_duration_seconds,
+                      vs.source_output_type, vs.video_type, vs.is_favorite, vs.is_approved,
+                      vs.created_at, p.name as product_name,
+                      COUNT(sc.id) as scene_count,
+                      SUM(CASE WHEN sc.render_asset_id IS NOT NULL THEN 1 ELSE 0 END) as frames_count
+               FROM video_storyboards vs
+               LEFT JOIN products p ON p.id = vs.product_id
+               LEFT JOIN video_scenes sc ON sc.storyboard_id = vs.id
+               GROUP BY vs.id
+               ORDER BY vs.id DESC"""
+        ).fetchall()
         conn.close()
         return jsonify([dict(r) for r in rows])
     except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/video/storyboard/<int:storyboard_id>/favorite")
+def video_storyboard_favorite(storyboard_id: int) -> Any:
+    """Toggle is_favorite on a video storyboard."""
+    try:
+        body = request.get_json(force=True) or {}
+        fav  = bool(body.get("favorite", True))
+        conn = _db()
+        conn.execute(
+            "UPDATE video_storyboards SET is_favorite = ? WHERE id = ?",
+            (1 if fav else 0, storyboard_id),
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "is_favorite": fav})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/video/storyboard/<int:storyboard_id>/approve")
+def video_storyboard_approve(storyboard_id: int) -> Any:
+    """Toggle is_approved on a video storyboard."""
+    try:
+        body     = request.get_json(force=True) or {}
+        approved = bool(body.get("approved", True))
+        conn     = _db()
+        conn.execute(
+            "UPDATE video_storyboards SET is_approved = ? WHERE id = ?",
+            (1 if approved else 0, storyboard_id),
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "is_approved": approved})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/video/storyboard/<int:storyboard_id>/scene/<int:scene_idx>/regenerate")
+def video_scene_regenerate(storyboard_id: int, scene_idx: int) -> Any:
+    """Regenerate the frame image for a single scene."""
+    from creative_intelligence.rendering.providers import get_provider
+    from creative_intelligence.rendering.asset_store import save_asset
+    try:
+        body         = request.get_json(force=True, silent=True) or {}
+        model        = body.get("model") or None
+        aspect_ratio = body.get("aspect_ratio", "9:16")
+        prompt_override = body.get("visual_prompt") or None
+
+        conn = _db()
+        # Get ALL scenes for the storyboard (needed for visual seed)
+        all_scenes = [dict(r) for r in conn.execute(
+            "SELECT * FROM video_scenes WHERE storyboard_id = ? ORDER BY scene_index",
+            (storyboard_id,),
+        ).fetchall()]
+        if not all_scenes:
+            conn.close()
+            return jsonify({"error": "storyboard not found"}), 404
+
+        scene = next((s for s in all_scenes if s["scene_index"] == scene_idx), None)
+        if not scene:
+            conn.close()
+            return jsonify({"error": f"scene {scene_idx} not found"}), 404
+
+        # Build visual seed for consistency
+        visual_seed = _build_video_visual_seed(all_scenes)
+        style_seed = (storyboard_id * 7919) % (2**31 - 1)
+
+        gen_kwargs: dict = {}
+        if model:
+            gen_kwargs["model"] = model
+        gen_kwargs["seed"] = style_seed
+
+        vd = prompt_override or scene.get("visual_description", "")
+        lower_vd = vd.lower()
+        _PERSON_WORDS = ["talent", "creator", "person", "face", "smile", "camera", "speaking", "holding"]
+        _PRODUCT_ONLY = ["macro", "b-roll", "b roll", "product only"]
+        is_person_shot  = any(w in lower_vd for w in _PERSON_WORDS)
+        is_product_only = any(w in lower_vd for w in _PRODUCT_ONLY) and not is_person_shot
+        if visual_seed and is_person_shot:
+            prompt = visual_seed + vd
+        elif visual_seed and not is_product_only:
+            style_only = ", ".join(visual_seed.rstrip(". ").split(", ")[1:]) + ". " if ", " in visual_seed else ""
+            prompt = style_only + vd
+        else:
+            prompt = vd
+
+        negative = (
+            "text overlays, watermarks, blurry, low quality, distorted, "
+            "generic stock photo, fake-looking, oversaturated, pixelated, "
+            "collage, multiple photos in one image, split screen, storyboard panels, "
+            "grid layout, picture-in-picture, montage, side by side, 4 images, "
+            "5 images, multiple frames, comic strip, contact sheet, "
+            "disproportionate scale, giant fruit, giant product, unrealistic size"
+        )
+
+        provider = get_provider(None)
+        paths = provider.generate(
+            prompt=prompt,
+            negative_prompt=negative,
+            aspect_ratio=aspect_ratio,
+            **gen_kwargs,
+        )
+        if not paths:
+            conn.close()
+            return jsonify({"error": "provider returned no images"}), 500
+
+        asset_id = save_asset(
+            render_output_id=0,
+            variant_label=f"video_scene_{scene_idx}",
+            source=paths[0],
+            conn=conn,
+            metadata={
+                "storyboard_id": storyboard_id,
+                "scene_id":      scene_idx,
+                "purpose":       scene.get("purpose", ""),
+                "aspect_ratio":  aspect_ratio,
+            },
+        )
+        with conn:
+            conn.execute(
+                "UPDATE video_scenes SET render_asset_id=? WHERE storyboard_id=? AND scene_index=?",
+                (asset_id, storyboard_id, scene_idx),
+            )
+        conn.close()
+        return jsonify({
+            "ok": True,
+            "scene_index":    scene_idx,
+            "render_asset_id": asset_id,
+            "image_url":      f"/api/render/asset/{asset_id}/image",
+        })
+    except Exception as exc:
+        app.logger.exception("video/scene-regenerate failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+# ─────────────────────────────────────────────
+# Video assembly routes  (v1.6)
+# ─────────────────────────────────────────────
+
+@app.post("/api/video/storyboard/<int:storyboard_id>/assemble")
+def video_assemble(storyboard_id: int) -> Any:
+    """Assemble an MP4 from existing scene frames for a storyboard.
+
+    Body (all optional):
+      video_type       str  — ugc|farm_origin|product_hero|comparison_reveal
+      aspect_ratio     str  — default "9:16"
+      add_text_overlays bool — draw scene text overlays (default true)
+      dry_run          bool — skip file write and DB row (default false)
+    """
+    from creative_intelligence.video.assembler import assemble_video
+    from creative_intelligence import config
+    try:
+        body = request.get_json(force=True, silent=True) or {}
+        video_type        = body.get("video_type") or "ugc"
+        aspect_ratio      = body.get("aspect_ratio", "9:16")
+        add_text_overlays = bool(body.get("add_text_overlays", True))
+        dry_run           = bool(body.get("dry_run", False))
+
+        conn = _db()
+        result = assemble_video(
+            storyboard_id     = storyboard_id,
+            conn              = conn,
+            output_dir        = config.CI_VIDEO_OUTPUT_DIR,
+            video_type        = video_type,
+            aspect_ratio      = aspect_ratio,
+            add_text_overlays = add_text_overlays,
+            dry_run           = dry_run,
+        )
+        conn.close()
+        if result.get("output_id"):
+            result["video_url"] = f"/api/video/output/{result['output_id']}/file"
+        return jsonify(result)
+    except Exception as exc:
+        app.logger.exception("video/assemble failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/video/output/<int:output_id>")
+def video_output_get(output_id: int) -> Any:
+    """Fetch a video_outputs row with its storyboard info."""
+    try:
+        conn = _db()
+        row = conn.execute(
+            """SELECT vo.*, vs.concept_text, vs.source_output_type as sb_source_type
+               FROM video_outputs vo
+               LEFT JOIN video_storyboards vs ON vs.id = vo.storyboard_id
+               WHERE vo.id = ?""",
+            (output_id,),
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "video output not found"}), 404
+        return jsonify(dict(row))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/video/output/<int:output_id>/file")
+def video_output_file(output_id: int) -> Any:
+    """Serve the assembled MP4 file."""
+    import os
+    try:
+        conn = _db()
+        row = conn.execute(
+            "SELECT output_path FROM video_outputs WHERE id = ?", (output_id,)
+        ).fetchone()
+        conn.close()
+        if not row or not row["output_path"]:
+            return jsonify({"error": "video file not found"}), 404
+        path = row["output_path"]
+        if not os.path.exists(path):
+            return jsonify({"error": "video file missing from disk"}), 404
+        from flask import send_file
+        return send_file(path, mimetype="video/mp4", as_attachment=False)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/video/storyboard/<int:storyboard_id>/outputs")
+def video_storyboard_outputs(storyboard_id: int) -> Any:
+    """List all assembled video outputs for a storyboard."""
+    try:
+        conn = _db()
+        rows = conn.execute(
+            """SELECT id, video_type, status, output_path, metadata_json,
+                      is_approved, is_favorite, is_ready_to_test, created_at
+               FROM video_outputs WHERE storyboard_id = ? ORDER BY id DESC""",
+            (storyboard_id,),
+        ).fetchall()
+        conn.close()
+        result = []
+        for r in rows:
+            d = dict(r)
+            if d.get("output_path"):
+                d["video_url"] = f"/api/video/output/{d['id']}/file"
+            result.append(d)
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/video/output/<int:output_id>/approve")
+def video_output_approve(output_id: int) -> Any:
+    """Toggle is_approved on a video output."""
+    try:
+        body     = request.get_json(force=True) or {}
+        approved = bool(body.get("approved", True))
+        conn = _db()
+        with conn:
+            conn.execute(
+                "UPDATE video_outputs SET is_approved=? WHERE id=?",
+                (1 if approved else 0, output_id),
+            )
+        row = conn.execute("SELECT is_approved FROM video_outputs WHERE id=?", (output_id,)).fetchone()
+        conn.close()
+        return jsonify({"ok": True, "is_approved": row["is_approved"] if row else approved})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/video/output/<int:output_id>/favorite")
+def video_output_favorite(output_id: int) -> Any:
+    """Toggle is_favorite on a video output."""
+    try:
+        body = request.get_json(force=True) or {}
+        fav  = bool(body.get("favorite", True))
+        conn = _db()
+        with conn:
+            conn.execute(
+                "UPDATE video_outputs SET is_favorite=? WHERE id=?",
+                (1 if fav else 0, output_id),
+            )
+        row = conn.execute("SELECT is_favorite FROM video_outputs WHERE id=?", (output_id,)).fetchone()
+        conn.close()
+        return jsonify({"ok": True, "is_favorite": row["is_favorite"] if row else fav})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/video/output/<int:output_id>/ready")
+def video_output_ready(output_id: int) -> Any:
+    """Toggle is_ready_to_test on a video output."""
+    try:
+        body  = request.get_json(force=True) or {}
+        ready = bool(body.get("ready", True))
+        conn  = _db()
+        with conn:
+            conn.execute(
+                "UPDATE video_outputs SET is_ready_to_test=? WHERE id=?",
+                (1 if ready else 0, output_id),
+            )
+        row = conn.execute("SELECT is_ready_to_test FROM video_outputs WHERE id=?", (output_id,)).fetchone()
+        conn.close()
+        return jsonify({"ok": True, "is_ready_to_test": row["is_ready_to_test"] if row else ready})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/video/types")
+def video_types_list() -> Any:
+    """Return all supported video types with labels."""
+    from creative_intelligence.video.types import VIDEO_TYPE_LABELS, VIDEO_TYPE_CONFIGS
+    return jsonify([
+        {"value": k, "label": v,
+         "scene_count_min": VIDEO_TYPE_CONFIGS[k].scene_count_min,
+         "scene_count_max": VIDEO_TYPE_CONFIGS[k].scene_count_max,
+         "pacing": VIDEO_TYPE_CONFIGS[k].pacing}
+        for k, v in VIDEO_TYPE_LABELS.items()
+    ])
+
+
+# ─────────────────────────────────────────────
+# Storage / maintenance
+# ─────────────────────────────────────────────
+
+@app.get("/api/admin/storage")
+def admin_storage_info() -> Any:
+    """Return disk usage and DB size. No auth required (read-only)."""
+    import shutil as _shutil
+    from creative_intelligence.rendering.asset_store import get_render_output_dir
+    from creative_intelligence import config as _cfg
+    try:
+        render_dir = get_render_output_dir()
+        total_b, used_b, free_b = _shutil.disk_usage(str(render_dir))
+        # Count image files
+        img_files = list(render_dir.rglob("*"))
+        img_files = [f for f in img_files if f.is_file()]
+        img_bytes  = sum(f.stat().st_size for f in img_files)
+        # DB size
+        db_path = Path(_cfg.CI_DB_PATH) if _cfg.CI_DB_PATH else None
+        db_bytes = db_path.stat().st_size if db_path and db_path.exists() else 0
+        return jsonify({
+            "disk_total_mb":  round(total_b / 1_048_576),
+            "disk_used_mb":   round(used_b  / 1_048_576),
+            "disk_free_mb":   round(free_b  / 1_048_576),
+            "disk_used_pct":  round(used_b / total_b * 100, 1),
+            "images_count":   len(img_files),
+            "images_mb":      round(img_bytes / 1_048_576, 1),
+            "db_mb":          round(db_bytes  / 1_048_576, 1),
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/admin/cleanup")
+def admin_cleanup() -> Any:
+    """
+    Free up disk space while keeping every protected image.
+
+    SAFE TO DELETE — image files for render_outputs where:
+      - No asset has is_favorite=1, review_status='approved', or is_ready_to_test=1
+      - AND the render_output was created more than `keep_days` days ago (default 7)
+      - OR the file is corrupt (< 2 KB)
+
+    NEVER DELETED — any file whose asset_id is protected (fav / approved / ready).
+    DB rows are never deleted; only files on disk.
+
+    Body (all optional): { keep_days: int (default 7) }
+    """
+    import shutil as _shutil
+    from creative_intelligence.rendering.asset_store import get_render_output_dir
+    from creative_intelligence import config as _cfg
+    try:
+        body      = request.get_json(force=True, silent=True) or {}
+        keep_days = int(body.get("keep_days", 7))
+        conn      = _db()
+
+        # 1. Find all asset file paths that ARE protected
+        protected_paths = set()
+        prot_rows = conn.execute(
+            """SELECT ra.asset_path_or_url
+               FROM render_assets ra
+               WHERE ra.is_favorite = 1
+                  OR ra.review_status = 'approved'
+                  OR ra.is_ready_to_test = 1"""
+        ).fetchall()
+        for r in prot_rows:
+            p = r["asset_path_or_url"] or ""
+            if p and not p.startswith("http") and not p.startswith("mock://"):
+                protected_paths.add(str(Path(p).resolve()))
+
+        # 2. Collect ALL image files on disk
+        render_dir = get_render_output_dir()
+        all_files  = [f for f in render_dir.rglob("*") if f.is_file()]
+
+        deleted_files, deleted_bytes, kept_files = [], 0, 0
+        corrupt_deleted = 0
+
+        import time as _time
+        cutoff = _time.time() - keep_days * 86_400
+
+        for f in all_files:
+            resolved = str(f.resolve())
+            fsize    = f.stat().st_size
+
+            # Always keep protected files
+            if resolved in protected_paths:
+                kept_files += 1
+                continue
+
+            # Delete corrupt files (< 2 KB — HTML error pages etc.) immediately
+            if fsize < 2048:
+                f.unlink(missing_ok=True)
+                corrupt_deleted += 1
+                deleted_bytes += fsize
+                deleted_files.append(str(f))
+                continue
+
+            # Delete unprotected files older than keep_days
+            if f.stat().st_mtime < cutoff:
+                deleted_bytes += fsize
+                f.unlink(missing_ok=True)
+                deleted_files.append(str(f))
+            else:
+                kept_files += 1
+
+        # 3. Remove empty directories
+        for d in sorted(render_dir.rglob("*"), reverse=True):
+            if d.is_dir():
+                try:
+                    d.rmdir()   # only succeeds if empty
+                except OSError:
+                    pass
+
+        # 4. VACUUM the SQLite database to reclaim space from deleted rows
+        db_path = Path(_cfg.CI_DB_PATH) if _cfg.CI_DB_PATH else None
+        db_before = db_path.stat().st_size if db_path and db_path.exists() else 0
+        try:
+            conn.execute("VACUUM")
+            conn.commit()
+        except Exception:
+            pass
+        db_after = db_path.stat().st_size if db_path and db_path.exists() else 0
+        conn.close()
+
+        total_b, used_b, free_b = _shutil.disk_usage(str(render_dir))
+        return jsonify({
+            "ok":               True,
+            "files_deleted":    len(deleted_files),
+            "corrupt_deleted":  corrupt_deleted,
+            "files_kept":       kept_files,
+            "freed_mb":         round(deleted_bytes / 1_048_576, 1),
+            "db_vacuumed_mb":   round((db_before - db_after) / 1_048_576, 1),
+            "disk_free_mb_now": round(free_b / 1_048_576),
+            "disk_used_pct_now":round(used_b / total_b * 100, 1),
+            "keep_days":        keep_days,
+            "protected_count":  len(protected_paths),
+        })
+    except Exception as exc:
+        app.logger.exception("cleanup failed")
         return jsonify({"error": str(exc)}), 500
 
 

@@ -222,7 +222,7 @@
     data.forEach(p => {
       const opt   = document.createElement('option');
       opt.value   = p.id;
-      opt.textContent = p.name + (p.price ? ` ($${parseFloat(p.price).toFixed(2)})` : '');
+      opt.textContent = p.display_name || p.label || p.name;
       sel.appendChild(opt);
     });
   } catch (e) { /* no products — that's fine */ }

@@ -32,6 +32,7 @@ from creative_intelligence.production.schemas import (
     StaticAdBrief,
     UGCCreatorBrief,
     ScriptPackage,
+    VideoBrief,
     empty_static_brief,
     empty_ugc_brief,
     empty_script_package,
@@ -117,6 +118,74 @@ def _script_package_prompt(
         "Alternate hooks should each try a different angle (curiosity / comparison / statement). "
         "Alternate CTAs should vary the urgency and tone. "
         "Production notes should mention: ideal shot type, pacing, whether B-roll is needed, and any specific visual moment to capture."
+    )
+    return system, user
+
+
+def _video_brief_prompt(
+    concept: str,
+    product_ctx: str,
+    video_type: str = "ugc",
+) -> tuple[str, str]:
+    """Build a unified video brief prompt that merges UGC creator + script direction."""
+    from creative_intelligence.video.types import get_config, VIDEO_TYPE_LABELS
+    cfg = get_config(video_type)
+    type_label = VIDEO_TYPE_LABELS.get(video_type, "UGC")
+
+    system = (
+        f"You are a video creative director and UGC creator coach specialising in DTC food brands. "
+        f"You write unified video briefs that work for both human UGC creators and automated storyboard generation. "
+        f"This brief is for a {type_label} ad format. "
+        f"Rules: use the product name at most once in the main content. "
+        f"Never use placeholder text, brackets, or ellipses. "
+        f"The hook must be the exact opening line — word-for-word what should be said or shown first. "
+        f"Beat structure scenes must sum to the estimated duration. "
+        f"All spoken lines must sound natural, not like ad-copy. "
+        f'Return ONLY a JSON object matching this schema:\n{VideoBrief.SCHEMA_HINT}'
+    )
+
+    # Type-specific guidance
+    type_notes = {
+        "ugc": (
+            "Creator persona should reflect who would authentically discuss this product. "
+            "Opening hook is spoken directly to camera. "
+            "Demo beats describe physical actions the creator performs on camera. "
+            "Pacing is fast — 3-5s per beat. Shot style is handheld, authentic."
+        ),
+        "farm_origin": (
+            "This is a provenance / origin story format. "
+            "Opening is an establishing visual (farm or orchard scene), not direct-to-camera. "
+            "Beats follow: establishing → harvest → quality → CTA. "
+            "Tone is warm, premium, cinematic. Pacing is slower, 5-8s per beat."
+        ),
+        "product_hero": (
+            "Product is the star — minimal creator presence. "
+            "Opening is a macro/beauty shot of the product. "
+            "Beats follow: macro reveal → detail → benefit → CTA. "
+            "Tone is clean and premium. Production notes must specify studio-quality lighting."
+        ),
+        "comparison_reveal": (
+            "This is a contrast/reveal format. "
+            "Opening hook shows the problem or the inferior alternative — sharp, slightly uncomfortable. "
+            "Beats follow: hook (problem) → contrast → reveal (product) → proof → CTA. "
+            "Text overlays should be prominent and punchy. CTA leverages the contrast."
+        ),
+    }.get(video_type, "")
+
+    user = (
+        f"Product context:\n{product_ctx}\n\n"
+        f"Approved concept / hook:\n{concept}\n\n"
+        f"Video format: {type_label}\n"
+        f"{type_notes}\n\n"
+        "Write a complete video brief for this concept. "
+        "The hook field must be the opening line verbatim (or very close). "
+        "Talking points should be ordered naturally (hook → value → proof → CTA). "
+        "Demo beats describe physical actions on camera — not abstract ideas. "
+        "Beat structure must have 3-4 beats with realistic second ranges that sum to the duration. "
+        "Production notes must specify: ideal shot type, pacing, whether B-roll is needed, "
+        "any key visual moment, and lighting style. "
+        "No-go notes must include at least one brand-specific guardrail for premium produce. "
+        "Alternate hooks should try meaningfully different angles (curiosity / contrast / statement)."
     )
     return system, user
 
@@ -333,7 +402,68 @@ def build_script_package(
             "data": data, "output_md": output_md}
 
 
-def build_test_package(
+def build_video_brief(
+    concept: str,
+    product_id: str | None,
+    conn: sqlite3.Connection,
+    source_iteration_id: int | None = None,
+    session_id: str | None = None,
+    video_type: str = "ugc",
+    dry_run: bool = True,
+) -> dict[str, Any]:
+    """Generate a unified video brief from an approved concept.
+
+    Merges the UGC creator brief and script package into a single format that
+    feeds directly into storyboard generation for any video_type.
+
+    Returns same shape as other builders: {output_id, output_type, data, output_md}.
+    """
+    from creative_intelligence.production.exporters import to_markdown as _to_md
+    product_ctx = build_prompt_context_block(product_id, conn) if product_id else ""
+    system, user = _video_brief_prompt(concept, product_ctx, video_type)
+    data = _call_llm(system, user, dry_run)
+
+    data.setdefault("hook", concept)
+    data = _ensure_lists(data, ("talking_points", "demo_beats", "no_go_notes", "alternate_hooks"))
+    if not isinstance(data.get("beat_structure"), list):
+        data["beat_structure"] = []
+    # Sensible defaults for all fields
+    defaults = {
+        "hook": concept,
+        "talking_points": [],
+        "demo_beats": [],
+        "beat_structure": [],
+        "cta": "",
+        "duration": "25-30s",
+        "creator_persona": "",
+        "production_notes": "",
+        "no_go_notes": [],
+        "alternate_hooks": [],
+        "video_type": video_type,
+    }
+    for field, default in defaults.items():
+        data.setdefault(field, default)
+    # Always store the video_type used
+    data["video_type"] = video_type
+
+    output_md = _to_md("video_brief", data)
+
+    output_id = None
+    if not dry_run:
+        output_id = _persist_output(
+            "video_brief", source_iteration_id, session_id,
+            product_id, concept, data, output_md, conn,
+        )
+
+    return {"output_id": output_id, "output_type": "video_brief",
+            "data": data, "output_md": output_md}
+
+
+def _build_test_package_removed(*args, **kwargs) -> dict:  # type: ignore[return]
+    raise ValueError("test_package has been removed. Use static_brief, ugc_brief, or script_package.")
+
+
+def build_test_package(  # noqa: E501  — kept for backwards compatibility, raises on call
     concept: str,
     product_id: str | None,
     session_id: str | None,
@@ -505,8 +635,5 @@ def build_output(
     elif output_type == "script_package":
         return build_script_package(concept, product_id, conn,
                                     source_iteration_id, session_id, dry_run)
-    elif output_type == "test_package":
-        return build_test_package(concept, product_id, session_id, conn,
-                                  source_iteration_id, audience, goal, dry_run)
     else:
         raise ValueError(f"Unknown output_type: {output_type!r}")

@@ -71,6 +71,10 @@ header h1 { font-size: 15px; font-weight: 700; letter-spacing: -.3px; }
 .card-image-wrap { position: relative; background: var(--surface2); border-bottom: 1px solid var(--border); overflow: hidden; }
 .card-image { width: 100%; display: block; object-fit: contain; max-height: 320px; }
 .card-image-placeholder { padding: 40px 16px; text-align: center; color: var(--muted); font-size: 11px; }
+.card-image-expired { padding: 24px 16px; text-align: center; color: var(--muted); font-size: 11px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.btn-refresh-img { font-size: 11px; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text2); cursor: pointer; }
+.btn-refresh-img:hover { border-color: var(--accent); color: var(--text); }
+.btn-refresh-img:disabled { opacity: .5; cursor: wait; }
 
 .badge-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px 4px; }
 .variant-badge { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 10px; text-transform: uppercase; letter-spacing: .5px; }
@@ -116,10 +120,10 @@ header h1 { font-size: 15px; font-weight: 700; letter-spacing: -.3px; }
   </div>
 
   <div class="tabs" id="tabBar" style="display:none">
-    <button class="tab-btn active" data-tab="ready" onclick="showTab('ready', this)">🧪 Ready to Test</button>
-    <button class="tab-btn" data-tab="fav"   onclick="showTab('fav', this)">⭐ Favorites</button>
-    <button class="tab-btn" data-tab="approved" onclick="showTab('approved', this)">✓ Approved</button>
-    <button class="tab-btn" data-tab="all"   onclick="showTab('all', this)">All</button>
+    <button class="tab-btn active" data-tab="images" onclick="showTab('images', this)">🖼 Images</button>
+    <button class="tab-btn" data-tab="videos" onclick="showTab('videos', this)">🎬 Videos</button>
+    <button class="tab-btn" data-tab="ready"  onclick="showTab('ready', this)">🧪 Ready to Test</button>
+    <button class="tab-btn" data-tab="all"    onclick="showTab('all', this)">All</button>
   </div>
 
   <div id="sectionsContainer"></div>
@@ -139,7 +143,8 @@ function toast(msg) {
 }
 
 let allAssets = [];
-let currentTab = 'ready';
+let allVideos = [];
+let currentTab = 'images';
 
 document.addEventListener('DOMContentLoaded', loadCollection);
 
@@ -147,7 +152,9 @@ async function loadCollection() {
   try {
     const res = await fetch('/api/collection');
     if (!res.ok) throw new Error(res.statusText);
-    allAssets = await res.json();
+    const data = await res.json();
+    allAssets = data.images || [];
+    allVideos = data.videos || [];
     renderStats();
     renderSections(currentTab);
     document.getElementById('tabBar').style.display = 'flex';
@@ -159,14 +166,16 @@ async function loadCollection() {
 
 function renderStats() {
   const ready    = allAssets.filter(a => a.is_ready_to_test).length;
-  const fav      = allAssets.filter(a => a.is_favorite).length;
+  const imgFav   = allAssets.filter(a => a.is_favorite).length;
   const approved = allAssets.filter(a => a.review_status === 'approved').length;
-  const total    = allAssets.length;
+  const vidFav   = allVideos.filter(v => v.is_favorite).length;
+  const vidApproved = allVideos.filter(v => v.is_approved).length;
   document.getElementById('statsBar').innerHTML = `
     <span class="stat-pill p-ready">${ready} 🧪 ready to test</span>
-    <span class="stat-pill p-fav">${fav} ⭐ favorites</span>
-    <span class="stat-pill p-approved">${approved} ✓ approved</span>
-    <span class="stat-pill">${total} total in collection</span>
+    <span class="stat-pill p-fav">${imgFav} ⭐ image favs</span>
+    <span class="stat-pill p-fav" style="border-color:#4a2a6a;color:#c084fc;background:#1a0a2a">${vidFav} 🎬 video favs</span>
+    <span class="stat-pill p-approved">${approved + vidApproved} ✓ approved</span>
+    <span class="stat-pill">${allAssets.length + allVideos.length} total</span>
   `;
 }
 
@@ -179,30 +188,39 @@ function showTab(tab, btn) {
 
 function renderSections(tab) {
   const container = document.getElementById('sectionsContainer');
+  container.innerHTML = '';
 
-  let ready    = allAssets.filter(a => a.is_ready_to_test);
-  let fav      = allAssets.filter(a => a.is_favorite && !a.is_ready_to_test);
-  let approved = allAssets.filter(a => a.review_status === 'approved' && !a.is_favorite && !a.is_ready_to_test);
-
-  if (tab === 'ready') {
-    container.innerHTML = '';
-    container.appendChild(buildSection('🧪 Ready to Test', ready, 'ready-title'));
-  } else if (tab === 'fav') {
-    container.innerHTML = '';
-    container.appendChild(buildSection('⭐ Favorites', fav, 'fav-title'));
-  } else if (tab === 'approved') {
-    container.innerHTML = '';
-    container.appendChild(buildSection('✓ Approved', approved, 'approved-title'));
+  if (tab === 'images') {
+    const ready    = allAssets.filter(a => a.is_ready_to_test);
+    const fav      = allAssets.filter(a => a.is_favorite && !a.is_ready_to_test);
+    const approved = allAssets.filter(a => a.review_status === 'approved' && !a.is_favorite && !a.is_ready_to_test);
+    container.appendChild(buildSection('🧪 Ready to Test', ready, 'ready-title', 'image'));
+    container.appendChild(buildSection('⭐ Favorites', fav, 'fav-title', 'image'));
+    container.appendChild(buildSection('✓ Approved', approved, 'approved-title', 'image'));
+  } else if (tab === 'videos') {
+    const vidFav      = allVideos.filter(v => v.is_favorite && !v.is_approved);
+    const vidApproved = allVideos.filter(v => v.is_approved);
+    container.appendChild(buildSection('⭐ Favorite Storyboards', vidFav, 'fav-title', 'video'));
+    container.appendChild(buildSection('✓ Approved Storyboards', vidApproved, 'approved-title', 'video'));
+  } else if (tab === 'ready') {
+    const ready = allAssets.filter(a => a.is_ready_to_test);
+    container.appendChild(buildSection('🧪 Ready to Test', ready, 'ready-title', 'image'));
   } else {
-    // All
-    container.innerHTML = '';
-    container.appendChild(buildSection('🧪 Ready to Test', ready, 'ready-title'));
-    container.appendChild(buildSection('⭐ Favorites', fav, 'fav-title'));
-    container.appendChild(buildSection('✓ Approved', approved, 'approved-title'));
+    // All — images then videos
+    const ready    = allAssets.filter(a => a.is_ready_to_test);
+    const fav      = allAssets.filter(a => a.is_favorite && !a.is_ready_to_test);
+    const approved = allAssets.filter(a => a.review_status === 'approved' && !a.is_favorite && !a.is_ready_to_test);
+    const vidFav      = allVideos.filter(v => v.is_favorite && !v.is_approved);
+    const vidApproved = allVideos.filter(v => v.is_approved);
+    container.appendChild(buildSection('🧪 Ready to Test', ready, 'ready-title', 'image'));
+    container.appendChild(buildSection('⭐ Image Favorites', fav, 'fav-title', 'image'));
+    container.appendChild(buildSection('✓ Approved Images', approved, 'approved-title', 'image'));
+    container.appendChild(buildSection('⭐ Favorite Storyboards', vidFav, 'fav-title', 'video'));
+    container.appendChild(buildSection('✓ Approved Storyboards', vidApproved, 'approved-title', 'video'));
   }
 }
 
-function buildSection(title, assets, titleClass) {
+function buildSection(title, assets, titleClass, cardType) {
   const sec = document.createElement('div');
   sec.className = 'section';
   sec.innerHTML = `<div class="section-title ${titleClass}">${title} (${assets.length})</div>`;
@@ -217,7 +235,11 @@ function buildSection(title, assets, titleClass) {
 
   const grid = document.createElement('div');
   grid.className = 'cards-grid';
-  assets.forEach(a => grid.appendChild(buildCard(a)));
+  if (cardType === 'video') {
+    assets.forEach(v => grid.appendChild(buildVideoCard(v)));
+  } else {
+    assets.forEach(a => grid.appendChild(buildCard(a)));
+  }
   sec.appendChild(grid);
   return sec;
 }
@@ -242,9 +264,9 @@ function buildCard(a) {
   // Image
   const imgSrc = `/api/render/asset/${a.asset_id}/image`;
   const imgHtml = `
-    <div class="card-image-wrap">
+    <div class="card-image-wrap" data-asset-id="${a.asset_id}">
       <img class="card-image" src="${imgSrc}" alt="${esc(variantLabel)}" loading="lazy"
-           onerror="this.closest('.card-image-wrap').innerHTML='<div class=card-image-placeholder>Image unavailable</div>'">
+           onerror="collectionImgError(this, ${a.asset_id}, ${a.render_output_id})">
     </div>`;
 
   // Status icons
@@ -274,6 +296,92 @@ function buildCard(a) {
     </div>
   `;
   return card;
+}
+
+function buildVideoCard(v) {
+  const sourceLabel = {
+    script_package: 'From Script Package',
+    ugc_brief:      'From UGC Brief',
+    concept:        'From Concept',
+  }[v.source_output_type] || '';
+
+  const badgeColor = {
+    script_package: '#6d28d9',
+    ugc_brief:      '#1d4ed8',
+    concept:        '#374151',
+  }[v.source_output_type] || '#374151';
+
+  const icons = [
+    v.is_favorite ? '⭐' : '',
+    v.is_approved ? '✓' : '',
+  ].filter(Boolean).join(' ');
+
+  const concept = (v.concept_text || '').slice(0, 80) || '—';
+  const product = v.product_name || '';
+  const date    = (v.created_at || '').slice(0, 10);
+  const card = document.createElement('div');
+  card.className = `col-card ${v.is_approved ? 'state-approved' : v.is_favorite ? 'state-fav' : ''}`;
+  card.innerHTML = `
+    <div style="background:var(--surface2);border-bottom:1px solid var(--border);padding:28px 16px;text-align:center;color:var(--muted);font-size:28px">
+      🎬
+    </div>
+    <div class="badge-row">
+      ${sourceLabel ? `<span class="variant-badge" style="background:${badgeColor}22;color:${badgeColor};border:1px solid ${badgeColor}44">${esc(sourceLabel)}</span>` : ''}
+      <span style="font-size:11px;color:var(--muted)">${v.scene_count || 0} scenes · ${v.total_duration_seconds || 0}s · ${date}</span>
+      ${icons ? `<span class="status-icons">${icons}</span>` : ''}
+    </div>
+    <div class="card-info">
+      <div class="card-concept" title="${esc(v.concept_text || '')}">${esc(concept)}</div>
+      ${product ? `<div class="card-product">${esc(product)}</div>` : ''}
+    </div>
+    <div class="card-footer">
+      <a class="card-link" href="/video?storyboard_id=${v.storyboard_id}">View Storyboard →</a>
+      <span style="font-size:11px;color:var(--muted);margin-left:auto">${v.frames_count || 0} frames</span>
+    </div>
+  `;
+  return card;
+}
+
+// Called by onerror on collection card images.
+// Shows an "Expired — Re-generate" button instead of just a dead placeholder.
+function collectionImgError(imgEl, assetId, renderOutputId) {
+  const wrap = imgEl.closest('.card-image-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = `
+    <div class="card-image-expired">
+      <span>Image expired</span>
+      <button class="btn-refresh-img" onclick="refreshCollectionImg(this, ${assetId}, ${renderOutputId})">
+        ↻ Re-generate
+      </button>
+    </div>`;
+}
+
+async function refreshCollectionImg(btn, assetId, renderOutputId) {
+  btn.disabled = true;
+  btn.textContent = 'Generating…';
+  try {
+    const res = await fetch(`/api/render/asset/${assetId}/regenerate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.new_asset_id) throw new Error(data.error || 'failed');
+    const newId = data.new_asset_id;
+    const wrap  = btn.closest('.card-image-wrap');
+    if (wrap) {
+      wrap.innerHTML = `<img class="card-image" src="/api/render/asset/${newId}/image"
+        loading="lazy"
+        onerror="collectionImgError(this, ${newId}, ${renderOutputId})">`;
+      // Also update the download link in the same card
+      const dlLink = wrap.closest('.col-card')?.querySelector('.dl-link');
+      if (dlLink) dlLink.href = `/api/render/asset/${newId}/image`;
+    }
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '↻ Re-generate';
+    btn.title = String(e);
+  }
 }
 </script>
 </body>

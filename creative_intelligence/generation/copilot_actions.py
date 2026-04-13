@@ -130,7 +130,13 @@ def _hook_transform_prompt(
     user = (
         f"{instruction}{audience_note}{tone_note}{ctx_block}\n\n"
         f"Original concept:\n{concept}\n\n"
-        f"Output JSON: {{\"hooks\": [<{count} string(s)>]}}"
+        f"For each hook, also identify which Hook University formula or structure was applied.\n"
+        f"Formulas: AF1 (I spent X to figure out Y), AF2 (I thought X until Y), "
+        f"AF3 (I struggled X until Z), AF4 (discovering together), "
+        f"AF5 (everyone says X but data shows Y), AF6 (X doesn't have to mean Y).\n"
+        f"Structures: S1 (bold claim), S2 (sensory-first), S3 (contrast), S4 (discovery/reveal), "
+        f"S5 (question), S6 (origin/provenance), S7 (invitation).\n"
+        f"Output JSON: {{\"hooks\": [{count} objects, each: {{\"text\": \"...\", \"hu_tag\": \"AF2 | S5\"}}]}}"
     )
     return _HOOK_SYSTEM, user
 
@@ -314,17 +320,31 @@ def run_action(
         params = {**params, "count": count}
         system, user = _hook_transform_prompt(action_type, concept, product_ctx, params)
         raw = llm.complete_json(system=system, user=user, temperature=0.85)
-        hooks: list[str] = []
+        raw_hooks: list = []
         if isinstance(raw, dict):
-            hooks = raw.get("hooks", [])
+            raw_hooks = raw.get("hooks", [])
         elif isinstance(raw, list):
-            hooks = raw
-        # Ensure they are strings
-        hooks = [str(h).strip() for h in hooks if str(h).strip()]
+            raw_hooks = raw
+
+        # Support both old format (list of strings) and new format (list of {text, hu_tag})
+        hooks: list[str] = []
+        hu_tags: list[str] = []
+        for h in raw_hooks:
+            if isinstance(h, dict):
+                text = str(h.get("text", "")).strip()
+                tag  = str(h.get("hu_tag", "")).strip()
+            else:
+                text = str(h).strip()
+                tag  = ""
+            if text:
+                hooks.append(text)
+                hu_tags.append(tag)
+
         return {
-            "results": hooks,
+            "results":    hooks,
+            "hu_tags":    hu_tags,   # parallel list — same index as results
             "action_type": action_type,
-            "metadata": {"count": len(hooks), "tone": params.get("tone", "")},
+            "metadata":   {"count": len(hooks), "tone": params.get("tone", "")},
         }
 
     # ── Rich format actions ──────────────────────────────────

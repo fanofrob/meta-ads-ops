@@ -159,17 +159,28 @@ def build_render_specs(
     """
     headline_options = brief.get("headline_options") or []
     body_options     = brief.get("body_options") or []
-    headline_overlay = headline_options[0] if headline_options else brief.get("hook", "")
-    body_overlay     = body_options[0]     if body_options     else ""
+    hook             = brief.get("hook", "")
 
-    shot_type       = _detect_shot_type(brief.get("composition_notes", ""))
+    shot_type        = _detect_shot_type(brief.get("composition_notes", ""))
     background_style = _background_style(brief.get("visual_direction", ""))
-    style_tags      = _extract_style_tags(brief.get("visual_direction", ""))
+    style_tags       = _extract_style_tags(brief.get("visual_direction", ""))
+
+    # Filter to only known variants
+    selected = [v for v in variants if v in VARIANT_STRATEGIES]
 
     specs: list[dict[str, Any]] = []
-    for variant in variants:
-        if variant not in VARIANT_STRATEGIES:
-            continue
+    for i, variant in enumerate(selected):
+        # Rotate through available headline/body options so each variant
+        # tests a different copy combination (wraps if fewer options than variants)
+        if headline_options:
+            headline_overlay = headline_options[i % len(headline_options)]
+        else:
+            headline_overlay = hook
+        if body_options:
+            body_overlay = body_options[i % len(body_options)]
+        else:
+            body_overlay = ""
+
         spec = empty_render_spec()
         spec.update({
             "production_output_id": production_output_id,

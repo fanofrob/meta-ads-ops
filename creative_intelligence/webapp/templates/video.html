@@ -1,0 +1,940 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Storyboard</title>
+<style>
+  :root {
+    --bg:       #0d0d0f;
+    --surface:  #16161a;
+    --surface2: #1e1e24;
+    --border:   #2a2a32;
+    --text:     #e8e8f0;
+    --text2:    #8888a0;
+    --accent:   #6c63ff;
+    --accent2:  #9d96ff;
+    --green:    #22c55e;
+    --red:      #ef4444;
+    --yellow:   #f59e0b;
+
+    --purpose-hook:   #ef4444;
+    --purpose-demo:   #3b82f6;
+    --purpose-reveal: #8b5cf6;
+    --purpose-proof:  #22c55e;
+    --purpose-cta:    #f59e0b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; min-height: 100vh; }
+
+  /* ── Nav ── */
+  .nav { display: flex; align-items: center; gap: 16px; padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .nav-brand { font-weight: 700; font-size: 15px; color: var(--accent2); text-decoration: none; }
+  .nav-sep { color: var(--border); }
+  .nav-title { font-size: 13px; color: var(--text2); }
+  .nav-links { margin-left: auto; display: flex; gap: 12px; }
+  .nav-links a { font-size: 12px; color: var(--text2); text-decoration: none; padding: 4px 8px; border-radius: 5px; }
+  .nav-links a:hover { background: var(--surface2); color: var(--text); }
+
+  /* ── Layout ── */
+  .layout { display: flex; height: calc(100vh - 45px); }
+  .sidebar { width: 280px; flex-shrink: 0; border-right: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; overflow: hidden; }
+  .main { flex: 1; overflow-y: auto; padding: 28px; }
+
+  /* ── Sidebar ── */
+  .sidebar-section { padding: 16px; border-bottom: 1px solid var(--border); }
+  .sidebar-section label { display: block; font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: .7px; margin-bottom: 6px; }
+  .sidebar-section select,
+  .sidebar-section textarea,
+  .sidebar-section input[type=text] {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); padding: 6px 9px; font-size: 12px;
+  }
+  .sidebar-section select:focus,
+  .sidebar-section textarea:focus,
+  .sidebar-section input:focus { outline: none; border-color: var(--accent); }
+  .sidebar-section textarea { resize: vertical; min-height: 80px; }
+  .gen-btn {
+    width: 100%; padding: 10px; background: var(--accent); border: none; border-radius: 8px;
+    color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 4px;
+  }
+  .gen-btn:hover { background: var(--accent2); }
+  .gen-btn:disabled { opacity: .45; cursor: default; }
+  .check-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .check-row input[type=checkbox] { accent-color: var(--accent); }
+  .check-row span { font-size: 12px; color: var(--text2); }
+
+  /* ── Storyboard list ── */
+  .sb-list { flex: 1; overflow-y: auto; }
+  .sb-item { padding: 12px 16px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .sb-item:hover { background: var(--surface2); }
+  .sb-item.active { background: var(--surface2); border-left: 3px solid var(--accent); }
+  .sb-item-concept { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sb-item-meta { font-size: 10px; color: var(--text2); margin-top: 3px; }
+
+  /* ── Empty state ── */
+  .empty { text-align: center; padding: 80px 20px; color: var(--text2); }
+  .empty h2 { font-size: 18px; margin-bottom: 8px; color: var(--text); }
+  .empty p { font-size: 13px; line-height: 1.6; }
+
+  /* ── Storyboard view ── */
+  .sb-header { margin-bottom: 24px; }
+  .sb-header h1 { font-size: 20px; font-weight: 700; }
+  .sb-header-meta { font-size: 12px; color: var(--text2); margin-top: 6px; display: flex; gap: 16px; align-items: center; }
+  .sb-header-meta span { display: flex; align-items: center; gap: 4px; }
+
+  /* ── Scene cards ── */
+  .scenes-grid { display: flex; flex-direction: column; gap: 20px; }
+  .scene-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    overflow: hidden; display: grid; grid-template-columns: 180px 1fr;
+  }
+  .scene-frame { background: var(--surface2); position: relative; min-height: 200px; display: flex; align-items: center; justify-content: center; }
+  .scene-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .scene-frame-placeholder { color: var(--text2); font-size: 11px; text-align: center; padding: 16px; }
+  .scene-badge {
+    position: absolute; top: 8px; left: 8px;
+    font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px;
+    padding: 3px 7px; border-radius: 4px; color: #fff;
+  }
+  .purpose-hook    { background: var(--purpose-hook); }
+  .purpose-demo    { background: var(--purpose-demo); }
+  .purpose-reveal  { background: var(--purpose-reveal); }
+  .purpose-proof   { background: var(--purpose-proof); }
+  .purpose-cta     { background: var(--purpose-cta); }
+
+  .scene-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
+  .scene-num { font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: .6px; }
+  .scene-visual { font-size: 13px; line-height: 1.6; }
+  .scene-overlay { font-size: 12px; font-weight: 600; color: var(--accent2); padding: 6px 10px; background: rgba(108,99,255,.12); border-radius: 5px; }
+  .scene-shot { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .shot-tag { font-size: 10px; padding: 3px 8px; border-radius: 4px; background: var(--surface2); border: 1px solid var(--border); color: var(--text2); }
+  .scene-duration { font-size: 10px; color: var(--text2); margin-top: auto; }
+
+  .gen-frames-btn {
+    padding: 5px 12px; background: transparent; border: 1px solid var(--accent);
+    border-radius: 6px; color: var(--accent2); font-size: 11px; cursor: pointer;
+  }
+  .gen-frames-btn:hover { background: rgba(108,99,255,.12); }
+  .gen-frames-btn:disabled { opacity: .4; cursor: default; }
+
+  /* ── UGC Script ── */
+  .script-section { margin-top: 32px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .script-header { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  .script-header h2 { font-size: 14px; font-weight: 600; }
+  .script-body { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .script-block label { font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: .6px; display: block; margin-bottom: 6px; }
+  .script-block p,
+  .script-block li { font-size: 13px; line-height: 1.6; }
+  .script-block ul { padding-left: 18px; }
+  .script-block li { margin-bottom: 4px; }
+  .opening-line { font-size: 15px; font-weight: 600; font-style: italic; color: var(--accent2); }
+  .cta-line { font-size: 14px; font-weight: 600; color: var(--yellow); }
+
+  /* ── Storyboard action buttons (approve/fav) ── */
+  .sb-action-btn {
+    font-size: 12px; padding: 5px 12px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface2); color: var(--text2);
+    transition: all .15s;
+  }
+  .sb-action-btn:hover { border-color: var(--accent); color: var(--text); }
+  .sb-action-btn.active { background: #052e16; border-color: #166534; color: var(--green); }
+  .sb-action-btn.fav.active { background: #1c1200; border-color: #92400e; color: var(--gold); }
+  .scene-regen-btn {
+    font-size: 11px; padding: 3px 10px; border-radius: 5px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface2); color: var(--muted);
+    margin-top: 6px;
+  }
+  .scene-regen-btn:hover { border-color: var(--accent2); color: var(--text2); }
+
+  /* Inline regen panel */
+  .regen-panel {
+    display: none; margin-top: 10px; padding: 12px;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+  }
+  .regen-panel.open { display: block; }
+  .regen-panel label { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); display: block; margin-bottom: 5px; }
+  .regen-prompt-box {
+    width: 100%; min-height: 60px; resize: vertical; font-size: 12px; line-height: 1.5;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); padding: 8px; font-family: inherit; margin-bottom: 8px;
+  }
+  .regen-prompt-box:focus { outline: none; border-color: var(--accent2); }
+  .regen-notes-box {
+    width: 100%; font-size: 12px; line-height: 1.5;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); padding: 7px; font-family: inherit; resize: none; height: 52px;
+  }
+  .regen-notes-box:focus { outline: none; border-color: var(--accent2); }
+  .regen-notes-box::placeholder { color: var(--muted2); }
+  .regen-panel-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .regen-go-btn {
+    font-size: 12px; padding: 5px 14px; border-radius: 6px; cursor: pointer;
+    background: var(--accent); border: none; color: #fff; font-weight: 600;
+  }
+  .regen-go-btn:hover { background: #4338ca; }
+  .regen-go-btn:disabled { opacity: .5; cursor: wait; }
+  .regen-cancel-btn {
+    font-size: 12px; padding: 5px 10px; border-radius: 6px; cursor: pointer;
+    background: transparent; border: 1px solid var(--border); color: var(--muted);
+  }
+  .regen-cancel-btn:hover { color: var(--text2); border-color: var(--text2); }
+
+  /* ── Video type badge ── */
+  .vtype-badge {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px;
+    padding: 3px 9px; border-radius: 4px; border: 1px solid;
+  }
+  .vtype-ugc               { color: #6c63ff; border-color: #6c63ff44; background: #6c63ff18; }
+  .vtype-farm_origin       { color: #22c55e; border-color: #22c55e44; background: #22c55e18; }
+  .vtype-product_hero      { color: #f59e0b; border-color: #f59e0b44; background: #f59e0b18; }
+  .vtype-comparison_reveal { color: #ef4444; border-color: #ef444444; background: #ef444418; }
+
+  /* ── Assembled video section ── */
+  .video-output-section {
+    margin-top: 28px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+  }
+  .video-output-header {
+    padding: 14px 20px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .video-output-header h2 { font-size: 14px; font-weight: 600; flex: 1; }
+  .video-output-body { padding: 20px; }
+  .video-player-wrap {
+    background: #000; border-radius: 8px; overflow: hidden; max-width: 360px;
+    margin: 0 auto 16px;
+  }
+  .video-player-wrap video { display: block; width: 100%; max-height: 640px; }
+  .video-meta { font-size: 12px; color: var(--text2); text-align: center; margin-bottom: 14px; }
+  .video-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .assemble-btn {
+    padding: 9px 18px; background: #7c3aed; border: none; border-radius: 8px;
+    color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; display: flex;
+    align-items: center; gap: 6px;
+  }
+  .assemble-btn:hover { background: #6d28d9; }
+  .assemble-btn:disabled { opacity: .45; cursor: default; }
+  .video-output-card {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; margin-bottom: 10px; display: flex; align-items: center; gap: 12px;
+  }
+  .video-output-card .voc-info { flex: 1; min-width: 0; }
+  .video-output-card .voc-meta { font-size: 11px; color: var(--text2); margin-top: 3px; }
+  .video-output-card .voc-actions { display: flex; gap: 6px; }
+  .voc-btn {
+    font-size: 11px; padding: 4px 10px; border-radius: 5px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text2);
+  }
+  .voc-btn:hover { border-color: var(--accent); color: var(--text); }
+  .voc-btn.active-approve { background: #052e16; border-color: #166534; color: var(--green); }
+  .voc-btn.active-fav { background: #1c1200; border-color: #92400e; color: var(--yellow); }
+  .voc-btn.active-ready { background: #0c1445; border-color: #1e3a8a; color: #93c5fd; }
+
+  /* ── Toast ── */
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 9px 18px; border-radius: 8px; font-size: 12px; opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 999; }
+  #toast.show { opacity: 1; }
+
+  /* ── Loading ── */
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <a class="nav-brand" href="/copilot">✦ Creative Copilot</a>
+  <span class="nav-sep">›</span>
+  <span class="nav-title">Video Storyboard</span>
+  <div class="nav-links">
+    <a href="/render">Static Render</a>
+    <a href="/collection">Collection</a>
+  </div>
+</nav>
+
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+
+    <!-- Generate new storyboard -->
+    <div class="sidebar-section">
+      <label>Concept / Hook</label>
+      <textarea id="conceptInput" placeholder="Paste a winning hook or concept here…"></textarea>
+
+      <label style="margin-top:10px">Product</label>
+      <select id="productSelect">
+        <option value="">— No product context —</option>
+      </select>
+
+      <label style="margin-top:10px">Video Type</label>
+      <select id="videoType">
+        <option value="ugc">UGC</option>
+        <option value="farm_origin">Farm / Origin</option>
+        <option value="product_hero">Product Hero</option>
+        <option value="comparison_reveal">Comparison / Reveal</option>
+      </select>
+
+      <label style="margin-top:10px">Aspect Ratio</label>
+      <select id="aspectRatio">
+        <option value="9:16">9:16 — Portrait / Stories</option>
+        <option value="4:5">4:5 — Feed Portrait</option>
+        <option value="1:1">1:1 — Square</option>
+        <option value="16:9">16:9 — Landscape</option>
+      </select>
+
+      <div class="field-label" style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.7px;margin-top:10px;margin-bottom:6px">MODEL</div>
+      <select id="modelSelect" class="field-select" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 9px;font-size:12px">
+        <option value="">Default</option>
+        <option value="black-forest-labs/flux-1.1-pro">Flux 1.1 Pro</option>
+        <option value="black-forest-labs/flux-schnell">Flux Schnell (fast)</option>
+        <option value="stability-ai/sdxl">SDXL</option>
+      </select>
+
+      <div class="check-row">
+        <input type="checkbox" id="genFrames">
+        <span>Generate scene images now</span>
+      </div>
+
+      <button class="gen-btn" id="genBtn" onclick="generateStoryboard()">
+        🎬 Generate Storyboard
+      </button>
+    </div>
+
+    <!-- Recent storyboards list -->
+    <div id="sbList" class="sb-list"></div>
+
+  </aside>
+
+  <!-- Main content -->
+  <main class="main" id="mainArea">
+    <div class="empty" id="emptyState">
+      <h2>Video Storyboard Builder</h2>
+      <p>Paste a winning concept on the left and click<br><strong>Generate Storyboard</strong> to convert it into<br>scenes, shot list, and UGC script.</p>
+    </div>
+  </main>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ── Utilities ── */
+function toast(msg, err=false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = err ? '#b91c1c' : '#333';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+async function api(url, body=null) {
+  const opts = body ? {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  } : { method: 'GET' };
+  const r = await fetch(url, opts);
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || r.statusText);
+  return d;
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+/* ── Load products ── */
+function cleanLabel(raw) {
+  const ci = (raw||'').indexOf(':');
+  if (ci === -1) return raw;
+  const prefix = raw.slice(0, ci+1);
+  const rest   = raw.slice(ci+1).trim();
+  const parts  = rest.split(',').map(p=>p.trim()).filter(Boolean);
+  const name   = parts.length > 1 ? parts.reverse().join(' ') : rest;
+  return `${prefix} ${name}`;
+}
+
+async function loadProducts() {
+  const sel = document.getElementById('productSelect');
+  try {
+    const r = await fetch('/api/products');
+    const products = await r.json();
+    if (!Array.isArray(products)) throw new Error('bad response');
+    products.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.display_name || cleanLabel(p.label || p.name);
+      sel.appendChild(opt);
+    });
+  } catch(e) {
+    // Show a visible error option so user knows products didn't load
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '⚠ Could not load products';
+    opt.disabled = true;
+    sel.appendChild(opt);
+    console.warn('Could not load products', e);
+  }
+}
+
+/* ── Load storyboard list ── */
+async function loadList() {
+  try {
+    const items = await api('/api/video/list');
+    const panel = document.getElementById('sbList');
+    panel.innerHTML = '';
+    items.forEach(sb => {
+      const el = document.createElement('div');
+      el.className = 'sb-item';
+      el.dataset.id = sb.id;
+      el.innerHTML = `
+        <div class="sb-item-concept">${esc(sb.concept_text)}</div>
+        <div class="sb-item-meta">
+          ${sb.scene_count} scenes · ${sb.frames_count} frames · ${sb.created_at?.slice(0,10)||''}
+          ${sb.product_name ? ` · ${esc(sb.product_name)}` : ''}
+        </div>`;
+      el.addEventListener('click', () => loadStoryboard(sb.id));
+      panel.appendChild(el);
+    });
+  } catch(e) { console.warn('Could not load storyboard list', e); }
+}
+
+/* ── Generate ── */
+async function generateStoryboard() {
+  const concept = document.getElementById('conceptInput').value.trim();
+  if (!concept) { toast('Paste a concept first', true); return; }
+
+  const btn = document.getElementById('genBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Generating…';
+
+  try {
+    const body = {
+      concept,
+      product_id:                   document.getElementById('productSelect').value || null,
+      video_type:                   document.getElementById('videoType').value || 'ugc',
+      aspect_ratio:                 document.getElementById('aspectRatio').value,
+      generate_frames:              document.getElementById('genFrames').checked,
+      source_production_output_id:  window._sourceProductionOutputId ? parseInt(window._sourceProductionOutputId) : null,
+      source_output_type:           window._sourceOutputType || null,
+      session_id:                   window._sessionId || null,
+      dry_run:                      false,
+    };
+    const result = await api('/api/video/storyboard', body);
+    toast('✓ Storyboard created');
+    await loadList();
+    if (result.storyboard_id) {
+      loadStoryboard(result.storyboard_id, result);
+    }
+  } catch(e) {
+    toast('Failed: ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🎬 Generate Storyboard';
+  }
+}
+
+/* ── Render storyboard ── */
+function purposeClass(p) {
+  const map = { hook:'purpose-hook', demo:'purpose-demo', reveal:'purpose-reveal',
+                proof:'purpose-proof', cta:'purpose-cta' };
+  return map[p] || 'purpose-demo';
+}
+
+function renderStoryboard(sb, detail) {
+  document.getElementById('emptyState')?.remove();
+
+  // Mark active in list
+  document.querySelectorAll('.sb-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.id == sb.id);
+  });
+
+  const scenes    = detail.scenes_detail || [];
+  const ugc       = JSON.parse(sb.ugc_script_json || detail.ugc_script_json || '{}');
+  const duration  = sb.total_duration_seconds || detail.total_duration_seconds || 0;
+  const srcType   = sb.source_output_type || detail.source_output_type || 'concept';
+  const vtype     = sb.video_type || detail.video_type || 'ugc';
+
+  const sourceBadge = {
+    script_package: { label: 'From Script Package', color: '#8b5cf6' },
+    ugc_brief:      { label: 'From UGC Brief',      color: '#3b82f6' },
+    video_brief:    { label: 'From Video Brief',     color: '#06b6d4' },
+    concept:        { label: 'From Concept',         color: '#6b7280' },
+  }[srcType] || { label: srcType, color: '#6b7280' };
+
+  const vtypeLabels = {
+    ugc: 'UGC', farm_origin: 'Farm / Origin',
+    product_hero: 'Product Hero', comparison_reveal: 'Comparison / Reveal',
+  };
+
+  const html = `
+    <div class="sb-header">
+      <h1>${esc(sb.concept_text || detail.concept || '')}</h1>
+      <div class="sb-header-meta">
+        <span>🎬 ${scenes.length} scenes</span>
+        <span>⏱ ${duration}s</span>
+        ${sb.product_name ? `<span>📦 ${esc(sb.product_name)}</span>` : ''}
+        <span class="vtype-badge vtype-${vtype}">${vtypeLabels[vtype] || vtype}</span>
+        <span style="background:${sourceBadge.color}22; color:${sourceBadge.color};
+                     border:1px solid ${sourceBadge.color}44; padding:2px 8px;
+                     border-radius:4px; font-size:10px; font-weight:600;">
+          ${sourceBadge.label}
+        </span>
+        <span style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <button id="sbApproveBtn" class="sb-action-btn" onclick="toggleStoryboardApprove()" title="Approve this storyboard">✓ Approve</button>
+          <button id="sbFavBtn" class="sb-action-btn fav" onclick="toggleStoryboardFav()" title="Save to favorites">★</button>
+          <button class="gen-frames-btn" id="genFramesBtn"
+            onclick="generateFrames(${sb.id || detail.storyboard_id})">
+            🖼 Generate All Frames
+          </button>
+          <button class="assemble-btn" id="assembleBtn"
+            onclick="assembleVideo(${sb.id || detail.storyboard_id}, '${vtype}')">
+            🎬 Generate Video
+          </button>
+        </span>
+      </div>
+    </div>
+
+    <div class="scenes-grid">
+      ${scenes.map(s => renderScene(s, sb.id || detail.storyboard_id)).join('')}
+    </div>
+
+    ${ugc && Object.keys(ugc).length ? renderScript(ugc) : ''}
+
+    <div class="video-output-section" id="videoOutputSection">
+      <div class="video-output-header">
+        <span>🎬</span>
+        <h2>Assembled Video</h2>
+        <span id="videoOutputStatus" style="font-size:11px;color:var(--text2)">No video assembled yet — click Generate Video above</span>
+      </div>
+      <div class="video-output-body" id="videoOutputBody">
+        <div id="videoOutputList"></div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('mainArea').innerHTML = html;
+
+  // Populate regen prompt textareas after innerHTML is set
+  // (can't use inline template literals safely — backticks break the outer string)
+  scenes.forEach(s => {
+    const ta = document.getElementById(`regenPrompt_${s.scene_index}`);
+    if (ta) ta.value = s.visual_description || '';
+  });
+
+  // Load any previously assembled videos for this storyboard
+  const sbId = sb.id || detail.storyboard_id;
+  if (sbId) loadVideoOutputs(sbId);
+}
+
+function renderScene(s, sbId) {
+  const purpose = (s.purpose || 'demo').toLowerCase();
+  const imgHtml = s.image_url
+    ? `<img src="${s.image_url}" alt="scene ${s.scene_index}" data-scene-img="${s.scene_index}"
+           onerror="this.parentElement.innerHTML='<div class=scene-frame-placeholder>Image unavailable</div>'">`
+    : `<div class="scene-frame-placeholder" data-scene-placeholder="${s.scene_index}">No frame yet</div>`;
+
+  const shots = [s.camera_type, s.framing, s.movement, s.lighting_style].filter(Boolean);
+
+  return `
+    <div class="scene-card" id="scene-card-${s.id}">
+      <div class="scene-frame">
+        ${imgHtml}
+        <span class="scene-badge ${purposeClass(purpose)}">${purpose}</span>
+      </div>
+      <div class="scene-body">
+        <div class="scene-num">Scene ${s.scene_index}</div>
+        <div class="scene-visual">${esc(s.visual_description || '')}</div>
+        ${s.text_overlay ? `<div class="scene-overlay">"${esc(s.text_overlay)}"</div>` : ''}
+        <div class="scene-shot">
+          ${shots.map(t => `<span class="shot-tag">${esc(t)}</span>`).join('')}
+          ${s.product_focus ? `<span class="shot-tag" title="product focus">${esc(s.product_focus)}</span>` : ''}
+        </div>
+        <div class="scene-duration">⏱ ${s.duration_seconds}s</div>
+        <button class="scene-regen-btn" onclick="toggleRegenPanel(${s.scene_index})" title="Regenerate / edit this frame">↻ Regen</button>
+        <div class="regen-panel" id="regenPanel_${s.scene_index}">
+          <label>Visual prompt (edit freely)</label>
+          <textarea class="regen-prompt-box" id="regenPrompt_${s.scene_index}"></textarea>
+          <label>Direction notes <span style="color:var(--muted2);font-style:italic;text-transform:none">(e.g. "more smile", "add product in hand", "remove text")</span></label>
+          <textarea class="regen-notes-box" id="regenNotes_${s.scene_index}" placeholder="Any extra instructions…"></textarea>
+          <div class="regen-panel-actions">
+            <button class="regen-go-btn" id="regenGoBtn_${s.scene_index}" onclick="submitRegenFrame(${s.scene_index})">↻ Generate Frame</button>
+            <button class="regen-cancel-btn" onclick="toggleRegenPanel(${s.scene_index})">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderScript(ugc) {
+  const talkingPoints = ugc.talking_points || [];
+  const demoActions   = ugc.demo_actions   || [];
+
+  return `
+    <div class="script-section">
+      <div class="script-header">
+        <span>🎤</span>
+        <h2>UGC Script</h2>
+      </div>
+      <div class="script-body">
+        <div class="script-block">
+          <label>Opening Line (say this to camera)</label>
+          <p class="opening-line">"${esc(ugc.opening_line || '')}"</p>
+        </div>
+        ${talkingPoints.length ? `
+        <div class="script-block">
+          <label>Talking Points</label>
+          <ul>${talkingPoints.map(p => `<li>${esc(p)}</li>`).join('')}</ul>
+        </div>` : ''}
+        ${demoActions.length ? `
+        <div class="script-block">
+          <label>Demo Actions (show on camera)</label>
+          <ul>${demoActions.map(a => `<li>${esc(a)}</li>`).join('')}</ul>
+        </div>` : ''}
+        <div class="script-block">
+          <label>Closing CTA (say this to camera)</label>
+          <p class="cta-line">"${esc(ugc.closing_cta || '')}"</p>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ── Track current storyboard id for approve/fav/regen ── */
+let currentStoryboardId = null;
+
+/* ── Load existing storyboard ── */
+async function loadStoryboard(id, prefetched=null) {
+  try {
+    currentStoryboardId = id;
+    const detail = prefetched || await api(`/api/video/storyboard/${id}`);
+    // For prefetched (from generate), reconstruct sb shape
+    const sb = prefetched ? {
+      id:                    prefetched.storyboard_id,
+      concept_text:          prefetched.concept,
+      total_duration_seconds:prefetched.total_duration_seconds,
+      ugc_script_json:       JSON.stringify(prefetched.ugc_script || {}),
+    } : detail;
+
+    // scenes_detail may be on detail directly or nested
+    if (prefetched && !detail.scenes_detail) {
+      // Build scenes_detail from raw scenes (no asset yet unless generate_frames=true)
+      detail.scenes_detail = (prefetched.scenes || []).map(s => ({
+        ...s,
+        scene_index: s.scene_id,
+        image_url:   s.render_asset_id ? `/api/render/asset/${s.render_asset_id}/image` : null,
+      }));
+    }
+
+    renderStoryboard(sb, detail);
+
+    // Restore approve/fav button state from fetched data
+    const data = prefetched ? detail : detail;
+    const sbApproveBtn = document.getElementById('sbApproveBtn');
+    if (sbApproveBtn) {
+      sbApproveBtn.classList.toggle('active', !!data.is_approved);
+      sbApproveBtn.textContent = data.is_approved ? '✓ Approved' : '✓ Approve';
+    }
+    const sbFavBtn = document.getElementById('sbFavBtn');
+    if (sbFavBtn) sbFavBtn.classList.toggle('active', !!data.is_favorite);
+  } catch(e) {
+    toast('Failed to load storyboard: ' + e.message, true);
+  }
+}
+
+/* ── Generate frames for existing storyboard ── */
+async function generateFrames(sbId) {
+  const btn = document.getElementById('genFramesBtn');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = '⏳ Generating…';
+  try {
+    const aspect = document.getElementById('aspectRatio').value;
+    const model  = document.getElementById('modelSelect')?.value || null;
+    await api(`/api/video/storyboard/${sbId}/generate-frames`, {
+      model: model,
+      aspect_ratio: aspect,
+    });
+    toast('✓ Frames generated — reloading…');
+    setTimeout(() => loadStoryboard(sbId), 800);
+  } catch(e) {
+    toast('Frame generation failed: ' + e.message, true);
+    btn.disabled = false;
+    btn.textContent = '🖼 Generate All Frames';
+  }
+}
+
+/* ── Storyboard approve / fav / per-scene regen ── */
+async function toggleStoryboardApprove() {
+  if (!currentStoryboardId) return;
+  const btn = document.getElementById('sbApproveBtn');
+  const isApproved = btn.classList.contains('active');
+  try {
+    const res = await fetch(`/api/video/storyboard/${currentStoryboardId}/approve`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({approved: !isApproved}),
+    });
+    const data = await res.json();
+    btn.classList.toggle('active', data.is_approved);
+    btn.textContent = data.is_approved ? '✓ Approved' : '✓ Approve';
+    toast(data.is_approved ? 'Storyboard approved' : 'Approval removed');
+  } catch(e) { toast('Error: ' + e.message, true); }
+}
+
+async function toggleStoryboardFav() {
+  if (!currentStoryboardId) return;
+  const btn = document.getElementById('sbFavBtn');
+  const isFav = btn.classList.contains('active');
+  try {
+    const res = await fetch(`/api/video/storyboard/${currentStoryboardId}/favorite`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({favorite: !isFav}),
+    });
+    const data = await res.json();
+    btn.classList.toggle('active', data.is_favorite);
+    toast(data.is_favorite ? '★ Saved to favorites' : 'Removed from favorites');
+  } catch(e) { toast('Error: ' + e.message, true); }
+}
+
+function toggleRegenPanel(sceneIdx) {
+  const panel = document.getElementById(`regenPanel_${sceneIdx}`);
+  if (panel) panel.classList.toggle('open');
+}
+
+async function submitRegenFrame(sceneIdx) {
+  if (!currentStoryboardId) return;
+  const model       = document.getElementById('modelSelect')?.value || null;
+  const aspectRatio = document.getElementById('aspectRatio')?.value || '9:16';
+  const promptEl    = document.getElementById(`regenPrompt_${sceneIdx}`);
+  const notesEl     = document.getElementById(`regenNotes_${sceneIdx}`);
+  const goBtn       = document.getElementById(`regenGoBtn_${sceneIdx}`);
+
+  const basePrompt = (promptEl?.value || '').trim();
+  const notes      = (notesEl?.value || '').trim();
+  const finalPrompt = notes ? `${basePrompt}. Direction: ${notes}` : basePrompt;
+
+  if (goBtn) { goBtn.disabled = true; goBtn.textContent = 'Generating…'; }
+  try {
+    const res = await fetch(`/api/video/storyboard/${currentStoryboardId}/scene/${sceneIdx}/regenerate`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ model, aspect_ratio: aspectRatio, visual_prompt: finalPrompt || null }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'failed');
+
+    // Update scene image in place
+    if (data.image_url) {
+      let imgEl = document.querySelector(`[data-scene-img="${sceneIdx}"]`);
+      const placeholder = document.querySelector(`[data-scene-placeholder="${sceneIdx}"]`);
+      if (imgEl) {
+        imgEl.src = data.image_url + '?t=' + Date.now();
+        imgEl.style.display = '';
+        if (placeholder) placeholder.style.display = 'none';
+      } else if (placeholder) {
+        const img = document.createElement('img');
+        img.src = data.image_url + '?t=' + Date.now();
+        img.setAttribute('data-scene-img', sceneIdx);
+        img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+        placeholder.replaceWith(img);
+      }
+    }
+
+    // Close panel, clear notes
+    if (notesEl) notesEl.value = '';
+    const panel = document.getElementById(`regenPanel_${sceneIdx}`);
+    if (panel) panel.classList.remove('open');
+    toast('Frame regenerated');
+  } catch(e) {
+    toast('Regen failed: ' + e.message, true);
+  } finally {
+    if (goBtn) { goBtn.disabled = false; goBtn.textContent = '↻ Generate Frame'; }
+  }
+}
+
+/* ── Assemble video from existing frames ── */
+async function assembleVideo(sbId, videoType) {
+  const btn = document.getElementById('assembleBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Assembling…'; }
+  const statusEl = document.getElementById('videoOutputStatus');
+  if (statusEl) statusEl.textContent = 'Assembling video…';
+  try {
+    const aspect = document.getElementById('aspectRatio')?.value || '9:16';
+    const result = await api(`/api/video/storyboard/${sbId}/assemble`, {
+      video_type:        videoType || document.getElementById('videoType')?.value || 'ugc',
+      aspect_ratio:      aspect,
+      add_text_overlays: true,
+    });
+
+    if (result.status === 'no_frames') {
+      toast('Generate scene frames first, then assemble', true);
+      if (statusEl) statusEl.textContent = 'No frames available — generate frames first';
+      return;
+    }
+    if (result.status === 'error') {
+      toast(result.error || 'Assembly failed', true);
+      if (statusEl) statusEl.textContent = result.error || 'Assembly failed';
+      return;
+    }
+
+    toast(`✓ Video assembled — ${result.scenes_used}/${result.scene_count} scenes, ${Math.round(result.duration)}s`);
+    await loadVideoOutputs(sbId);
+  } catch(e) {
+    toast('Assembly failed: ' + e.message, true);
+    if (statusEl) statusEl.textContent = 'Assembly failed: ' + e.message;
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '🎬 Generate Video'; }
+  }
+}
+
+/* ── Load and render assembled video outputs for a storyboard ── */
+async function loadVideoOutputs(sbId) {
+  try {
+    const outputs = await api(`/api/video/storyboard/${sbId}/outputs`);
+    const listEl  = document.getElementById('videoOutputList');
+    const statusEl = document.getElementById('videoOutputStatus');
+    if (!listEl) return;
+
+    if (!outputs.length) {
+      listEl.innerHTML = '';
+      if (statusEl) statusEl.textContent = 'No video assembled yet — click Generate Video above';
+      return;
+    }
+
+    if (statusEl) statusEl.textContent = `${outputs.length} video${outputs.length > 1 ? 's' : ''} assembled`;
+
+    const vtypeLabels = {
+      ugc: 'UGC', farm_origin: 'Farm / Origin',
+      product_hero: 'Product Hero', comparison_reveal: 'Comparison / Reveal',
+    };
+
+    listEl.innerHTML = outputs.map(o => {
+      const meta = JSON.parse(o.metadata_json || '{}');
+      const label = vtypeLabels[o.video_type] || o.video_type;
+      const dur   = meta.duration ? `${Math.round(meta.duration)}s` : '';
+      const sc    = meta.scenes_used != null ? `${meta.scenes_used}/${meta.scene_count} scenes` : '';
+
+      return `
+        <div class="video-output-card" id="voc-${o.id}">
+          <div style="flex-shrink:0">
+            ${o.video_url
+              ? `<video src="${o.video_url}" style="width:90px;height:160px;object-fit:cover;border-radius:6px;background:#000"
+                       controls playsinline></video>`
+              : `<div style="width:90px;height:160px;background:var(--surface);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:10px">no file</div>`}
+          </div>
+          <div class="voc-info">
+            <div style="font-size:12px;font-weight:600">${esc(label)} — ${esc(o.status)}</div>
+            <div class="voc-meta">${[dur, sc, o.created_at?.slice(0,10)].filter(Boolean).join(' · ')}</div>
+            <div class="voc-actions" style="margin-top:8px">
+              <button class="voc-btn ${o.is_approved ? 'active-approve' : ''}" id="voc-approve-${o.id}"
+                onclick="toggleVideoOutputFlag(${o.id},'approve',this)">
+                ${o.is_approved ? '✓ Approved' : '✓ Approve'}
+              </button>
+              <button class="voc-btn ${o.is_favorite ? 'active-fav' : ''}" id="voc-fav-${o.id}"
+                onclick="toggleVideoOutputFlag(${o.id},'favorite',this)">★</button>
+              <button class="voc-btn ${o.is_ready_to_test ? 'active-ready' : ''}" id="voc-ready-${o.id}"
+                onclick="toggleVideoOutputFlag(${o.id},'ready',this)">
+                ${o.is_ready_to_test ? '✓ Ready' : '→ Ready to Test'}
+              </button>
+              ${o.video_url ? `<a class="voc-btn" href="${o.video_url}" download="video_${o.id}.mp4" style="text-decoration:none">⬇ Download</a>` : ''}
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) {
+    console.warn('loadVideoOutputs failed', e);
+  }
+}
+
+/* ── Toggle approve / fav / ready on a video output ── */
+async function toggleVideoOutputFlag(outputId, flag, btn) {
+  const endpointMap = { approve: 'approve', favorite: 'favorite', ready: 'ready' };
+  const endpoint = endpointMap[flag];
+  if (!endpoint) return;
+
+  const isActive = btn.classList.contains('active-' + (flag === 'favorite' ? 'fav' : flag));
+  const body = flag === 'approve' ? { approved: !isActive }
+             : flag === 'favorite' ? { favorite: !isActive }
+             : { ready: !isActive };
+  try {
+    const res = await fetch(`/api/video/output/${outputId}/${endpoint}`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (flag === 'approve') {
+      btn.classList.toggle('active-approve', !!data.is_approved);
+      btn.textContent = data.is_approved ? '✓ Approved' : '✓ Approve';
+      toast(data.is_approved ? 'Video approved' : 'Approval removed');
+    } else if (flag === 'favorite') {
+      btn.classList.toggle('active-fav', !!data.is_favorite);
+      toast(data.is_favorite ? '★ Saved' : 'Removed from favorites');
+    } else {
+      btn.classList.toggle('active-ready', !!data.is_ready_to_test);
+      btn.textContent = data.is_ready_to_test ? '✓ Ready' : '→ Ready to Test';
+      toast(data.is_ready_to_test ? '→ Marked ready to test' : 'Removed from ready');
+    }
+  } catch(e) { toast('Error: ' + e.message, true); }
+}
+
+/* ── Read concept/product/package from URL params (from Copilot → Video) ── */
+function applyUrlParams() {
+  const params = new URLSearchParams(window.location.search);
+  const concept   = params.get('concept') || '';
+  const productId = params.get('product_id') || '';
+  if (concept) {
+    document.getElementById('conceptInput').value = concept;
+  }
+  if (productId) {
+    window._presetProductId = productId;
+  }
+  // Store package lineage for use in generateStoryboard()
+  window._sourceProductionOutputId = params.get('source_production_output_id') || null;
+  window._sourceOutputType         = params.get('source_output_type') || null;
+  window._sessionId                = params.get('session_id') || null;
+
+  // Preset video type from URL (e.g. from a future "UGC Video" button)
+  const vtParam = params.get('video_type');
+  if (vtParam) {
+    const vtSel = document.getElementById('videoType');
+    if (vtSel) vtSel.value = vtParam;
+  }
+}
+
+/* ── Init ── */
+(async () => {
+  applyUrlParams();
+  await loadProducts();
+  // Apply preset product after options are populated
+  if (window._presetProductId) {
+    document.getElementById('productSelect').value = window._presetProductId;
+  }
+  try { await loadList(); } catch(e) { console.warn('loadList', e); }
+
+  // Auto-generate if concept came from URL — fire ONCE only.
+  // Two guards: remove autogen from URL + sessionStorage flag so reloads never re-trigger.
+  const params = new URLSearchParams(window.location.search);
+  const concept = params.get('concept') || '';
+  const autogenFlag = concept ? ('autogen_done_' + concept.slice(0, 30)) : null;
+  const shouldAutogen = concept && params.get('autogen') === '1'
+                        && autogenFlag && !sessionStorage.getItem(autogenFlag);
+  if (shouldAutogen) {
+    if (autogenFlag) sessionStorage.setItem(autogenFlag, '1');
+    params.delete('autogen');
+    history.replaceState(null, '', window.location.pathname + (params.toString() ? '?' + params.toString() : ''));
+    generateStoryboard();
+  }
+
+  // Auto-load storyboard if storyboard_id is in URL (e.g. from Collection)
+  const preloadId = params.get('storyboard_id');
+  if (preloadId) {
+    loadStoryboard(parseInt(preloadId, 10));
+  }
+})();
+</script>
+</body>
+</html>

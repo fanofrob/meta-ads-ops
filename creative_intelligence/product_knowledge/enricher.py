@@ -123,6 +123,38 @@ def get_product_context(
     }
 
 
+def _clean_product_name(raw: str, category: str | None = None) -> str:
+    """Extract a clean fruit/product name from a Shopify listing name.
+
+    Shopify names are often SKU-like: "1LB Kumquat 50% Off" or "Reed Avocado".
+    We want just the core product name: "Kumquat" or "Reed Avocado".
+
+    Strategy:
+    1. If category is set (e.g. "Fruit: Kumquat"), extract the fruit name from it —
+       strip the "Type: " prefix, un-invert comma parts, return the result.
+    2. Otherwise strip leading weight tokens (1LB, 2oz, etc.) and trailing
+       offer/pricing tokens (50% Off, Sale, etc.) from the raw name.
+    """
+    import re as _re
+
+    # 1. Prefer category — it's already the canonical product name
+    if category:
+        colon = category.find(":")
+        if colon != -1:
+            rest  = category[colon + 1:].strip()
+            parts = [p.strip() for p in rest.split(",") if p.strip()]
+            return " ".join(reversed(parts)) if len(parts) > 1 else rest
+        return category
+
+    # 2. Strip common SKU noise from raw Shopify name
+    name = raw
+    # Remove leading weight/quantity: "1LB", "2 LB", "500g", "1.5kg", etc.
+    name = _re.sub(r"^\d+(\.\d+)?\s*(lb|lbs|oz|g|kg|pound|pounds)\b[\s\-]*", "", name, flags=_re.I)
+    # Remove trailing price/offer: "50% Off", "40% Off Sale", "- Sale", etc.
+    name = _re.sub(r"[\s\-]*([\d]+%\s*off|sale|deal|promo|discount|free\s*shipping)[\s\S]*$", "", name, flags=_re.I)
+    return name.strip()
+
+
 def build_prompt_context_block(product_id: str, conn: sqlite3.Connection | None = None) -> str:
     """Format product context as a text block suitable for injection into prompts."""
     ctx = get_product_context(product_id, conn)
@@ -130,9 +162,10 @@ def build_prompt_context_block(product_id: str, conn: sqlite3.Connection | None 
         return ""
 
     p = ctx["product"]
+    clean_name    = _clean_product_name(p["name"], p.get("category"))
     product_label = p.get("category") or p["name"]
     lines = [
-        f"Name: {p['name']}",          # human name for use in copy
+        f"Name: {clean_name}",          # clean fruit name for use in copy — NO weight/price/SKU
         f"Product type: {product_label}",  # category for context only, not for use in hooks
     ]
 

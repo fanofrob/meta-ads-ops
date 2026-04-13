@@ -53,12 +53,67 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "ALTER TABLE render_assets ADD COLUMN is_ready_to_test INTEGER DEFAULT 0",
         "ALTER TABLE render_assets ADD COLUMN review_notes TEXT DEFAULT ''",
         "ALTER TABLE render_assets ADD COLUMN reviewed_at TEXT",
+        # render_outputs: store generation error for visibility without log access
+        "ALTER TABLE render_outputs ADD COLUMN error_message TEXT",
+        # ── video module (v1.5) ──────────────────────────────────────────
+        """CREATE TABLE IF NOT EXISTS video_storyboards (
+            id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id                  TEXT,
+            concept_text                TEXT NOT NULL,
+            scenes_json                 TEXT,
+            ugc_script_json             TEXT,
+            total_duration_seconds      INTEGER DEFAULT 30,
+            source_production_output_id INTEGER,
+            source_output_type          TEXT DEFAULT 'concept',
+            created_at                  TEXT DEFAULT (datetime('now'))
+        )""",
+        # Additive columns for storyboards created before lineage tracking
+        "ALTER TABLE video_storyboards ADD COLUMN source_production_output_id INTEGER",
+        "ALTER TABLE video_storyboards ADD COLUMN source_output_type TEXT DEFAULT 'concept'",
+        """CREATE TABLE IF NOT EXISTS video_scenes (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            storyboard_id       INTEGER NOT NULL
+                                    REFERENCES video_storyboards(id) ON DELETE CASCADE,
+            scene_index         INTEGER NOT NULL,
+            purpose             TEXT,
+            visual_description  TEXT,
+            text_overlay        TEXT DEFAULT '',
+            duration_seconds    REAL  DEFAULT 5,
+            camera_type         TEXT DEFAULT 'handheld',
+            framing             TEXT DEFAULT 'medium',
+            movement            TEXT DEFAULT 'none',
+            product_focus       TEXT DEFAULT '',
+            lighting_style      TEXT DEFAULT '',
+            render_asset_id     INTEGER
+        )""",
+        "ALTER TABLE video_storyboards ADD COLUMN is_favorite INTEGER DEFAULT 0",
+        "ALTER TABLE video_storyboards ADD COLUMN is_approved INTEGER DEFAULT 0",
+        "ALTER TABLE video_storyboards ADD COLUMN review_notes TEXT DEFAULT ''",
+        # ── video types + assembly (v1.6) ─────────────────────────────
+        "ALTER TABLE video_storyboards ADD COLUMN video_type TEXT DEFAULT 'ugc'",
+        "ALTER TABLE video_scenes ADD COLUMN video_type TEXT DEFAULT 'ugc'",
+        """CREATE TABLE IF NOT EXISTS video_outputs (
+            id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+            storyboard_id               INTEGER NOT NULL,
+            video_type                  TEXT NOT NULL DEFAULT 'ugc',
+            source_output_type          TEXT DEFAULT 'concept',
+            source_production_output_id INTEGER,
+            output_path                 TEXT,
+            metadata_json               TEXT DEFAULT '{}',
+            status                      TEXT NOT NULL DEFAULT 'pending',
+            is_approved                 INTEGER DEFAULT 0,
+            is_favorite                 INTEGER DEFAULT 0,
+            is_ready_to_test            INTEGER DEFAULT 0,
+            created_at                  TEXT DEFAULT (datetime('now'))
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_video_outputs_storyboard
+           ON video_outputs(storyboard_id)""",
     ]
     for stmt in migrations:
         try:
             conn.execute(stmt)
         except sqlite3.OperationalError:
-            pass  # Column already exists
+            pass  # Column/table already exists
 
 
 def db_exists(db_path: Path | None = None) -> bool:

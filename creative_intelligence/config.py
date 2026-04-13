@@ -131,6 +131,12 @@ CI_NANO_BANANA_ENDPOINT: str = os.getenv(
     "https://api.nanobanana.io/v1/generate",   # placeholder — update from API docs
 )
 
+# Local directory for assembled video files
+CI_VIDEO_OUTPUT_DIR: str = os.getenv(
+    "CI_VIDEO_OUTPUT_DIR",
+    str(Path(__file__).parent.parent / "creative_intelligence_data" / "video_outputs"),
+)
+
 # Replicate credentials — only needed when CI_IMAGE_PROVIDER=replicate
 CI_REPLICATE_API_KEY: str = os.getenv("CI_REPLICATE_API_KEY", "")
 # Default model: Google Nano Banana Pro — fast, native aspect ratio support

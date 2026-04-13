@@ -234,6 +234,14 @@ header .subtitle { font-size: 12px; color: var(--muted); }
       </select>
       <input class="model-custom" id="modelCustom" placeholder="owner/model-name or owner/model-name:version" />
 
+      <label style="margin-top:4px">Aspect Ratio</label>
+      <select class="model-select" id="aspectRatioSelect">
+        <option value="9:16">9:16 — Portrait / Stories</option>
+        <option value="4:5">4:5 — Feed Portrait</option>
+        <option value="1:1">1:1 — Square</option>
+        <option value="16:9">16:9 — Landscape</option>
+      </select>
+
       <label style="margin-top:4px">Variants to generate</label>
       <div class="variant-checks">
         <label class="variant-check-row">
@@ -293,6 +301,8 @@ let currentFocusedAssetId = null;
 let assetState = {};
 // currentSpecs: the render_specs array for the active render
 let currentSpecs = [];
+// currentDisplayedAssetIds: Set of asset IDs actually shown in cards (deduped, latest per variant)
+let currentDisplayedAssetIds = new Set();
 
 /* ─── Boot ──────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
@@ -386,6 +396,10 @@ function getSelectedVariants() {
   ).map(cb => cb.value);
 }
 
+function getSelectedAspectRatio() {
+  return document.getElementById('aspectRatioSelect')?.value || '9:16';
+}
+
 async function generateImages() {
   if (!currentRenderId) return;
   const variants = getSelectedVariants();
@@ -406,7 +420,7 @@ async function generateImages() {
         generate_images:      true,
         model:                model,
         variants:             variants,
-        aspect_ratio:         detail.render_specs?.[0]?.aspect_ratio || '9:16',
+        aspect_ratio:         getSelectedAspectRatio(),
       }),
     });
     const data = await res.json();
@@ -438,6 +452,7 @@ async function selectRender(id) {
   assetState = {};
   currentSpecs = [];
   currentFocusedAssetId = null;
+  currentDisplayedAssetIds = new Set();
 
   try {
     const res  = await fetch(`/api/render/${id}`);
@@ -470,6 +485,8 @@ function renderDetail(data) {
       assetMap[a.variant_label] = a;
     }
   });
+  // Track only the deduplicated asset IDs (one per variant) for accurate counts
+  currentDisplayedAssetIds = new Set(Object.values(assetMap).map(a => a.id));
 
   // Compute initial summary counts
   const counts = computeCounts();
@@ -567,6 +584,9 @@ function buildCard(spec, asset) {
     downloadHtml = `<a class="download-link" href="/api/render/asset/${assetId}/image" download>↓ Download</a>`;
   }
 
+  // Spec detail ID — must be declared before actionsHtml uses it
+  const specId = `spec-body-${variantLabel}-${assetId||'noasset'}`;
+
   // Action buttons (only if there's an asset)
   let actionsHtml = '';
   if (assetId) {
@@ -592,7 +612,6 @@ function buildCard(spec, asset) {
 
   // Spec detail body
   const tags = (spec.style_tags || []).map(t => `<span class="style-tag">${esc(t)}</span>`).join('');
-  const specId = `spec-body-${variantLabel}-${assetId||'noasset'}`;
 
   card.innerHTML = `
     <div class="card-header">
@@ -676,14 +695,15 @@ function applyCardState(card, st) {
 
 /* ─── Summary ───────────────────────────── */
 function computeCounts() {
-  const vals = Object.values(assetState);
+  // Only count assets that are currently displayed (latest per variant, deduped)
+  const displayed = [...currentDisplayedAssetIds].map(id => assetState[id]).filter(Boolean);
   return {
-    total:    currentSpecs.length,           // number of spec variants (1-5)
-    images:   vals.length,                   // number of generated images (may be > total if re-generated)
-    approved: vals.filter(s => s.review_status === 'approved').length,
-    rejected: vals.filter(s => s.review_status === 'rejected').length,
-    fav:      vals.filter(s => s.is_favorite).length,
-    ready:    vals.filter(s => s.is_ready_to_test).length,
+    total:    currentSpecs.length,
+    images:   currentDisplayedAssetIds.size,
+    approved: displayed.filter(s => s.review_status === 'approved').length,
+    rejected: displayed.filter(s => s.review_status === 'rejected').length,
+    fav:      displayed.filter(s => s.is_favorite).length,
+    ready:    displayed.filter(s => s.is_ready_to_test).length,
   };
 }
 
@@ -892,8 +912,10 @@ async function regenAsset(assetId) {
     const newAsset = data.asset;
     const newId    = data.new_asset_id;
 
-    // Update assetState with new asset
+    // Update assetState and displayed set with new asset
     assetState[newId] = { review_status: 'pending', is_favorite: 0, is_ready_to_test: 0 };
+    currentDisplayedAssetIds.delete(assetId);
+    currentDisplayedAssetIds.add(newId);
 
     // Swap the image in the card
     const card = document.querySelector(`[data-asset-id="${assetId}"]`);
@@ -903,16 +925,29 @@ async function regenAsset(assetId) {
       card.addEventListener('mouseenter', () => { currentFocusedAssetId = newId; });
       card.addEventListener('focus',      () => { currentFocusedAssetId = newId; });
 
-      // Replace image
-      const imgWrap = card.querySelector('.card-image-wrap img');
-      if (imgWrap) imgWrap.src = `/api/render/asset/${newId}/image`;
+      // Replace entire image wrap content (handles case where onerror replaced <img> with a div)
+      const imgWrap = card.querySelector('.card-image-wrap');
+      if (imgWrap) {
+        const readyBadge = imgWrap.querySelector('.ready-badge-corner');
+        imgWrap.innerHTML = `<img class="card-image" src="/api/render/asset/${newId}/image" alt="regenerated" loading="lazy" onerror="this.closest('.card-image-wrap').innerHTML='<div class=card-image-placeholder>Image unavailable</div>'">`;
+        if (readyBadge) imgWrap.appendChild(readyBadge);
+      }
 
-      // Update button IDs and state
-      ['approve','reject','fav','ready','edit'].forEach(action => {
+      // Update button IDs and onclick handlers.
+      // Use explicit function names — auto-capitalising 'fav' → 'assetFav'
+      // but the real function is assetFavorite.
+      const ACTION_FN = {
+        approve: 'assetApprove',
+        reject:  'assetReject',
+        fav:     'assetFavorite',
+        ready:   'assetReady',
+        edit:    'assetEdit',
+      };
+      Object.keys(ACTION_FN).forEach(action => {
         const b = document.getElementById(`ab-${action}-${assetId}`);
         if (b) {
           b.id = `ab-${action}-${newId}`;
-          b.setAttribute('onclick', `asset${action.charAt(0).toUpperCase()+action.slice(1)}(${newId})`);
+          b.setAttribute('onclick', `${ACTION_FN[action]}(${newId})`);
         }
       });
       // Fix edit button onclick
