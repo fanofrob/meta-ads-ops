@@ -491,8 +491,14 @@ function renderStoryboard(sb, detail) {
             🖼 Generate All Frames
           </button>
           <button class="assemble-btn" id="assembleBtn"
-            onclick="assembleVideo(${sb.id || detail.storyboard_id}, '${vtype}')">
-            🎬 Generate Video
+            onclick="assembleVideo(${sb.id || detail.storyboard_id}, '${vtype}', 'ai_video')"
+            title="AI-animated video — each scene is animated by Replicate (~60-90s)">
+            🎬 Generate AI Video
+          </button>
+          <button class="assemble-btn" id="assembleBtnSlideshow" style="background:#3b3b5c;font-size:11px;padding:6px 12px"
+            onclick="assembleVideo(${sb.id || detail.storyboard_id}, '${vtype}', 'ken_burns')"
+            title="Quick slideshow with Ken Burns zoom/pan effect (~5s)">
+            ⚡ Slideshow
           </button>
         </span>
       </div>
@@ -794,17 +800,26 @@ async function submitRegenFrame(sceneIdx) {
 }
 
 /* ── Assemble video from existing frames ── */
-async function assembleVideo(sbId, videoType) {
-  const btn = document.getElementById('assembleBtn');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Assembling…'; }
+async function assembleVideo(sbId, videoType, motionMode) {
+  motionMode = motionMode || 'ai_video';
+  const isAi = motionMode === 'ai_video';
+  const btn     = document.getElementById('assembleBtn');
+  const btnSlide = document.getElementById('assembleBtnSlideshow');
   const statusEl = document.getElementById('videoOutputStatus');
-  if (statusEl) statusEl.textContent = 'Assembling video…';
+
+  if (btn)      { btn.disabled = true;      btn.textContent = isAi ? '⏳ Animating scenes…' : '⏳ Assembling…'; }
+  if (btnSlide) { btnSlide.disabled = true; }
+  if (statusEl) statusEl.textContent = isAi
+    ? 'Animating scenes with AI (~60-90s per scene, running in parallel)…'
+    : 'Assembling slideshow…';
+
   try {
     const aspect = document.getElementById('aspectRatio')?.value || '9:16';
     const result = await api(`/api/video/storyboard/${sbId}/assemble`, {
       video_type:        videoType || document.getElementById('videoType')?.value || 'ugc',
       aspect_ratio:      aspect,
       add_text_overlays: true,
+      motion_mode:       motionMode,
     });
 
     if (result.status === 'no_frames') {
@@ -818,13 +833,15 @@ async function assembleVideo(sbId, videoType) {
       return;
     }
 
-    toast(`✓ Video assembled — ${result.scenes_used}/${result.scene_count} scenes, ${Math.round(result.duration)}s`);
+    const modeLabel = isAi ? 'AI video' : 'slideshow';
+    toast(`✓ ${modeLabel} ready — ${result.scenes_used}/${result.scene_count} scenes, ${Math.round(result.duration)}s`);
     await loadVideoOutputs(sbId);
   } catch(e) {
     toast('Assembly failed: ' + e.message, true);
     if (statusEl) statusEl.textContent = 'Assembly failed: ' + e.message;
   } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = '🎬 Generate Video'; }
+    if (btn)      { btn.disabled = false;      btn.innerHTML = '🎬 Generate AI Video'; }
+    if (btnSlide) { btnSlide.disabled = false; }
   }
 }
 
@@ -854,6 +871,9 @@ async function loadVideoOutputs(sbId) {
       const label = vtypeLabels[o.video_type] || o.video_type;
       const dur   = meta.duration ? `${Math.round(meta.duration)}s` : '';
       const sc    = meta.scenes_used != null ? `${meta.scenes_used}/${meta.scene_count} scenes` : '';
+      const modeTag = meta.motion_mode === 'ai_video'
+        ? '<span style="background:#1a3a2a;color:#4ecdc4;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;text-transform:uppercase;letter-spacing:.5px">AI Video</span>'
+        : '<span style="background:#2a2a3a;color:#aaa;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;text-transform:uppercase;letter-spacing:.5px">Slideshow</span>';
 
       return `
         <div class="video-output-card" id="voc-${o.id}">
@@ -864,7 +884,7 @@ async function loadVideoOutputs(sbId) {
               : `<div style="width:90px;height:160px;background:var(--surface);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:10px">no file</div>`}
           </div>
           <div class="voc-info">
-            <div style="font-size:12px;font-weight:600">${esc(label)} — ${esc(o.status)}</div>
+            <div style="font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px">${esc(label)} ${modeTag}</div>
             <div class="voc-meta">${[dur, sc, o.created_at?.slice(0,10)].filter(Boolean).join(' · ')}</div>
             <div class="voc-actions" style="margin-top:8px">
               <button class="voc-btn ${o.is_approved ? 'active-approve' : ''}" id="voc-approve-${o.id}"

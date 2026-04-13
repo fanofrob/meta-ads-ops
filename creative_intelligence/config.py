@@ -145,6 +145,13 @@ CI_REPLICATE_MODEL: str = os.getenv(
     "CI_REPLICATE_MODEL",
     "google/nano-banana-pro",
 )
+# Image-to-video model for AI video assembly (motion_mode="ai_video").
+# minimax/video-01-live: high quality ~6s clips, takes first_frame_image + prompt.
+# Override with any Replicate i2v model, e.g. stability-ai/stable-video-diffusion-img2vid-xt-1-1
+CI_VIDEO_MOTION_MODEL: str = os.getenv(
+    "CI_VIDEO_MOTION_MODEL",
+    "minimax/video-01-live",
+)
 
 
 def validate() -> list[str]:

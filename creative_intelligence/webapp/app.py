@@ -2272,6 +2272,7 @@ def video_assemble(storyboard_id: int) -> Any:
         video_type        = body.get("video_type") or "ugc"
         aspect_ratio      = body.get("aspect_ratio", "9:16")
         add_text_overlays = bool(body.get("add_text_overlays", True))
+        motion_mode       = body.get("motion_mode", "ken_burns")
         dry_run           = bool(body.get("dry_run", False))
 
         conn = _db()
@@ -2282,6 +2283,7 @@ def video_assemble(storyboard_id: int) -> Any:
             video_type        = video_type,
             aspect_ratio      = aspect_ratio,
             add_text_overlays = add_text_overlays,
+            motion_mode       = motion_mode,
             dry_run           = dry_run,
         )
         conn.close()
