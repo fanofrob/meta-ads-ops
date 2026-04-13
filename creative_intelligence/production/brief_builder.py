@@ -333,7 +333,11 @@ def build_script_package(
             "data": data, "output_md": output_md}
 
 
-def build_test_package(
+def _build_test_package_removed(*args, **kwargs) -> dict:  # type: ignore[return]
+    raise ValueError("test_package has been removed. Use static_brief, ugc_brief, or script_package.")
+
+
+def build_test_package(  # noqa: E501  — kept for backwards compatibility, raises on call
     concept: str,
     product_id: str | None,
     session_id: str | None,
@@ -505,8 +509,5 @@ def build_output(
     elif output_type == "script_package":
         return build_script_package(concept, product_id, conn,
                                     source_iteration_id, session_id, dry_run)
-    elif output_type == "test_package":
-        return build_test_package(concept, product_id, session_id, conn,
-                                  source_iteration_id, audience, goal, dry_run)
     else:
         raise ValueError(f"Unknown output_type: {output_type!r}")

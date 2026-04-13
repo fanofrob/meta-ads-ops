@@ -1879,45 +1879,67 @@ def video_storyboard_fetch(storyboard_id: int) -> Any:
 
 
 def _build_video_visual_seed(scenes: list[dict]) -> str:
-    """Build a visual consistency anchor prompt from the storyboard's scenes.
+    """Build a concise style/character anchor for visual consistency across frames.
 
-    Extracts the talent/setting/lighting from the first person-facing scene
-    and returns a prefix string to prepend to each scene's image generation
-    prompt. This keeps the same person, background and lighting across all
-    generated frames unless a scene explicitly shows different subjects.
+    Returns a SHORT style prefix (NOT a full scene description) to prepend to
+    each scene's image generation prompt. The prefix describes WHO and STYLE only
+    — no actions, no objects — so the model doesn't try to render two competing
+    scenes in a single image.
     """
     if not scenes:
         return ""
 
-    # Gather lighting from first scene that has it
+    # Lighting: use lighting_style column (set by storyboard builder per scene)
     lighting = next(
-        (s.get("lighting_style", "") for s in scenes if s.get("lighting_style", "")), ""
+        (s.get("lighting_style", "").strip() for s in scenes if s.get("lighting_style", "").strip()),
+        "warm natural daylight",
     )
-    # Find the first talent/person scene for character anchoring
-    talent_scene = next(
-        (s for s in scenes
-         if any(w in (s.get("visual_description") or "").lower()
-                for w in ["talent", "creator", "person", "woman", "man", "face", "smile"])),
-        None,
-    )
-    seed_parts: list[str] = []
 
-    if talent_scene:
-        vd = talent_scene.get("visual_description", "")
-        # Take first sentence as character/setting anchor
-        anchor = vd.split(".")[0].strip()
-        if anchor:
-            seed_parts.append(
-                f"Maintain visual consistency with this reference scene: {anchor}"
-            )
-    if lighting:
-        seed_parts.append(f"Lighting: {lighting}")
+    # Background: infer from first scene's visual_description
+    _BG_MAP = {
+        "white background": "clean white background",
+        "neutral background": "clean neutral background",
+        "studio": "clean studio background",
+        "kitchen": "kitchen setting",
+        "bedroom": "bedroom setting",
+        "living room": "living room setting",
+        "outdoor": "outdoor natural setting",
+        "garden": "outdoor garden setting",
+    }
+    background = "clean neutral background"
+    for s in scenes:
+        vd_lower = (s.get("visual_description") or "").lower()
+        for kw, label in _BG_MAP.items():
+            if kw in vd_lower:
+                background = label
+                break
+        if background != "clean neutral background":
+            break
 
-    seed_parts.append(
-        "Same person, same environment, same color grade throughout. "
-        "Realistic UGC aesthetic, warm natural tones."
+    # Person type: infer from first person-facing scene (no action words)
+    _PERSON_WORDS = ["talent", "creator", "woman", "man", "person", "girl", "guy", "model"]
+    person_desc = ""
+    for s in scenes:
+        vd_lower = (s.get("visual_description") or "").lower()
+        if any(w in vd_lower for w in _PERSON_WORDS):
+            if "woman" in vd_lower or "girl" in vd_lower or "female" in vd_lower:
+                person_desc = "young woman"
+            elif "man" in vd_lower or "guy" in vd_lower or "male" in vd_lower:
+                person_desc = "young man"
+            else:
+                person_desc = "creator on camera"
+            break
+
+    parts = []
+    if person_desc:
+        parts.append(person_desc)
+    parts.append(background)
+    parts.append(lighting)
+    parts.append(
+        "realistic UGC photo style, natural skin tones, consistent look throughout, "
+        "single frame, single subject, natural proportions"
     )
-    return " | ".join(seed_parts) + " || "
+    return ", ".join(parts) + ". "
 
 
 @app.post("/api/video/storyboard/<int:storyboard_id>/generate-frames")
@@ -1957,8 +1979,16 @@ def video_generate_frames(storyboard_id: int) -> Any:
 
         negative = (
             "text overlays, watermarks, blurry, low quality, distorted, "
-            "generic stock photo, fake-looking, oversaturated, pixelated"
+            "generic stock photo, fake-looking, oversaturated, pixelated, "
+            "collage, multiple photos in one image, split screen, storyboard panels, "
+            "grid layout, picture-in-picture, montage, side by side, 4 images, "
+            "5 images, multiple frames, comic strip, contact sheet, "
+            "disproportionate scale, giant fruit, giant product, unrealistic size"
         )
+
+        # Fixed seed across all scenes for consistent character/style
+        # Derived from storyboard_id so it's stable on regeneration
+        style_seed = (storyboard_id * 7919) % (2**31 - 1)
 
         # Determine which scenes need generation
         to_generate = []
@@ -1987,20 +2017,31 @@ def video_generate_frames(storyboard_id: int) -> Any:
             from creative_intelligence.db import get_connection
             thread_conn = get_connection(db_path) if db_path else _db()
             try:
-                # Prefix with visual seed for consistency; skip seed for obvious product-only shots
                 vd = s.get("visual_description", "")
                 lower_vd = vd.lower()
-                # Use seed unless it's a pure product/macro shot with no person
-                use_seed = visual_seed and any(
-                    w in lower_vd for w in ["talent", "creator", "person", "hand", "face", "smile", "camera"]
-                )
-                prompt = (visual_seed + vd) if use_seed else vd
+                # Prepend style anchor for person-facing shots; product-only shots
+                # get a lighter prefix so we don't force a person into a macro shot
+                _PERSON_WORDS = ["talent", "creator", "person", "face", "smile", "camera", "speaking", "holding"]
+                _PRODUCT_ONLY = ["macro", "b-roll", "b roll", "product only", "no person"]
+                is_person_shot = any(w in lower_vd for w in _PERSON_WORDS)
+                is_product_only = any(w in lower_vd for w in _PRODUCT_ONLY) and not is_person_shot
+                if visual_seed and is_person_shot:
+                    prompt = visual_seed + vd
+                elif visual_seed and not is_product_only:
+                    # Light style prefix only (drop person description)
+                    style_only = ", ".join(visual_seed.rstrip(". ").split(", ")[1:]) + ". " if ", " in visual_seed else ""
+                    prompt = style_only + vd
+                else:
+                    prompt = vd
+
+                scene_gen_kwargs = dict(gen_kwargs)
+                scene_gen_kwargs["seed"] = style_seed  # same seed → consistent style/character
 
                 paths = provider.generate(
                     prompt=prompt,
                     negative_prompt=negative,
                     aspect_ratio=aspect_ratio,
-                    **gen_kwargs,
+                    **scene_gen_kwargs,
                 )
                 if not paths:
                     return {"scene_index": s["scene_index"], "error": "no paths returned"}
@@ -2133,21 +2174,34 @@ def video_scene_regenerate(storyboard_id: int, scene_idx: int) -> Any:
 
         # Build visual seed for consistency
         visual_seed = _build_video_visual_seed(all_scenes)
+        style_seed = (storyboard_id * 7919) % (2**31 - 1)
 
         gen_kwargs: dict = {}
         if model:
             gen_kwargs["model"] = model
+        gen_kwargs["seed"] = style_seed
 
         vd = prompt_override or scene.get("visual_description", "")
         lower_vd = vd.lower()
-        use_seed = visual_seed and any(
-            w in lower_vd for w in ["talent", "creator", "person", "hand", "face", "smile", "camera"]
-        )
-        prompt = (visual_seed + vd) if use_seed else vd
+        _PERSON_WORDS = ["talent", "creator", "person", "face", "smile", "camera", "speaking", "holding"]
+        _PRODUCT_ONLY = ["macro", "b-roll", "b roll", "product only"]
+        is_person_shot  = any(w in lower_vd for w in _PERSON_WORDS)
+        is_product_only = any(w in lower_vd for w in _PRODUCT_ONLY) and not is_person_shot
+        if visual_seed and is_person_shot:
+            prompt = visual_seed + vd
+        elif visual_seed and not is_product_only:
+            style_only = ", ".join(visual_seed.rstrip(". ").split(", ")[1:]) + ". " if ", " in visual_seed else ""
+            prompt = style_only + vd
+        else:
+            prompt = vd
 
         negative = (
             "text overlays, watermarks, blurry, low quality, distorted, "
-            "generic stock photo, fake-looking, oversaturated, pixelated"
+            "generic stock photo, fake-looking, oversaturated, pixelated, "
+            "collage, multiple photos in one image, split screen, storyboard panels, "
+            "grid layout, picture-in-picture, montage, side by side, 4 images, "
+            "5 images, multiple frames, comic strip, contact sheet, "
+            "disproportionate scale, giant fruit, giant product, unrealistic size"
         )
 
         provider = get_provider(None)

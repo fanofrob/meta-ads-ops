@@ -21,7 +21,6 @@ OUTPUT_TYPES = frozenset({
     "static_brief",
     "ugc_brief",
     "script_package",
-    "test_package",
 })
 
 
@@ -161,42 +160,6 @@ class ScriptPackage:
 }"""
 
 
-# ─────────────────────────────────────────────
-# Test Package
-# Assembled (no LLM) — for media buyers / performance teams
-# ─────────────────────────────────────────────
-
-class TestPackage:
-    """
-    Schema for a multi-concept test bundle.
-
-    Assembled from existing session iterations — no LLM call.
-    Designed to map directly to a Meta Ads creative test (one package per adset).
-
-    Fields
-    ------
-    core_concept        : The primary approved concept text.
-    core_iteration_id   : Source iteration ID (for lineage tracking).
-    core_score          : {structural, pattern_match, overall} for core concept.
-    variants            : [{concept_text, action_type, predicted_score, iteration_id}].
-    audience            : Audience description from session context.
-    goal                : Campaign goal (e.g., "conversions").
-    pattern_alignment   : Top matching pattern {pattern_name, hook_type, angle, winner_count}.
-    score_summary       : {avg, min, max, count} across core + variants.
-    product_context     : build_prompt_context_block() output for reference.
-    """
-    FIELDS = (
-        "core_concept",
-        "core_iteration_id",
-        "core_score",
-        "variants",
-        "audience",
-        "goal",
-        "pattern_alignment",
-        "score_summary",
-        "product_context",
-    )
-
 
 # ─────────────────────────────────────────────
 # Helpers
@@ -253,8 +216,6 @@ def validate_output(output_type: str, data: dict[str, Any]) -> list[str]:
         required = UGCCreatorBrief.FIELDS
     elif output_type == "script_package":
         required = ScriptPackage.FIELDS
-    elif output_type == "test_package":
-        required = TestPackage.FIELDS
     else:
         return [f"unknown output_type: {output_type!r}"]
 

@@ -402,7 +402,6 @@ header .subtitle { font-size: 12px; color: var(--muted); }
         <button class="action-btn prod" onclick="runProduction('ugc_brief')" title="Full creator brief for UGC talent">→ UGC Brief</button>
         <button class="action-btn prod" onclick="runProduction('script_package')" title="Script with beat structure">→ Script Package</button>
         <button class="action-btn prod" id="videoStoryboardBtn" onclick="goVideoStoryboard()" title="Build a scene-by-scene video storyboard">🎬 Video Storyboard</button>
-        <button class="action-btn prod" onclick="runProduction('test_package')" title="Bundle core concept + session variants for testing">→ Test Package</button>
       </div>
     </div>
 
@@ -1063,7 +1062,7 @@ async function showSavedOutputs() {
     const items = await res.json();
     const list  = document.getElementById('prodSavedList');
     if (!items.length) { list.innerHTML = '<p style="color:var(--muted);padding:16px">No production outputs yet.</p>'; return; }
-    const badgeClass = { static_brief:'prod-badge-static', ugc_brief:'prod-badge-ugc', script_package:'prod-badge-script', test_package:'prod-badge-package' };
+    const badgeClass = { static_brief:'prod-badge-static', ugc_brief:'prod-badge-ugc', script_package:'prod-badge-script' };
     list.innerHTML = items.map(it => `
       <div class="prod-saved-row">
         <span class="pstype prod-type-badge ${badgeClass[it.output_type]||'prod-badge-static'}">${(it.output_type||'').replace(/_/g,' ')}</span>
@@ -1083,27 +1082,23 @@ async function showSavedOutputs() {
 function buildProductionCard(result) {
   const outputType = result.output_type || '';
   const data       = result.data || {};
-  const outputId   = result.output_id || result.package_id || null;
-  const isPkg      = outputType === 'test_package';
+  const outputId   = result.output_id || null;
 
   // Badge style
   const badgeClass = {
     static_brief:   'prod-badge-static',
     ugc_brief:      'prod-badge-ugc',
     script_package: 'prod-badge-script',
-    test_package:   'prod-badge-package',
   }[outputType] || 'prod-badge-static';
   const badgeLabel = outputType.replace(/_/g, ' ');
 
   // Concept preview
   const preview = esc(
-    data.hook || data.opening_line || data.core_concept || ''
+    data.hook || data.opening_line || ''
   ).slice(0, 80);
 
   // Action buttons HTML
-  const exportBase = isPkg
-    ? `/api/production/package/${outputId}/export`
-    : `/api/production/${outputId}/export`;
+  const exportBase = `/api/production/${outputId}/export`;
 
   const renderBtn = (outputId && outputType === 'static_brief') ? `
     <button class="card-btn" onclick="triggerRender(${outputId},'${outputType}')" title="Generate render images from this brief">🎨 Render</button>
@@ -1121,9 +1116,9 @@ function buildProductionCard(result) {
   ` : '';
 
   const actionButtons = outputId ? `
-    <button class="card-btn prod-approve-btn" data-output-id="${outputId}" data-is-pkg="${isPkg ? 1 : 0}"
+    <button class="card-btn prod-approve-btn" data-output-id="${outputId}"
             onclick="toggleApprove(this)" title="Mark as approved for production">✓ Approve</button>
-    <button class="card-btn star" data-output-id="${outputId}" data-is-pkg="${isPkg ? 1 : 0}"
+    <button class="card-btn star" data-output-id="${outputId}"
             onclick="toggleProdFav(this)" title="Save">★</button>
     <button class="card-btn" onclick="exportProduction('${exportBase}','md')" title="Copy Markdown">Copy MD</button>
     <button class="card-btn" onclick="exportProduction('${exportBase}','json')" title="Download JSON">JSON</button>
@@ -1139,8 +1134,6 @@ function buildProductionCard(result) {
     bodyHtml = buildUGCBriefBody(data);
   } else if (outputType === 'script_package') {
     bodyHtml = buildScriptPackageBody(data);
-  } else if (outputType === 'test_package') {
-    bodyHtml = buildTestPackageBody(data);
   }
 
   const div = document.createElement('div');
