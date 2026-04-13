@@ -140,19 +140,9 @@ class ReplicateSceneClipProvider(SceneClipProvider):
         if not video_url:
             return None
 
-        # Download to disk
-        dest_dir = output_dir or _default_clip_dir()
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        ar = aspect_ratio.replace(":", "x")
-        dest = dest_dir / f"scene_{scene_id}_clip_{ar}.mp4"
-        try:
-            urllib.request.urlretrieve(video_url, str(dest))
-            if dest.exists() and dest.stat().st_size > 0:
-                return str(dest)
-        except Exception:
-            pass
-
-        return None
+        # Return URL directly — avoids downloading large files to ephemeral disk.
+        # The assembler downloads on demand to a temp file at assembly time.
+        return video_url
 
 
 # ─────────────────────────────────────────────
