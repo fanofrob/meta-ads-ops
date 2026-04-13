@@ -631,15 +631,16 @@ def assemble_video(
         if img_path:
             scene_paths.append((scene, img_path))
 
-    if not scene_paths:
+    # ── AI video mode: animate each frame into a real video clip ─────
+    import tempfile
+    tmp_dir = Path(tempfile.mkdtemp(prefix="ci_aivideo_"))
+
+    # "clip" mode doesn't need scene images — guard only applies to image-based modes
+    if motion_mode != "clip" and not scene_paths:
         return {"output_id": None, "output_path": None, "duration": 0,
                 "scene_count": scene_count, "scenes_used": 0,
                 "status": "no_frames",
                 "error": "No scene frames available — generate frames first"}
-
-    # ── AI video mode: animate each frame into a real video clip ─────
-    import tempfile
-    tmp_dir = Path(tempfile.mkdtemp(prefix="ci_aivideo_"))
 
     if motion_mode == "ai_video":
         from creative_intelligence import config as _cfg
@@ -719,8 +720,10 @@ def assemble_video(
             (storyboard_id,),
         ).fetchall()
         clip_by_scene_id: dict[int, dict] = {r["scene_id"]: dict(r) for r in clip_rows}
+        # Build img_path lookup for Ken Burns fallback (scenes that have images)
+        img_by_scene_id: dict[int, str] = {s["id"]: p for s, p in scene_paths}
 
-        for scene, img_path in scene_paths:
+        for scene in scenes:
             scene_id = scene.get("id", 0)
             duration = float(scene.get("duration_seconds") or cfg.avg_scene_seconds)
             text = scene.get("text_overlay") or ""
@@ -730,7 +733,6 @@ def assemble_video(
             if clip_record:
                 clip_path_str = clip_record.get("clip_local_path") or clip_record.get("clip_url") or ""
                 if clip_path_str and not clip_path_str.startswith("mock://"):
-                    local_path = _resolve_image_path(clip_path_str) if not clip_path_str.startswith("http") else clip_path_str
                     # For http paths, download first
                     if clip_path_str.startswith(("http://", "https://")):
                         import tempfile as _tf
@@ -768,23 +770,25 @@ def assemble_video(
                             pass
 
             if not used_clip:
-                # Fallback to Ken Burns
-                try:
-                    movement = scene.get("movement") or cfg.ken_burns_map.get(
-                        (scene.get("purpose") or "demo").lower(), cfg.default_movement
-                    )
-                    frame_arrays = _make_scene_frames(
-                        img_path, duration, movement, target_w, target_h, fps
-                    )
-                    if add_text_overlays and text:
-                        frame_arrays = _draw_text_on_frames(
-                            frame_arrays, text, overlay_style, target_w, target_h
+                # Fallback to Ken Burns only if a frame image is available
+                img_path = img_by_scene_id.get(scene_id)
+                if img_path:
+                    try:
+                        movement = scene.get("movement") or cfg.ken_burns_map.get(
+                            (scene.get("purpose") or "demo").lower(), cfg.default_movement
                         )
-                    clips.append(ImageSequenceClip(frame_arrays, fps=fps))
-                    total_duration += duration
-                    scenes_used += 1
-                except Exception:
-                    pass
+                        frame_arrays = _make_scene_frames(
+                            img_path, duration, movement, target_w, target_h, fps
+                        )
+                        if add_text_overlays and text:
+                            frame_arrays = _draw_text_on_frames(
+                                frame_arrays, text, overlay_style, target_w, target_h
+                            )
+                        clips.append(ImageSequenceClip(frame_arrays, fps=fps))
+                        total_duration += duration
+                        scenes_used += 1
+                    except Exception:
+                        pass
 
     else:
         # ── Ken Burns mode (default) ──────────────────────────────────

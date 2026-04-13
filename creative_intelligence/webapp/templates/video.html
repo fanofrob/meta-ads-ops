@@ -897,8 +897,11 @@ async function assembleVideo(sbId, videoType, motionMode) {
     });
 
     if (result.status === 'no_frames') {
-      toast('Generate scene frames first, then assemble', true);
-      if (statusEl) statusEl.textContent = 'No frames available — generate frames first';
+      const msg = isClip
+        ? 'No clips assembled — run Generate Clips first, then Use Clips'
+        : 'Generate scene frames first, then assemble';
+      toast(msg, true);
+      if (statusEl) statusEl.textContent = msg;
       return;
     }
     if (result.status === 'error') {
