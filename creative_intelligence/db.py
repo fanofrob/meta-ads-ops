@@ -55,12 +55,38 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "ALTER TABLE render_assets ADD COLUMN reviewed_at TEXT",
         # render_outputs: store generation error for visibility without log access
         "ALTER TABLE render_outputs ADD COLUMN error_message TEXT",
+        # ── video module (v1.5) ──────────────────────────────────────────
+        """CREATE TABLE IF NOT EXISTS video_storyboards (
+            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id              TEXT,
+            concept_text            TEXT NOT NULL,
+            scenes_json             TEXT,
+            ugc_script_json         TEXT,
+            total_duration_seconds  INTEGER DEFAULT 30,
+            created_at              TEXT DEFAULT (datetime('now'))
+        )""",
+        """CREATE TABLE IF NOT EXISTS video_scenes (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            storyboard_id       INTEGER NOT NULL
+                                    REFERENCES video_storyboards(id) ON DELETE CASCADE,
+            scene_index         INTEGER NOT NULL,
+            purpose             TEXT,
+            visual_description  TEXT,
+            text_overlay        TEXT DEFAULT '',
+            duration_seconds    REAL  DEFAULT 5,
+            camera_type         TEXT DEFAULT 'handheld',
+            framing             TEXT DEFAULT 'medium',
+            movement            TEXT DEFAULT 'none',
+            product_focus       TEXT DEFAULT '',
+            lighting_style      TEXT DEFAULT '',
+            render_asset_id     INTEGER
+        )""",
     ]
     for stmt in migrations:
         try:
             conn.execute(stmt)
         except sqlite3.OperationalError:
-            pass  # Column already exists
+            pass  # Column/table already exists
 
 
 def db_exists(db_path: Path | None = None) -> bool:

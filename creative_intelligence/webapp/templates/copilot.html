@@ -401,6 +401,7 @@ header .subtitle { font-size: 12px; color: var(--muted); }
         <button class="action-btn prod" onclick="runProduction('static_brief')" title="Full static ad brief for designers">→ Static Brief</button>
         <button class="action-btn prod" onclick="runProduction('ugc_brief')" title="Full creator brief for UGC talent">→ UGC Brief</button>
         <button class="action-btn prod" onclick="runProduction('script_package')" title="Script with beat structure">→ Script Package</button>
+        <button class="action-btn prod" onclick="goVideoStoryboard()" title="Build a scene-by-scene video storyboard">🎬 Video Storyboard</button>
         <button class="action-btn prod" onclick="runProduction('test_package')" title="Bundle core concept + session variants for testing">→ Test Package</button>
       </div>
     </div>
@@ -857,6 +858,17 @@ function toast(msg, isErr) {
 }
 
 /* ── Production Handoff ─────────────────────────────── */
+
+function goVideoStoryboard() {
+  const concept = (document.getElementById('concept').value || '').trim();
+  if (!concept) { toast('Enter a concept first', true); return; }
+  const params = new URLSearchParams({
+    concept:    concept,
+    product_id: productId || '',
+    autogen:    '1',
+  });
+  window.open('/video?' + params.toString(), '_blank');
+}
 
 async function runProduction(outputType) {
   const concept = (document.getElementById('concept').value || '').trim();

@@ -1690,6 +1690,189 @@ def collection_api() -> Any:
 
 
 # ─────────────────────────────────────────────
+# Video storyboard
+# ─────────────────────────────────────────────
+
+@app.get("/video")
+def video_page() -> Any:
+    return render_template("video.html")
+
+
+@app.post("/api/video/storyboard")
+def video_storyboard_create() -> Any:
+    """Generate a video storyboard from a concept.
+
+    Body:
+      concept           str  — the hook / concept text (required)
+      product_id        str? — product for context
+      aspect_ratio      str? — default "9:16"
+      generate_frames   bool?— generate scene images (default false)
+      model             str? — Replicate model slug override
+      dry_run           bool?— skip DB writes (default false)
+    """
+    from creative_intelligence.video.storyboard_builder import build_storyboard
+    try:
+        body           = request.get_json(force=True) or {}
+        concept        = (body.get("concept") or "").strip()
+        if not concept:
+            return jsonify({"error": "concept is required"}), 400
+
+        product_id     = body.get("product_id") or None
+        aspect_ratio   = body.get("aspect_ratio", "9:16")
+        generate_frames= bool(body.get("generate_frames", False))
+        model          = body.get("model") or None
+        dry_run        = bool(body.get("dry_run", False))
+
+        conn   = _db()
+        result = build_storyboard(
+            concept        = concept,
+            product_id     = product_id,
+            conn           = conn,
+            aspect_ratio   = aspect_ratio,
+            generate_frames= generate_frames,
+            model          = model,
+            dry_run        = dry_run,
+        )
+        conn.close()
+        return jsonify(result)
+    except Exception as exc:
+        app.logger.exception("video/storyboard failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/video/storyboard/<int:storyboard_id>")
+def video_storyboard_fetch(storyboard_id: int) -> Any:
+    """Fetch a storyboard with its scenes and asset image paths."""
+    try:
+        conn = _db()
+        sb = conn.execute(
+            "SELECT * FROM video_storyboards WHERE id = ?", (storyboard_id,)
+        ).fetchone()
+        if not sb:
+            conn.close()
+            return jsonify({"error": "not found"}), 404
+
+        scenes = conn.execute(
+            """SELECT vs.*, ra.asset_path_or_url, ra.metadata_json
+               FROM video_scenes vs
+               LEFT JOIN render_assets ra ON ra.id = vs.render_asset_id
+               WHERE vs.storyboard_id = ?
+               ORDER BY vs.scene_index""",
+            (storyboard_id,),
+        ).fetchall()
+        conn.close()
+
+        result = dict(sb)
+        result["scenes_detail"] = []
+        for s in scenes:
+            sd = dict(s)
+            # Add image URL if asset exists
+            if sd.get("render_asset_id"):
+                sd["image_url"] = f"/api/render/asset/{sd['render_asset_id']}/image"
+            result["scenes_detail"].append(sd)
+
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/video/storyboard/<int:storyboard_id>/generate-frames")
+def video_generate_frames(storyboard_id: int) -> Any:
+    """Generate scene frame images for an existing storyboard."""
+    from creative_intelligence.rendering.providers import get_provider
+    from creative_intelligence.rendering.asset_store import save_asset
+    try:
+        body  = request.get_json(force=True, silent=True) or {}
+        model = body.get("model") or None
+        aspect_ratio = body.get("aspect_ratio", "9:16")
+
+        conn = _db()
+        scenes = conn.execute(
+            "SELECT * FROM video_scenes WHERE storyboard_id = ? ORDER BY scene_index",
+            (storyboard_id,),
+        ).fetchall()
+        if not scenes:
+            conn.close()
+            return jsonify({"error": "storyboard not found or has no scenes"}), 404
+
+        provider   = get_provider(None)
+        gen_kwargs: dict = {}
+        if model:
+            gen_kwargs["model"] = model
+
+        negative = (
+            "text overlays, watermarks, blurry, low quality, distorted, "
+            "generic stock photo, fake-looking, oversaturated, pixelated"
+        )
+        generated = []
+        for scene in scenes:
+            s = dict(scene)
+            if s.get("render_asset_id"):
+                # already has a frame — skip
+                generated.append({"scene_index": s["scene_index"], "skipped": True,
+                                   "render_asset_id": s["render_asset_id"]})
+                continue
+            try:
+                paths = provider.generate(
+                    prompt=s["visual_description"],
+                    negative_prompt=negative,
+                    aspect_ratio=aspect_ratio,
+                    **gen_kwargs,
+                )
+                if paths:
+                    asset_id = save_asset(
+                        render_output_id=0,
+                        variant_label=f"video_scene_{s['scene_index']}",
+                        source=paths[0],
+                        conn=conn,
+                        metadata={
+                            "storyboard_id": storyboard_id,
+                            "scene_id":      s["scene_index"],
+                            "purpose":       s.get("purpose", ""),
+                            "aspect_ratio":  aspect_ratio,
+                        },
+                    )
+                    with conn:
+                        conn.execute(
+                            "UPDATE video_scenes SET render_asset_id=? WHERE id=?",
+                            (asset_id, s["id"]),
+                        )
+                    generated.append({"scene_index": s["scene_index"],
+                                      "render_asset_id": asset_id,
+                                      "image_url": f"/api/render/asset/{asset_id}/image"})
+            except Exception as fe:
+                generated.append({"scene_index": s["scene_index"], "error": str(fe)})
+
+        conn.close()
+        return jsonify({"ok": True, "storyboard_id": storyboard_id, "frames": generated})
+    except Exception as exc:
+        app.logger.exception("video/generate-frames failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/video/list")
+def video_list() -> Any:
+    """List all storyboards, newest first."""
+    try:
+        conn = _db()
+        rows = conn.execute(
+            """SELECT vs.id, vs.concept_text, vs.product_id, vs.total_duration_seconds,
+                      vs.created_at, p.name as product_name,
+                      COUNT(sc.id) as scene_count,
+                      SUM(CASE WHEN sc.render_asset_id IS NOT NULL THEN 1 ELSE 0 END) as frames_count
+               FROM video_storyboards vs
+               LEFT JOIN products p ON p.id = vs.product_id
+               LEFT JOIN video_scenes sc ON sc.storyboard_id = vs.id
+               GROUP BY vs.id
+               ORDER BY vs.id DESC"""
+        ).fetchall()
+        conn.close()
+        return jsonify([dict(r) for r in rows])
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ─────────────────────────────────────────────
 # Storage / maintenance
 # ─────────────────────────────────────────────
 

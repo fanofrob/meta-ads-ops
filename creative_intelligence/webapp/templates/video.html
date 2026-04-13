@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Storyboard</title>
+<style>
+  :root {
+    --bg:       #0d0d0f;
+    --surface:  #16161a;
+    --surface2: #1e1e24;
+    --border:   #2a2a32;
+    --text:     #e8e8f0;
+    --text2:    #8888a0;
+    --accent:   #6c63ff;
+    --accent2:  #9d96ff;
+    --green:    #22c55e;
+    --red:      #ef4444;
+    --yellow:   #f59e0b;
+
+    --purpose-hook:   #ef4444;
+    --purpose-demo:   #3b82f6;
+    --purpose-reveal: #8b5cf6;
+    --purpose-proof:  #22c55e;
+    --purpose-cta:    #f59e0b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; min-height: 100vh; }
+
+  /* ── Nav ── */
+  .nav { display: flex; align-items: center; gap: 16px; padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .nav-brand { font-weight: 700; font-size: 15px; color: var(--accent2); text-decoration: none; }
+  .nav-sep { color: var(--border); }
+  .nav-title { font-size: 13px; color: var(--text2); }
+  .nav-links { margin-left: auto; display: flex; gap: 12px; }
+  .nav-links a { font-size: 12px; color: var(--text2); text-decoration: none; padding: 4px 8px; border-radius: 5px; }
+  .nav-links a:hover { background: var(--surface2); color: var(--text); }
+
+  /* ── Layout ── */
+  .layout { display: flex; height: calc(100vh - 45px); }
+  .sidebar { width: 280px; flex-shrink: 0; border-right: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; overflow: hidden; }
+  .main { flex: 1; overflow-y: auto; padding: 28px; }
+
+  /* ── Sidebar ── */
+  .sidebar-section { padding: 16px; border-bottom: 1px solid var(--border); }
+  .sidebar-section label { display: block; font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: .7px; margin-bottom: 6px; }
+  .sidebar-section select,
+  .sidebar-section textarea,
+  .sidebar-section input[type=text] {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); padding: 6px 9px; font-size: 12px;
+  }
+  .sidebar-section select:focus,
+  .sidebar-section textarea:focus,
+  .sidebar-section input:focus { outline: none; border-color: var(--accent); }
+  .sidebar-section textarea { resize: vertical; min-height: 80px; }
+  .gen-btn {
+    width: 100%; padding: 10px; background: var(--accent); border: none; border-radius: 8px;
+    color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 4px;
+  }
+  .gen-btn:hover { background: var(--accent2); }
+  .gen-btn:disabled { opacity: .45; cursor: default; }
+  .check-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .check-row input[type=checkbox] { accent-color: var(--accent); }
+  .check-row span { font-size: 12px; color: var(--text2); }
+
+  /* ── Storyboard list ── */
+  .sb-list { flex: 1; overflow-y: auto; }
+  .sb-item { padding: 12px 16px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .sb-item:hover { background: var(--surface2); }
+  .sb-item.active { background: var(--surface2); border-left: 3px solid var(--accent); }
+  .sb-item-concept { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sb-item-meta { font-size: 10px; color: var(--text2); margin-top: 3px; }
+
+  /* ── Empty state ── */
+  .empty { text-align: center; padding: 80px 20px; color: var(--text2); }
+  .empty h2 { font-size: 18px; margin-bottom: 8px; color: var(--text); }
+  .empty p { font-size: 13px; line-height: 1.6; }
+
+  /* ── Storyboard view ── */
+  .sb-header { margin-bottom: 24px; }
+  .sb-header h1 { font-size: 20px; font-weight: 700; }
+  .sb-header-meta { font-size: 12px; color: var(--text2); margin-top: 6px; display: flex; gap: 16px; align-items: center; }
+  .sb-header-meta span { display: flex; align-items: center; gap: 4px; }
+
+  /* ── Scene cards ── */
+  .scenes-grid { display: flex; flex-direction: column; gap: 20px; }
+  .scene-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    overflow: hidden; display: grid; grid-template-columns: 180px 1fr;
+  }
+  .scene-frame { background: var(--surface2); position: relative; min-height: 200px; display: flex; align-items: center; justify-content: center; }
+  .scene-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .scene-frame-placeholder { color: var(--text2); font-size: 11px; text-align: center; padding: 16px; }
+  .scene-badge {
+    position: absolute; top: 8px; left: 8px;
+    font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px;
+    padding: 3px 7px; border-radius: 4px; color: #fff;
+  }
+  .purpose-hook    { background: var(--purpose-hook); }
+  .purpose-demo    { background: var(--purpose-demo); }
+  .purpose-reveal  { background: var(--purpose-reveal); }
+  .purpose-proof   { background: var(--purpose-proof); }
+  .purpose-cta     { background: var(--purpose-cta); }
+
+  .scene-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
+  .scene-num { font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: .6px; }
+  .scene-visual { font-size: 13px; line-height: 1.6; }
+  .scene-overlay { font-size: 12px; font-weight: 600; color: var(--accent2); padding: 6px 10px; background: rgba(108,99,255,.12); border-radius: 5px; }
+  .scene-shot { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .shot-tag { font-size: 10px; padding: 3px 8px; border-radius: 4px; background: var(--surface2); border: 1px solid var(--border); color: var(--text2); }
+  .scene-duration { font-size: 10px; color: var(--text2); margin-top: auto; }
+
+  .gen-frames-btn {
+    padding: 5px 12px; background: transparent; border: 1px solid var(--accent);
+    border-radius: 6px; color: var(--accent2); font-size: 11px; cursor: pointer;
+  }
+  .gen-frames-btn:hover { background: rgba(108,99,255,.12); }
+  .gen-frames-btn:disabled { opacity: .4; cursor: default; }
+
+  /* ── UGC Script ── */
+  .script-section { margin-top: 32px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .script-header { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  .script-header h2 { font-size: 14px; font-weight: 600; }
+  .script-body { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .script-block label { font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: .6px; display: block; margin-bottom: 6px; }
+  .script-block p,
+  .script-block li { font-size: 13px; line-height: 1.6; }
+  .script-block ul { padding-left: 18px; }
+  .script-block li { margin-bottom: 4px; }
+  .opening-line { font-size: 15px; font-weight: 600; font-style: italic; color: var(--accent2); }
+  .cta-line { font-size: 14px; font-weight: 600; color: var(--yellow); }
+
+  /* ── Toast ── */
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 9px 18px; border-radius: 8px; font-size: 12px; opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 999; }
+  #toast.show { opacity: 1; }
+
+  /* ── Loading ── */
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <a class="nav-brand" href="/copilot">✦ Creative Copilot</a>
+  <span class="nav-sep">›</span>
+  <span class="nav-title">Video Storyboard</span>
+  <div class="nav-links">
+    <a href="/render">Static Render</a>
+    <a href="/collection">Collection</a>
+  </div>
+</nav>
+
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+
+    <!-- Generate new storyboard -->
+    <div class="sidebar-section">
+      <label>Concept / Hook</label>
+      <textarea id="conceptInput" placeholder="Paste a winning hook or concept here…"></textarea>
+
+      <label style="margin-top:10px">Product</label>
+      <select id="productSelect">
+        <option value="">— No product context —</option>
+      </select>
+
+      <label style="margin-top:10px">Aspect Ratio</label>
+      <select id="aspectRatio">
+        <option value="9:16">9:16 — Portrait / Stories</option>
+        <option value="4:5">4:5 — Feed Portrait</option>
+        <option value="1:1">1:1 — Square</option>
+        <option value="16:9">16:9 — Landscape</option>
+      </select>
+
+      <div class="check-row">
+        <input type="checkbox" id="genFrames">
+        <span>Generate scene images now</span>
+      </div>
+
+      <button class="gen-btn" id="genBtn" onclick="generateStoryboard()">
+        🎬 Generate Storyboard
+      </button>
+    </div>
+
+    <!-- Recent storyboards list -->
+    <div id="sbList" class="sb-list"></div>
+
+  </aside>
+
+  <!-- Main content -->
+  <main class="main" id="mainArea">
+    <div class="empty" id="emptyState">
+      <h2>Video Storyboard Builder</h2>
+      <p>Paste a winning concept on the left and click<br><strong>Generate Storyboard</strong> to convert it into<br>scenes, shot list, and UGC script.</p>
+    </div>
+  </main>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ── Utilities ── */
+function toast(msg, err=false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = err ? '#b91c1c' : '#333';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+async function api(url, body=null) {
+  const opts = body ? {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  } : { method: 'GET' };
+  const r = await fetch(url, opts);
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || r.statusText);
+  return d;
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+/* ── Load products ── */
+function cleanLabel(raw) {
+  const ci = (raw||'').indexOf(':');
+  if (ci === -1) return raw;
+  const prefix = raw.slice(0, ci+1);
+  const rest   = raw.slice(ci+1).trim();
+  const parts  = rest.split(',').map(p=>p.trim()).filter(Boolean);
+  const name   = parts.length > 1 ? parts.reverse().join(' ') : rest;
+  return `${prefix} ${name}`;
+}
+
+async function loadProducts() {
+  try {
+    const products = await api('/api/products');
+    const sel = document.getElementById('productSelect');
+    products.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.display_name || cleanLabel(p.label || p.name);
+      sel.appendChild(opt);
+    });
+  } catch(e) { console.warn('Could not load products', e); }
+}
+
+/* ── Load storyboard list ── */
+async function loadList() {
+  try {
+    const items = await api('/api/video/list');
+    const panel = document.getElementById('sbList');
+    panel.innerHTML = '';
+    items.forEach(sb => {
+      const el = document.createElement('div');
+      el.className = 'sb-item';
+      el.dataset.id = sb.id;
+      el.innerHTML = `
+        <div class="sb-item-concept">${esc(sb.concept_text)}</div>
+        <div class="sb-item-meta">
+          ${sb.scene_count} scenes · ${sb.frames_count} frames · ${sb.created_at?.slice(0,10)||''}
+          ${sb.product_name ? ` · ${esc(sb.product_name)}` : ''}
+        </div>`;
+      el.addEventListener('click', () => loadStoryboard(sb.id));
+      panel.appendChild(el);
+    });
+  } catch(e) { console.warn('Could not load storyboard list', e); }
+}
+
+/* ── Generate ── */
+async function generateStoryboard() {
+  const concept = document.getElementById('conceptInput').value.trim();
+  if (!concept) { toast('Paste a concept first', true); return; }
+
+  const btn = document.getElementById('genBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Generating…';
+
+  try {
+    const body = {
+      concept,
+      product_id:      document.getElementById('productSelect').value || null,
+      aspect_ratio:    document.getElementById('aspectRatio').value,
+      generate_frames: document.getElementById('genFrames').checked,
+      dry_run:         false,
+    };
+    const result = await api('/api/video/storyboard', body);
+    toast('✓ Storyboard created');
+    await loadList();
+    if (result.storyboard_id) {
+      loadStoryboard(result.storyboard_id, result);
+    }
+  } catch(e) {
+    toast('Failed: ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🎬 Generate Storyboard';
+  }
+}
+
+/* ── Render storyboard ── */
+function purposeClass(p) {
+  const map = { hook:'purpose-hook', demo:'purpose-demo', reveal:'purpose-reveal',
+                proof:'purpose-proof', cta:'purpose-cta' };
+  return map[p] || 'purpose-demo';
+}
+
+function renderStoryboard(sb, detail) {
+  document.getElementById('emptyState')?.remove();
+
+  // Mark active in list
+  document.querySelectorAll('.sb-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.id == sb.id);
+  });
+
+  const scenes   = detail.scenes_detail || [];
+  const ugc      = JSON.parse(sb.ugc_script_json || detail.ugc_script_json || '{}');
+  const duration = sb.total_duration_seconds || detail.total_duration_seconds || 0;
+
+  const html = `
+    <div class="sb-header">
+      <h1>${esc(sb.concept_text || detail.concept || '')}</h1>
+      <div class="sb-header-meta">
+        <span>🎬 ${scenes.length} scenes</span>
+        <span>⏱ ${duration}s</span>
+        ${sb.product_name ? `<span>📦 ${esc(sb.product_name)}</span>` : ''}
+        <span style="margin-left:auto">
+          <button class="gen-frames-btn" id="genFramesBtn"
+            onclick="generateFrames(${sb.id || detail.storyboard_id})">
+            🖼 Generate All Frames
+          </button>
+        </span>
+      </div>
+    </div>
+
+    <div class="scenes-grid">
+      ${scenes.map(s => renderScene(s, sb.id || detail.storyboard_id)).join('')}
+    </div>
+
+    ${ugc && Object.keys(ugc).length ? renderScript(ugc) : ''}
+  `;
+
+  document.getElementById('mainArea').innerHTML = html;
+}
+
+function renderScene(s, sbId) {
+  const purpose = (s.purpose || 'demo').toLowerCase();
+  const imgHtml = s.image_url
+    ? `<img src="${s.image_url}" alt="scene ${s.scene_index}"
+           onerror="this.parentElement.innerHTML='<div class=scene-frame-placeholder>Image unavailable</div>'">`
+    : `<div class="scene-frame-placeholder">No frame yet</div>`;
+
+  const shots = [s.camera_type, s.framing, s.movement, s.lighting_style].filter(Boolean);
+
+  return `
+    <div class="scene-card" id="scene-card-${s.id}">
+      <div class="scene-frame">
+        ${imgHtml}
+        <span class="scene-badge ${purposeClass(purpose)}">${purpose}</span>
+      </div>
+      <div class="scene-body">
+        <div class="scene-num">Scene ${s.scene_index}</div>
+        <div class="scene-visual">${esc(s.visual_description || '')}</div>
+        ${s.text_overlay ? `<div class="scene-overlay">"${esc(s.text_overlay)}"</div>` : ''}
+        <div class="scene-shot">
+          ${shots.map(t => `<span class="shot-tag">${esc(t)}</span>`).join('')}
+          ${s.product_focus ? `<span class="shot-tag" title="product focus">${esc(s.product_focus)}</span>` : ''}
+        </div>
+        <div class="scene-duration">⏱ ${s.duration_seconds}s</div>
+      </div>
+    </div>`;
+}
+
+function renderScript(ugc) {
+  const talkingPoints = ugc.talking_points || [];
+  const demoActions   = ugc.demo_actions   || [];
+
+  return `
+    <div class="script-section">
+      <div class="script-header">
+        <span>🎤</span>
+        <h2>UGC Script</h2>
+      </div>
+      <div class="script-body">
+        <div class="script-block">
+          <label>Opening Line (say this to camera)</label>
+          <p class="opening-line">"${esc(ugc.opening_line || '')}"</p>
+        </div>
+        ${talkingPoints.length ? `
+        <div class="script-block">
+          <label>Talking Points</label>
+          <ul>${talkingPoints.map(p => `<li>${esc(p)}</li>`).join('')}</ul>
+        </div>` : ''}
+        ${demoActions.length ? `
+        <div class="script-block">
+          <label>Demo Actions (show on camera)</label>
+          <ul>${demoActions.map(a => `<li>${esc(a)}</li>`).join('')}</ul>
+        </div>` : ''}
+        <div class="script-block">
+          <label>Closing CTA (say this to camera)</label>
+          <p class="cta-line">"${esc(ugc.closing_cta || '')}"</p>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ── Load existing storyboard ── */
+async function loadStoryboard(id, prefetched=null) {
+  try {
+    const detail = prefetched || await api(`/api/video/storyboard/${id}`);
+    // For prefetched (from generate), reconstruct sb shape
+    const sb = prefetched ? {
+      id:                    prefetched.storyboard_id,
+      concept_text:          prefetched.concept,
+      total_duration_seconds:prefetched.total_duration_seconds,
+      ugc_script_json:       JSON.stringify(prefetched.ugc_script || {}),
+    } : detail;
+
+    // scenes_detail may be on detail directly or nested
+    if (prefetched && !detail.scenes_detail) {
+      // Build scenes_detail from raw scenes (no asset yet unless generate_frames=true)
+      detail.scenes_detail = (prefetched.scenes || []).map(s => ({
+        ...s,
+        scene_index: s.scene_id,
+        image_url:   s.render_asset_id ? `/api/render/asset/${s.render_asset_id}/image` : null,
+      }));
+    }
+
+    renderStoryboard(sb, detail);
+  } catch(e) {
+    toast('Failed to load storyboard: ' + e.message, true);
+  }
+}
+
+/* ── Generate frames for existing storyboard ── */
+async function generateFrames(sbId) {
+  const btn = document.getElementById('genFramesBtn');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = '⏳ Generating…';
+  try {
+    const aspect = document.getElementById('aspectRatio').value;
+    await api(`/api/video/storyboard/${sbId}/generate-frames`, { aspect_ratio: aspect });
+    toast('✓ Frames generated — reloading…');
+    setTimeout(() => loadStoryboard(sbId), 800);
+  } catch(e) {
+    toast('Frame generation failed: ' + e.message, true);
+    btn.disabled = false;
+    btn.textContent = '🖼 Generate All Frames';
+  }
+}
+
+/* ── Read concept/product from URL params (from Copilot → Video) ── */
+function applyUrlParams() {
+  const params = new URLSearchParams(window.location.search);
+  const concept    = params.get('concept');
+  const productId  = params.get('product_id');
+  if (concept) {
+    document.getElementById('conceptInput').value = decodeURIComponent(concept);
+  }
+  if (productId) {
+    // Will be applied after products load
+    window._presetProductId = productId;
+  }
+}
+
+/* ── Init ── */
+(async () => {
+  applyUrlParams();
+  await loadProducts();
+  // Apply preset product after options are populated
+  if (window._presetProductId) {
+    document.getElementById('productSelect').value = window._presetProductId;
+  }
+  await loadList();
+
+  // Auto-generate if concept came from URL
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('concept') && params.get('autogen') === '1') {
+    generateStoryboard();
+  }
+})();
+</script>
+</body>
+</html>
