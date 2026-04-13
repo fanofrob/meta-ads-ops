@@ -463,7 +463,8 @@ async function loadProducts() {
     products.forEach(p => {
       const opt = document.createElement('option');
       opt.value = p.id;
-      opt.textContent = cleanProductLabel(p.label || p.name);
+      // display_name is already cleaned server-side (no weight, no price, no SKU)
+      opt.textContent = p.display_name || cleanProductLabel(p.label || p.name);
       sel.appendChild(opt);
     });
   } catch (e) { console.warn('Could not load products', e); }

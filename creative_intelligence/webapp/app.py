@@ -99,17 +99,39 @@ def test_page() -> Any:
     return render_template("test.html")
 
 
+def _clean_product_display_name(raw_name: str, category: str | None) -> str:
+    """Return a clean display name for product dropdowns.
+
+    Priority:
+    1. Category un-inverted:  "Fruit: Orange, Blood" → "Fruit: Blood Orange"
+    2. Raw name stripped of weight/SKU/offer tokens: "1LB Kumquat 50% Off" → "Kumquat"
+    """
+    import re as _re
+    if category:
+        colon = category.find(":")
+        if colon != -1:
+            prefix = category[:colon + 1]           # "Fruit:"
+            rest   = category[colon + 1:].strip()   # "Orange, Blood"
+            parts  = [p.strip() for p in rest.split(",") if p.strip()]
+            name   = " ".join(reversed(parts)) if len(parts) > 1 else rest
+            return f"{prefix} {name}"               # "Fruit: Blood Orange"
+        return category
+    # No category — strip weight/offer noise from raw Shopify name
+    name = _re.sub(r"^\d+(\.\d+)?\s*(lb|lbs|oz|g|kg|pound|pounds)\b[\s\-]*", "", raw_name, flags=_re.I)
+    name = _re.sub(r"[\s\-]*([\d]+%\s*off|sale|deal|promo|discount|free\s*shipping)[\s\S]*$", "", name, flags=_re.I)
+    return name.strip() or raw_name
+
+
 @app.get("/api/products")
 def api_products() -> Any:
     """Return one representative product per category, sorted by category name."""
     try:
         conn = _db()
-        # Pick the product with the lowest id (most canonical) per category.
-        # Products without a category fall back to their own name as the label.
         rows = conn.execute(
             """SELECT MIN(id) as id,
                       COALESCE(category, name) as label,
                       category,
+                      MIN(name) as raw_name,
                       AVG(price) as price
                FROM products
                WHERE active = 1
@@ -117,7 +139,12 @@ def api_products() -> Any:
                ORDER BY label"""
         ).fetchall()
         conn.close()
-        return jsonify([dict(r) for r in rows])
+        results = []
+        for r in rows:
+            d = dict(r)
+            d["display_name"] = _clean_product_display_name(d["raw_name"], d.get("category"))
+            results.append(d)
+        return jsonify(results)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 

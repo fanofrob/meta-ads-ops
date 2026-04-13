@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Creative Test Lab</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: #0f0f11; color: #e8e8e8; font-size: 14px; line-height: 1.5; }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
+
+  h1 { font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  .subtitle { color: #777; font-size: 13px; margin-bottom: 28px; }
+
+  /* ── Form ── */
+  .form-card { background: #18181b; border: 1px solid #2a2a2e; border-radius: 10px;
+               padding: 20px 24px; margin-bottom: 24px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .form-full { grid-column: 1 / -1; }
+  label { display: block; font-size: 12px; color: #888; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.04em; }
+  select, input[type=text], input[type=range] {
+    width: 100%; background: #0f0f11; border: 1px solid #2a2a2e;
+    color: #e8e8e8; border-radius: 6px; padding: 8px 10px; font-size: 13px;
+  }
+  select:focus, input[type=text]:focus { outline: none; border-color: #5b5bf8; }
+  .range-wrap { display: flex; align-items: center; gap: 10px; }
+  .range-wrap input { flex: 1; }
+  .range-val { font-size: 16px; font-weight: 700; color: #fff; min-width: 24px; text-align: right; }
+  input[type=range] { padding: 0; cursor: pointer; accent-color: #5b5bf8; }
+
+  .btn-generate {
+    margin-top: 18px; width: 100%; padding: 11px; background: #5b5bf8;
+    color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: background 0.15s;
+  }
+  .btn-generate:hover { background: #4a4ae0; }
+  .btn-generate:disabled { background: #3a3a4a; cursor: default; }
+
+  /* ── Loading ── */
+  #loading { display: none; text-align: center; padding: 40px; color: #888; }
+  .spinner { width: 28px; height: 28px; border: 3px solid #2a2a2e;
+             border-top-color: #5b5bf8; border-radius: 50%;
+             animation: spin 0.7s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Error banner ── */
+  .error-banner { background: #2d0a0a; border: 1px solid #5a1a1a; color: #f87171;
+                  border-radius: 8px; padding: 12px 16px; margin-bottom: 20px;
+                  font-size: 13px; display: none; }
+
+  /* ── Results ── */
+  .results-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+  .results-header h2 { font-size: 16px; font-weight: 600; color: #fff; }
+  .results-meta { font-size: 12px; color: #666; }
+
+  .hook-card { background: #18181b; border: 1px solid #2a2a2e; border-radius: 10px;
+               padding: 16px 18px; margin-bottom: 10px; transition: border-color 0.15s; }
+  .hook-card.rated    { border-color: #2d4a2d; }
+  .hook-card.flagged  { opacity: 0.45; }
+
+  .hook-text { font-size: 15px; color: #fff; margin-bottom: 10px; line-height: 1.4; }
+
+  .hook-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 20px;
+         background: #222226; border: 1px solid #2a2a2e; color: #aaa; }
+  .tag.score { background: #1a1a2e; border-color: #3a3a5a; color: #8888ff; }
+  .tag.score.high { background: #0f2a1a; border-color: #1a5a2a; color: #4ade80; }
+  .tag.score.low  { background: #2a1a0f; border-color: #5a2a1a; color: #fb923c; }
+
+  .hook-actions { display: flex; align-items: center; gap: 10px; }
+
+  /* Stars */
+  .stars { display: flex; gap: 3px; }
+  .star { font-size: 20px; cursor: pointer; color: #333; transition: color 0.1s; line-height: 1; }
+  .star:hover, .star.active { color: #facc15; }
+
+  .btn-flag { padding: 5px 12px; background: transparent; border: 1px solid #3a3a3e;
+              color: #888; border-radius: 6px; font-size: 12px; cursor: pointer;
+              transition: all 0.15s; margin-left: auto; }
+  .btn-flag:hover { border-color: #f87171; color: #f87171; }
+  .btn-flag.flagged-btn { border-color: #5a1a1a; color: #f87171; cursor: default; }
+
+  .rating-label { font-size: 12px; color: #4ade80; margin-left: 6px; display: none; }
+  .gap-badge { display: inline-block; font-size: 11px; padding: 1px 7px;
+               border-radius: 20px; background: #1a2a1a; border: 1px solid #2a5a2a;
+               color: #4ade80; margin-left: 6px; }
+  .fp-badge  { display: inline-block; font-size: 11px; padding: 1px 7px;
+               border-radius: 20px; background: #2a1a0f; border: 1px solid #5a2a1a;
+               color: #fb923c; margin-left: 6px; }
+
+  /* ── History ── */
+  .history-section { margin-top: 36px; }
+  .history-header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .history-header h2 { font-size: 16px; font-weight: 600; color: #fff; }
+  .sort-select { background: #18181b; border: 1px solid #2a2a2e; color: #aaa;
+                 border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { text-align: left; padding: 8px 10px; color: #666;
+             font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+             border-bottom: 1px solid #2a2a2e; font-weight: 500; }
+  tbody tr { border-bottom: 1px solid #1a1a1e; }
+  tbody tr:hover { background: #18181b; }
+  tbody td { padding: 9px 10px; color: #ccc; vertical-align: top; }
+  .col-hook { max-width: 340px; }
+  .hook-cell-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+                    max-width: 340px; display: block; color: #e8e8e8; }
+  .col-score { text-align: center; }
+  .col-rating { text-align: center; }
+  .col-tag { color: #888; }
+  .col-meta { color: #555; font-size: 12px; }
+  .stars-display { color: #facc15; font-size: 14px; }
+  .no-history { padding: 24px; text-align: center; color: #555; font-size: 13px; }
+  .score-pill { display: inline-block; padding: 1px 8px; border-radius: 20px; font-size: 12px; }
+  .score-high { background: #0f2a1a; color: #4ade80; }
+  .score-mid  { background: #1a1a2e; color: #8888ff; }
+  .score-low  { background: #2a1a0f; color: #fb923c; }
+
+  .divider { border: none; border-top: 1px solid #2a2a2e; margin: 28px 0; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <h1>Creative Test Lab</h1>
+  <p class="subtitle">Generate, rate, and calibrate — internal tool only</p>
+
+  <!-- ── Generation Form ── -->
+  <div class="form-card">
+    <div class="form-grid">
+      <div>
+        <label>Product</label>
+        <select id="productSelect">
+          <option value="">— No product (generic) —</option>
+        </select>
+      </div>
+      <div>
+        <label>Goal</label>
+        <select id="goalSelect">
+          <option value="conversions">Conversions</option>
+          <option value="traffic">Traffic</option>
+          <option value="awareness">Awareness</option>
+        </select>
+      </div>
+      <div class="form-full">
+        <label>Audience</label>
+        <input type="text" id="audienceInput" placeholder="e.g. cold traffic women 25–45 interested in health food" />
+      </div>
+      <div>
+        <label>Angle override <span style="color:#555">(optional)</span></label>
+        <input type="text" id="angleInput" placeholder="e.g. curiosity, authenticity_quality" />
+      </div>
+      <div>
+        <label>Tone</label>
+        <select id="toneSelect">
+          <option value="authentic">Authentic</option>
+          <option value="punchy">Punchy</option>
+          <option value="emotional">Emotional</option>
+          <option value="educational">Educational</option>
+        </select>
+      </div>
+      <div>
+        <label>Diversity</label>
+        <select id="diversitySelect">
+          <option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+          <option value="low">Low</option>
+        </select>
+      </div>
+      <div>
+        <label>Hooks to generate: <span id="countLabel">10</span></label>
+        <div class="range-wrap">
+          <input type="range" id="countRange" min="5" max="20" value="10" step="1"
+                 oninput="document.getElementById('countLabel').textContent=this.value">
+        </div>
+      </div>
+    </div>
+    <button class="btn-generate" id="genBtn" onclick="generate()">Generate Hooks</button>
+  </div>
+
+  <!-- ── Error banner ── -->
+  <div class="error-banner" id="errorBanner"></div>
+
+  <!-- ── Loading ── -->
+  <div id="loading">
+    <div class="spinner"></div>
+    Generating hooks with product context…
+  </div>
+
+  <!-- ── Results ── -->
+  <div id="results"></div>
+
+  <hr class="divider">
+
+  <!-- ── History ── -->
+  <div class="history-section">
+    <div class="history-header">
+      <h2>History</h2>
+      <select class="sort-select" id="sortSelect" onchange="loadHistory()">
+        <option value="newest">Newest first</option>
+        <option value="highest_rated">Highest rated</option>
+        <option value="lowest_predicted">Lowest predicted (surprises)</option>
+      </select>
+    </div>
+    <div id="historyContainer">
+      <p class="no-history">Loading history…</p>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+// ── Load products on startup ──────────────────────────────────────────────
+(async function loadProducts() {
+  try {
+    const res  = await fetch('/api/products');
+    const data = await res.json();
+    const sel  = document.getElementById('productSelect');
+    if (!Array.isArray(data)) return;
+    data.forEach(p => {
+      const opt   = document.createElement('option');
+      opt.value   = p.id;
+      opt.textContent = p.display_name || p.label || p.name;
+      sel.appendChild(opt);
+    });
+  } catch (e) { /* no products — that's fine */ }
+})();
+
+// ── Load history on startup ───────────────────────────────────────────────
+loadHistory();
+
+async function loadHistory() {
+  const sort = document.getElementById('sortSelect').value;
+  try {
+    const res  = await fetch(`/api/history?sort=${sort}&limit=20`);
+    const rows = await res.json();
+    renderHistory(rows);
+  } catch (e) {
+    document.getElementById('historyContainer').innerHTML =
+      '<p class="no-history">Could not load history.</p>';
+  }
+}
+
+function renderHistory(rows) {
+  const container = document.getElementById('historyContainer');
+  if (!rows || rows.length === 0) {
+    container.innerHTML = '<p class="no-history">No hooks rated yet. Generate some above.</p>';
+    return;
+  }
+  container.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th class="col-hook">Hook</th>
+          <th class="col-score">Pred.</th>
+          <th class="col-rating">Rating</th>
+          <th class="col-tag">Angle</th>
+          <th class="col-meta">Product / Date</th>
+        </tr>
+      </thead>
+      <tbody id="historyBody"></tbody>
+    </table>`;
+  const tbody = document.getElementById('historyBody');
+  rows.forEach(r => {
+    const tr    = document.createElement('tr');
+    const score = r.predicted_score ?? 0;
+    const sc    = score >= 60 ? 'score-high' : (score >= 35 ? 'score-mid' : 'score-low');
+    const stars = r.human_rating
+      ? '★'.repeat(r.human_rating) + '☆'.repeat(5 - r.human_rating)
+      : '—';
+    const date  = r.created_at ? r.created_at.slice(0, 16).replace('T', ' ') : '';
+    const prod  = r.product_name || r.product_id || '—';
+    tr.innerHTML = `
+      <td class="col-hook"><span class="hook-cell-text" title="${esc(r.hook_text)}">${esc(r.hook_text)}</span></td>
+      <td class="col-score"><span class="score-pill ${sc}">${score.toFixed(0)}</span></td>
+      <td class="col-rating"><span class="stars-display">${stars}</span></td>
+      <td class="col-tag">${esc(r.angle || '—')}</td>
+      <td class="col-meta">${esc(prod)}<br><span style="color:#444">${date}</span></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// ── Generate ──────────────────────────────────────────────────────────────
+async function generate() {
+  const btn = document.getElementById('genBtn');
+  const loading  = document.getElementById('loading');
+  const results  = document.getElementById('results');
+  const errBanner = document.getElementById('errorBanner');
+
+  btn.disabled = true;
+  loading.style.display = 'block';
+  results.innerHTML = '';
+  errBanner.style.display = 'none';
+
+  const payload = {
+    product_id:     document.getElementById('productSelect').value || null,
+    goal:           document.getElementById('goalSelect').value,
+    audience:       document.getElementById('audienceInput').value,
+    angle_override: document.getElementById('angleInput').value,
+    count:          parseInt(document.getElementById('countRange').value),
+    diversity:      document.getElementById('diversitySelect').value,
+    tone:           document.getElementById('toneSelect').value,
+  };
+
+  try {
+    const res  = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      showError(data.error || `HTTP ${res.status}`);
+      return;
+    }
+
+    renderResults(data);
+    loadHistory();  // refresh history panel
+
+  } catch (e) {
+    showError('Request failed: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    loading.style.display = 'none';
+  }
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorBanner');
+  el.textContent = '⚠ ' + msg;
+  el.style.display = 'block';
+}
+
+// ── Render results ────────────────────────────────────────────────────────
+function renderResults(data) {
+  const container = document.getElementById('results');
+  const hooks = data.hooks || [];
+
+  container.innerHTML = `
+    <div class="results-header">
+      <h2>Generated Hooks</h2>
+      <span class="results-meta">${hooks.length} hooks · session ${(data.session_id || '').slice(0,8)}</span>
+    </div>`;
+
+  hooks.forEach(h => {
+    const score = h.predicted_score ?? 0;
+    const sc    = score >= 60 ? 'high' : (score >= 35 ? '' : 'low');
+    const card  = document.createElement('div');
+    card.className = 'hook-card';
+    card.dataset.id = h.id;
+    card.innerHTML = `
+      <div class="hook-text">${esc(h.hook_text)}</div>
+      <div class="hook-meta">
+        <span class="tag score ${sc}">Score: ${score.toFixed(0)}</span>
+        <span class="tag">${esc(h.angle || '—')}</span>
+        <span class="tag">${esc(h.emotion || '—')}</span>
+        <span class="tag">${esc(h.format || 'hook')}</span>
+        ${h.pattern_name ? `<span class="tag" title="Pattern">${esc(h.pattern_name)}</span>` : ''}
+      </div>
+      <div class="hook-actions">
+        <div class="stars" data-id="${h.id}">
+          ${[1,2,3,4,5].map(n => `<span class="star" data-val="${n}" onclick="rate(this, ${h.id}, ${n})">★</span>`).join('')}
+        </div>
+        <span class="rating-label" id="rl-${h.id}">Saved</span>
+        <span class="gap-fp-badge" id="badge-${h.id}"></span>
+        <button class="btn-flag" id="flag-${h.id}" onclick="flagDuplicate(this, ${h.id})">Duplicate</button>
+      </div>`;
+    container.appendChild(card);
+  });
+}
+
+// ── Rating ────────────────────────────────────────────────────────────────
+async function rate(starEl, id, val) {
+  // Highlight stars
+  const starsEl = document.querySelector(`.stars[data-id="${id}"]`);
+  starsEl.querySelectorAll('.star').forEach(s => {
+    s.classList.toggle('active', parseInt(s.dataset.val) <= val);
+  });
+
+  try {
+    const res  = await fetch('/api/rate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, rating: val }),
+    });
+    const data = await res.json();
+
+    const card = document.querySelector(`.hook-card[data-id="${id}"]`);
+    if (card) card.classList.add('rated');
+
+    const rl = document.getElementById(`rl-${id}`);
+    if (rl) { rl.style.display = 'inline'; rl.textContent = `${val}★ saved`; }
+
+    const badge = document.getElementById(`badge-${id}`);
+    if (badge && data.flagged === 'pattern_gap') {
+      badge.innerHTML = '<span class="gap-badge">Pattern gap ↑</span>';
+    } else if (badge && data.flagged === 'false_positive') {
+      badge.innerHTML = '<span class="fp-badge">False positive ↓</span>';
+    }
+
+    loadHistory();
+  } catch (e) {
+    console.error('Rate failed:', e);
+  }
+}
+
+// ── Flag duplicate ────────────────────────────────────────────────────────
+async function flagDuplicate(btn, id) {
+  try {
+    await fetch('/api/flag', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    btn.textContent = '✓ Flagged';
+    btn.classList.add('flagged-btn');
+    btn.disabled = true;
+    const card = document.querySelector(`.hook-card[data-id="${id}"]`);
+    if (card) card.classList.add('flagged');
+  } catch (e) {
+    console.error('Flag failed:', e);
+  }
+}
+
+// ── Utility ───────────────────────────────────────────────────────────────
+function esc(str) {
+  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
