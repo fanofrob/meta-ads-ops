@@ -2593,9 +2593,14 @@ def admin_cleanup() -> Any:
             if p and not p.startswith("http") and not p.startswith("mock://"):
                 protected_paths.add(str(Path(p).resolve()))
 
-        # 2. Collect ALL image files on disk
+        # 2. Collect ALL image files on disk — scan both current and legacy paths
         render_dir = get_render_output_dir()
-        all_files  = [f for f in render_dir.rglob("*") if f.is_file()]
+        from creative_intelligence.db import get_db_path as _get_db_path
+        _legacy_render = _get_db_path().parent / "render_outputs"
+        scan_dirs = {render_dir}
+        if _legacy_render.exists() and _legacy_render != render_dir:
+            scan_dirs.add(_legacy_render)
+        all_files = [f for d in scan_dirs for f in d.rglob("*") if f.is_file()]
 
         deleted_files, deleted_bytes, kept_files = [], 0, 0
         corrupt_deleted = 0
