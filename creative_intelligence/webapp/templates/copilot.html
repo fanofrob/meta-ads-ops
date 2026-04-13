@@ -444,11 +444,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
 /* ── Product dropdown ───────────────────────────────── */
 function cleanProductLabel(raw) {
-  // Shopify categories use "Type: Name, Variant" (e.g. "Fruit: Orange, Blood").
-  // Strip the prefix, then reverse comma-separated parts so "Orange, Blood" → "Blood Orange".
-  let s = (raw || '').replace(/^[^:]+:\s*/, '').trim();
-  const parts = s.split(',').map(p => p.trim()).filter(Boolean);
-  return parts.length > 1 ? parts.reverse().join(' ') : (s || raw);
+  // Shopify stores names as "Type: LastName, FirstName" e.g. "Fruit: Orange, Blood".
+  // Keep the "Type: " prefix but un-invert the name: "Orange, Blood" → "Blood Orange".
+  const colonIdx = (raw || '').indexOf(':');
+  if (colonIdx === -1) return raw;
+  const prefix = raw.slice(0, colonIdx + 1);          // "Fruit:"
+  const rest   = raw.slice(colonIdx + 1).trim();       // "Orange, Blood"
+  const parts  = rest.split(',').map(p => p.trim()).filter(Boolean);
+  const name   = parts.length > 1 ? parts.reverse().join(' ') : rest;
+  return `${prefix} ${name}`;                          // "Fruit: Blood Orange"
 }
 
 async function loadProducts() {
@@ -459,8 +463,7 @@ async function loadProducts() {
     products.forEach(p => {
       const opt = document.createElement('option');
       opt.value = p.id;
-      const label = cleanProductLabel(p.label || p.name);
-      opt.textContent = label + (p.price ? ` — $${Math.round(p.price)}` : '');
+      opt.textContent = cleanProductLabel(p.label || p.name);
       sel.appendChild(opt);
     });
   } catch (e) { console.warn('Could not load products', e); }
