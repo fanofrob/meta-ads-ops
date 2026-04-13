@@ -490,10 +490,20 @@ function renderStoryboard(sb, detail) {
             onclick="generateFrames(${sb.id || detail.storyboard_id})">
             🖼 Generate All Frames
           </button>
+          <button class="assemble-btn" id="genClipsBtn"
+            onclick="generateClips(${sb.id || detail.storyboard_id})"
+            title="Generate one real MP4 clip per scene via Runway/Replicate (~30-60s each). Assemble with 'Use Clips' after.">
+            🎞 Generate Clips
+          </button>
+          <button class="assemble-btn" id="assembleBtnClip"
+            onclick="assembleVideo(${sb.id || detail.storyboard_id}, '${vtype}', 'clip')"
+            title="Assemble using pre-generated scene clips (run Generate Clips first)">
+            🎬 Use Clips
+          </button>
           <button class="assemble-btn" id="assembleBtn"
             onclick="assembleVideo(${sb.id || detail.storyboard_id}, '${vtype}', 'ai_video')"
-            title="AI-animated video — each scene is animated by Replicate (~60-90s)">
-            🎬 Generate AI Video
+            title="AI-animated video — each scene animated inline by Replicate (~60-90s)">
+            🎬 AI Video
           </button>
           <button class="assemble-btn" id="assembleBtnSlideshow" style="background:#3b3b5c;font-size:11px;padding:6px 12px"
             onclick="assembleVideo(${sb.id || detail.storyboard_id}, '${vtype}', 'ken_burns')"
@@ -531,9 +541,12 @@ function renderStoryboard(sb, detail) {
     if (ta) ta.value = s.visual_description || '';
   });
 
-  // Load any previously assembled videos for this storyboard
+  // Load any previously assembled videos and scene clips for this storyboard
   const sbId = sb.id || detail.storyboard_id;
-  if (sbId) loadVideoOutputs(sbId);
+  if (sbId) {
+    loadVideoOutputs(sbId);
+    loadSceneClips(sbId);
+  }
 }
 
 function renderScene(s, sbId) {
@@ -560,6 +573,7 @@ function renderScene(s, sbId) {
           ${s.product_focus ? `<span class="shot-tag" title="product focus">${esc(s.product_focus)}</span>` : ''}
         </div>
         <div class="scene-duration">⏱ ${s.duration_seconds}s</div>
+        <span class="clip-status-badge" id="clip-badge-${s.id}" style="display:none"></span>
         <button class="scene-regen-btn" onclick="toggleRegenPanel(${s.scene_index})" title="Regenerate / edit this frame">↻ Regen</button>
         <div class="regen-panel" id="regenPanel_${s.scene_index}">
           <label>Visual prompt (edit freely)</label>
@@ -799,19 +813,79 @@ async function submitRegenFrame(sceneIdx) {
   }
 }
 
+/* ── Generate per-scene clips via Runway/Replicate ── */
+async function generateClips(sbId) {
+  const btn     = document.getElementById('genClipsBtn');
+  const statusEl = document.getElementById('videoOutputStatus');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating clips…'; }
+  if (statusEl) statusEl.textContent = 'Generating scene clips via Runway/Replicate (~30-60s per scene)…';
+  try {
+    const result = await api(`/api/video/storyboard/${sbId}/generate-clips`, {
+      aspect_ratio: document.getElementById('aspectRatio')?.value || '9:16',
+      skip_existing: true,
+      max_workers: 3,
+    });
+    const { generated = 0, skipped = 0, failed = 0, total_scenes = 0 } = result;
+    if (result.status === 'no_scenes') {
+      toast('No scenes found — generate a storyboard first', true);
+    } else if (result.status === 'all_failed') {
+      toast(`Clip generation failed for all ${total_scenes} scenes`, true);
+    } else {
+      toast(`✓ Clips ready — ${generated} generated, ${skipped} skipped, ${failed} failed`);
+    }
+    await loadSceneClips(sbId);
+  } catch(e) {
+    toast('Clip generation failed: ' + e.message, true);
+    if (statusEl) statusEl.textContent = 'Clip generation failed: ' + e.message;
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '🎞 Generate Clips'; }
+  }
+}
+
+/* ── Load per-scene clip status badges ── */
+async function loadSceneClips(sbId) {
+  try {
+    const clips = await api(`/api/video/storyboard/${sbId}/clips`);
+    const bySceneId = {};
+    (clips || []).forEach(c => { bySceneId[c.scene_id] = c; });
+    // Update each scene card badge
+    Object.entries(bySceneId).forEach(([sceneId, clip]) => {
+      const badge = document.getElementById(`clip-badge-${sceneId}`);
+      if (!badge) return;
+      badge.style.display = 'inline-block';
+      if (clip.status === 'ok') {
+        badge.innerHTML = '<span style="background:#1a1a3a;color:#a78bfa;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px">🎞 Clip ready</span>';
+      } else if (clip.status === 'error') {
+        badge.innerHTML = `<span style="background:#2a1a1a;color:#ef4444;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px" title="${esc(clip.error_message||'')}">✗ Clip failed</span>`;
+      } else {
+        badge.innerHTML = '<span style="background:#2a2a1a;color:#f59e0b;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px">⏳ Clip pending</span>';
+      }
+    });
+  } catch(e) {
+    console.warn('loadSceneClips failed', e);
+  }
+}
+
 /* ── Assemble video from existing frames ── */
 async function assembleVideo(sbId, videoType, motionMode) {
   motionMode = motionMode || 'ai_video';
-  const isAi = motionMode === 'ai_video';
-  const btn     = document.getElementById('assembleBtn');
-  const btnSlide = document.getElementById('assembleBtnSlideshow');
-  const statusEl = document.getElementById('videoOutputStatus');
+  const isAi   = motionMode === 'ai_video';
+  const isClip = motionMode === 'clip';
+  const btn        = document.getElementById('assembleBtn');
+  const btnClip    = document.getElementById('assembleBtnClip');
+  const btnSlide   = document.getElementById('assembleBtnSlideshow');
+  const statusEl   = document.getElementById('videoOutputStatus');
 
-  if (btn)      { btn.disabled = true;      btn.textContent = isAi ? '⏳ Animating scenes…' : '⏳ Assembling…'; }
-  if (btnSlide) { btnSlide.disabled = true; }
-  if (statusEl) statusEl.textContent = isAi
-    ? 'Animating scenes with AI (~60-90s per scene, running in parallel)…'
-    : 'Assembling slideshow…';
+  const loadingLabel = isClip ? '⏳ Assembling clips…' : isAi ? '⏳ Animating scenes…' : '⏳ Assembling…';
+  const statusMsg    = isClip ? 'Assembling from pre-generated scene clips…'
+                     : isAi  ? 'Animating scenes with AI (~60-90s per scene, running in parallel)…'
+                     :         'Assembling slideshow…';
+
+  if (btn)     { btn.disabled = true; }
+  if (btnClip) { btnClip.disabled = true; btnClip.textContent = isClip ? loadingLabel : btnClip.textContent; }
+  if (btnSlide){ btnSlide.disabled = true; }
+  if (btn && isAi) btn.textContent = loadingLabel;
+  if (statusEl) statusEl.textContent = statusMsg;
 
   try {
     const aspect = document.getElementById('aspectRatio')?.value || '9:16';
@@ -833,15 +907,16 @@ async function assembleVideo(sbId, videoType, motionMode) {
       return;
     }
 
-    const modeLabel = isAi ? 'AI video' : 'slideshow';
+    const modeLabel = isClip ? 'clips video' : isAi ? 'AI video' : 'slideshow';
     toast(`✓ ${modeLabel} ready — ${result.scenes_used}/${result.scene_count} scenes, ${Math.round(result.duration)}s`);
     await loadVideoOutputs(sbId);
   } catch(e) {
     toast('Assembly failed: ' + e.message, true);
     if (statusEl) statusEl.textContent = 'Assembly failed: ' + e.message;
   } finally {
-    if (btn)      { btn.disabled = false;      btn.innerHTML = '🎬 Generate AI Video'; }
-    if (btnSlide) { btnSlide.disabled = false; }
+    if (btn)     { btn.disabled = false; btn.innerHTML = '🎬 AI Video'; }
+    if (btnClip) { btnClip.disabled = false; btnClip.innerHTML = '🎬 Use Clips'; }
+    if (btnSlide){ btnSlide.disabled = false; }
   }
 }
 
@@ -871,9 +946,12 @@ async function loadVideoOutputs(sbId) {
       const label = vtypeLabels[o.video_type] || o.video_type;
       const dur   = meta.duration ? `${Math.round(meta.duration)}s` : '';
       const sc    = meta.scenes_used != null ? `${meta.scenes_used}/${meta.scene_count} scenes` : '';
-      const modeTag = meta.motion_mode === 'ai_video'
-        ? '<span style="background:#1a3a2a;color:#4ecdc4;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;text-transform:uppercase;letter-spacing:.5px">AI Video</span>'
-        : '<span style="background:#2a2a3a;color:#aaa;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;text-transform:uppercase;letter-spacing:.5px">Slideshow</span>';
+      const _modeTags = {
+        ai_video:  '<span style="background:#1a3a2a;color:#4ecdc4;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;text-transform:uppercase;letter-spacing:.5px">AI Video</span>',
+        clip:      '<span style="background:#1a1a3a;color:#a78bfa;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;text-transform:uppercase;letter-spacing:.5px">Clips</span>',
+        ken_burns: '<span style="background:#2a2a3a;color:#aaa;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;text-transform:uppercase;letter-spacing:.5px">Slideshow</span>',
+      };
+      const modeTag = _modeTags[meta.motion_mode] || _modeTags.ken_burns;
 
       return `
         <div class="video-output-card" id="voc-${o.id}">

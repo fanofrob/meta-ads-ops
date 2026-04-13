@@ -153,6 +153,29 @@ CI_VIDEO_MOTION_MODEL: str = os.getenv(
     "minimax/video-01-live",
 )
 
+# ─────────────────────────────────────────────
+# Scene-level clip generation (v1.7)
+# ─────────────────────────────────────────────
+
+# Provider for per-scene clip generation: "mock" | "replicate" | "runway"
+CI_CLIP_PROVIDER: str = os.getenv("CI_CLIP_PROVIDER", "mock")
+
+# Set CI_CLIP_GENERATION_ENABLED=1 to call the clip provider API
+CI_CLIP_GENERATION_ENABLED: bool = os.getenv("CI_CLIP_GENERATION_ENABLED", "0") == "1"
+
+# Local directory for generated scene clips
+CI_CLIP_OUTPUT_DIR: str = os.getenv(
+    "CI_CLIP_OUTPUT_DIR",
+    str(Path(__file__).parent.parent / "creative_intelligence_data" / "clip_outputs"),
+)
+
+# Replicate model for text-to-video clip generation
+# runwayml/gen-4.5: text prompt + duration → MP4 clip
+CI_CLIP_MODEL: str = os.getenv("CI_CLIP_MODEL", "runwayml/gen-4.5")
+
+# Runway direct API key (scaffold — future use when not proxied through Replicate)
+CI_RUNWAY_API_KEY: str = os.getenv("CI_RUNWAY_API_KEY", "")
+
 
 def validate() -> list[str]:
     """Return a list of missing required config vars."""
