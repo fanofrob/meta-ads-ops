@@ -1734,10 +1734,35 @@ def collection_api() -> Any:
             ORDER BY vs.id DESC"""
         ).fetchall()
 
+        # Assembled video outputs (favorited or approved)
+        video_output_rows = conn.execute(
+            """SELECT
+                vo.id,
+                vo.storyboard_id,
+                vo.video_type,
+                vo.output_path,
+                vo.metadata_json,
+                vo.status,
+                vo.is_approved,
+                vo.is_favorite,
+                vo.is_ready_to_test,
+                vo.created_at,
+                vs.concept_text,
+                vs.total_duration_seconds,
+                vs.source_output_type,
+                p.name as product_name
+            FROM video_outputs vo
+            JOIN video_storyboards vs ON vs.id = vo.storyboard_id
+            LEFT JOIN products p ON p.id = vs.product_id
+            WHERE vo.is_favorite = 1 OR vo.is_approved = 1
+            ORDER BY vo.id DESC"""
+        ).fetchall()
+
         conn.close()
         return jsonify({
-            "images": [dict(r) for r in image_rows],
-            "videos": [dict(r) for r in video_rows],
+            "images":        [dict(r) for r in image_rows],
+            "videos":        [dict(r) for r in video_rows],
+            "video_outputs": [dict(r) for r in video_output_rows],
         })
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
