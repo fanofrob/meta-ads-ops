@@ -921,6 +921,19 @@ function goVideoStoryboard() {
   window.open('/video?' + params.toString(), '_blank');
 }
 
+function triggerVideoStoryboard(outputId, outputType) {
+  const concept = (document.getElementById('concept')?.value || '').trim();
+  const params = new URLSearchParams({
+    concept:                     concept,
+    product_id:                  productId || '',
+    session_id:                  sessionId || '',
+    source_production_output_id: outputId,
+    source_output_type:          outputType,
+    autogen:                     '1',
+  });
+  window.open('/video?' + params.toString(), '_blank');
+}
+
 async function runProduction(outputType) {
   const concept = (document.getElementById('concept').value || '').trim();
   if (!concept) { toast('Enter a concept first', true); return; }
@@ -1050,6 +1063,14 @@ function buildProductionCard(result) {
     <button class="card-btn" onclick="triggerRender(${outputId})" title="Generate render specs for this brief">🎨 Render</button>
   ` : '';
 
+  const videoBtn = (outputId && (outputType === 'script_package' || outputType === 'ugc_brief')) ? `
+    <button class="card-btn" style="color:#c07be0;border-color:#4a2a6a"
+      onclick="triggerVideoStoryboard(${outputId},'${outputType}')"
+      title="Build video storyboard from this ${outputType === 'script_package' ? 'Script Package' : 'UGC Brief'}">
+      🎬 Video Storyboard
+    </button>
+  ` : '';
+
   const actionButtons = outputId ? `
     <button class="card-btn prod-approve-btn" data-output-id="${outputId}" data-is-pkg="${isPkg ? 1 : 0}"
             onclick="toggleApprove(this)" title="Mark as approved for production">✓ Approve</button>
@@ -1058,6 +1079,7 @@ function buildProductionCard(result) {
     <button class="card-btn" onclick="exportProduction('${exportBase}','md')" title="Copy Markdown">Copy MD</button>
     <button class="card-btn" onclick="exportProduction('${exportBase}','json')" title="Download JSON">JSON</button>
     ${renderBtn}
+    ${videoBtn}
   ` : '';
 
   // Body HTML by type
