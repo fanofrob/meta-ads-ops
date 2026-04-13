@@ -120,10 +120,11 @@ header h1 { font-size: 15px; font-weight: 700; letter-spacing: -.3px; }
   </div>
 
   <div class="tabs" id="tabBar" style="display:none">
-    <button class="tab-btn active" data-tab="images" onclick="showTab('images', this)">🖼 Images</button>
-    <button class="tab-btn" data-tab="videos" onclick="showTab('videos', this)">🎬 Videos</button>
-    <button class="tab-btn" data-tab="ready"  onclick="showTab('ready', this)">🧪 Ready to Test</button>
-    <button class="tab-btn" data-tab="all"    onclick="showTab('all', this)">All</button>
+    <button class="tab-btn active" data-tab="images"      onclick="showTab('images', this)">🖼 Images</button>
+    <button class="tab-btn"        data-tab="videos"      onclick="showTab('videos', this)">🎬 Videos</button>
+    <button class="tab-btn"        data-tab="storyboards" onclick="showTab('storyboards', this)">📋 Storyboards</button>
+    <button class="tab-btn"        data-tab="ready"       onclick="showTab('ready', this)">🧪 Ready to Test</button>
+    <button class="tab-btn"        data-tab="all"         onclick="showTab('all', this)">All</button>
   </div>
 
   <div id="sectionsContainer"></div>
@@ -144,6 +145,7 @@ function toast(msg) {
 
 let allAssets = [];
 let allVideos = [];
+let allVideoOutputs = [];
 let currentTab = 'images';
 
 document.addEventListener('DOMContentLoaded', loadCollection);
@@ -153,8 +155,9 @@ async function loadCollection() {
     const res = await fetch('/api/collection');
     if (!res.ok) throw new Error(res.statusText);
     const data = await res.json();
-    allAssets = data.images || [];
-    allVideos = data.videos || [];
+    allAssets       = data.images        || [];
+    allVideos       = data.videos        || [];
+    allVideoOutputs = data.video_outputs || [];
     renderStats();
     renderSections(currentTab);
     document.getElementById('tabBar').style.display = 'flex';
@@ -168,14 +171,16 @@ function renderStats() {
   const ready    = allAssets.filter(a => a.is_ready_to_test).length;
   const imgFav   = allAssets.filter(a => a.is_favorite).length;
   const approved = allAssets.filter(a => a.review_status === 'approved').length;
-  const vidFav   = allVideos.filter(v => v.is_favorite).length;
+  const vidFav      = allVideos.filter(v => v.is_favorite).length;
   const vidApproved = allVideos.filter(v => v.is_approved).length;
+  const outFav      = allVideoOutputs.filter(v => v.is_favorite).length;
+  const outApproved = allVideoOutputs.filter(v => v.is_approved).length;
   document.getElementById('statsBar').innerHTML = `
     <span class="stat-pill p-ready">${ready} 🧪 ready to test</span>
     <span class="stat-pill p-fav">${imgFav} ⭐ image favs</span>
-    <span class="stat-pill p-fav" style="border-color:#4a2a6a;color:#c084fc;background:#1a0a2a">${vidFav} 🎬 video favs</span>
-    <span class="stat-pill p-approved">${approved + vidApproved} ✓ approved</span>
-    <span class="stat-pill">${allAssets.length + allVideos.length} total</span>
+    <span class="stat-pill p-fav" style="border-color:#0d3a2a;color:#4ecdc4;background:#061a14">${outFav} 🎬 video favs</span>
+    <span class="stat-pill p-approved">${approved + vidApproved + outApproved} ✓ approved</span>
+    <span class="stat-pill">${allAssets.length + allVideos.length + allVideoOutputs.length} total</span>
   `;
 }
 
@@ -198,6 +203,11 @@ function renderSections(tab) {
     container.appendChild(buildSection('⭐ Favorites', fav, 'fav-title', 'image'));
     container.appendChild(buildSection('✓ Approved', approved, 'approved-title', 'image'));
   } else if (tab === 'videos') {
+    const outFav      = allVideoOutputs.filter(v => v.is_favorite && !v.is_approved);
+    const outApproved = allVideoOutputs.filter(v => v.is_approved);
+    container.appendChild(buildSection('⭐ Favorite Videos', outFav, 'fav-title', 'video_output'));
+    container.appendChild(buildSection('✓ Approved Videos', outApproved, 'approved-title', 'video_output'));
+  } else if (tab === 'storyboards') {
     const vidFav      = allVideos.filter(v => v.is_favorite && !v.is_approved);
     const vidApproved = allVideos.filter(v => v.is_approved);
     container.appendChild(buildSection('⭐ Favorite Storyboards', vidFav, 'fav-title', 'video'));
@@ -206,15 +216,19 @@ function renderSections(tab) {
     const ready = allAssets.filter(a => a.is_ready_to_test);
     container.appendChild(buildSection('🧪 Ready to Test', ready, 'ready-title', 'image'));
   } else {
-    // All — images then videos
-    const ready    = allAssets.filter(a => a.is_ready_to_test);
-    const fav      = allAssets.filter(a => a.is_favorite && !a.is_ready_to_test);
-    const approved = allAssets.filter(a => a.review_status === 'approved' && !a.is_favorite && !a.is_ready_to_test);
+    // All
+    const ready       = allAssets.filter(a => a.is_ready_to_test);
+    const fav         = allAssets.filter(a => a.is_favorite && !a.is_ready_to_test);
+    const approved    = allAssets.filter(a => a.review_status === 'approved' && !a.is_favorite && !a.is_ready_to_test);
+    const outFav      = allVideoOutputs.filter(v => v.is_favorite && !v.is_approved);
+    const outApproved = allVideoOutputs.filter(v => v.is_approved);
     const vidFav      = allVideos.filter(v => v.is_favorite && !v.is_approved);
     const vidApproved = allVideos.filter(v => v.is_approved);
     container.appendChild(buildSection('🧪 Ready to Test', ready, 'ready-title', 'image'));
     container.appendChild(buildSection('⭐ Image Favorites', fav, 'fav-title', 'image'));
     container.appendChild(buildSection('✓ Approved Images', approved, 'approved-title', 'image'));
+    container.appendChild(buildSection('⭐ Favorite Videos', outFav, 'fav-title', 'video_output'));
+    container.appendChild(buildSection('✓ Approved Videos', outApproved, 'approved-title', 'video_output'));
     container.appendChild(buildSection('⭐ Favorite Storyboards', vidFav, 'fav-title', 'video'));
     container.appendChild(buildSection('✓ Approved Storyboards', vidApproved, 'approved-title', 'video'));
   }
@@ -235,7 +249,9 @@ function buildSection(title, assets, titleClass, cardType) {
 
   const grid = document.createElement('div');
   grid.className = 'cards-grid';
-  if (cardType === 'video') {
+  if (cardType === 'video_output') {
+    assets.forEach(v => grid.appendChild(buildVideoOutputCard(v)));
+  } else if (cardType === 'video') {
     assets.forEach(v => grid.appendChild(buildVideoCard(v)));
   } else {
     assets.forEach(a => grid.appendChild(buildCard(a)));
@@ -337,6 +353,49 @@ function buildVideoCard(v) {
     <div class="card-footer">
       <a class="card-link" href="/video?storyboard_id=${v.storyboard_id}">View Storyboard →</a>
       <span style="font-size:11px;color:var(--muted);margin-left:auto">${v.frames_count || 0} frames</span>
+    </div>
+  `;
+  return card;
+}
+
+function buildVideoOutputCard(v) {
+  const meta = JSON.parse(v.metadata_json || '{}');
+  const vtypeLabels = {
+    ugc: 'UGC', farm_origin: 'Farm / Origin',
+    product_hero: 'Product Hero', comparison_reveal: 'Comparison / Reveal',
+  };
+  const typeLabel = vtypeLabels[v.video_type] || v.video_type || '';
+  const modeTag = meta.motion_mode === 'ai_video'
+    ? `<span class="variant-badge" style="background:#0d3a2a;color:#4ecdc4;border:1px solid #1a5a44">AI Video</span>`
+    : `<span class="variant-badge" style="background:#1a1a2a;color:#888;border:1px solid #333">Slideshow</span>`;
+  const dur  = meta.duration ? `${Math.round(meta.duration)}s` : '';
+  const sc   = meta.scenes_used != null ? `${meta.scenes_used}/${meta.scene_count} scenes` : '';
+  const date = (v.created_at || '').slice(0, 10);
+  const concept = (v.concept_text || '').slice(0, 80) || '—';
+  const videoUrl = `/api/video/output/${v.id}/file`;
+  const stateClass = v.is_approved ? 'state-approved' : v.is_favorite ? 'state-fav' : '';
+  const icons = [v.is_favorite ? '⭐' : '', v.is_approved ? '✓' : ''].filter(Boolean).join(' ');
+
+  const card = document.createElement('div');
+  card.className = `col-card ${stateClass}`;
+  card.innerHTML = `
+    <div class="card-image-wrap" style="background:#000;padding:0">
+      <video src="${videoUrl}" style="width:100%;max-height:320px;display:block;object-fit:contain"
+             controls playsinline preload="metadata"></video>
+    </div>
+    <div class="badge-row">
+      <span class="variant-badge" style="background:#1a2030;color:#818cf8;border:1px solid #2a3050">${esc(typeLabel)}</span>
+      ${modeTag}
+      ${icons ? `<span class="status-icons">${icons}</span>` : ''}
+    </div>
+    <div class="card-info">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">${[dur, sc, date].filter(Boolean).join(' · ')}</div>
+      <div class="card-concept" title="${esc(v.concept_text || '')}">${esc(concept)}</div>
+      ${v.product_name ? `<div class="card-product">${esc(v.product_name)}</div>` : ''}
+    </div>
+    <div class="card-footer">
+      <a class="card-link" href="/video?storyboard_id=${v.storyboard_id}">View Storyboard →</a>
+      <a class="dl-link" href="${videoUrl}" download>↓ Download</a>
     </div>
   `;
   return card;
