@@ -854,7 +854,10 @@ async function loadSceneClips(sbId) {
       if (!badge) return;
       badge.style.display = 'inline-block';
       if (clip.status === 'ok') {
-        badge.innerHTML = '<span style="background:#1a1a3a;color:#a78bfa;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px">🎞 Clip ready</span>';
+        const isMock = !clip.clip_local_path && !clip.clip_url;
+        badge.innerHTML = isMock
+          ? '<span style="background:#2a2a2a;color:#666;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px" title="Mock clip — set CI_CLIP_PROVIDER=replicate to generate real clips">🎞 Mock (no file)</span>'
+          : '<span style="background:#1a1a3a;color:#a78bfa;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px">🎞 Clip ready</span>';
       } else if (clip.status === 'error') {
         badge.innerHTML = `<span style="background:#2a1a1a;color:#ef4444;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px" title="${esc(clip.error_message||'')}">✗ Clip failed</span>`;
       } else {
