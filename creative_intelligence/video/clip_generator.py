@@ -225,9 +225,11 @@ def generate_storyboard_clips(
     # Determine which scenes already have a completed clip
     existing_scene_ids: set[int] = set()
     if skip_existing:
+        # Only skip scenes with a real clip file — mock clips (no path) are regenerated
         rows = conn.execute(
             """SELECT scene_id FROM video_scene_clips
-               WHERE storyboard_id = ? AND status = 'ok'""",
+               WHERE storyboard_id = ? AND status = 'ok'
+                 AND (clip_local_path IS NOT NULL OR clip_url IS NOT NULL)""",
             (storyboard_id,),
         ).fetchall()
         existing_scene_ids = {r["scene_id"] for r in rows}
