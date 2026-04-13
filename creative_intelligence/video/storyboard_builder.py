@@ -470,7 +470,9 @@ def build_storyboard(
 
     # ── 4. LLM call ───────────────────────────────────────────────────
     llm = get_llm_client(dry_run=dry_run)
-    raw = llm.complete_json(_SYSTEM_PROMPT, user_prompt, temperature=0.7)
+    # Storyboards are long JSON (5 scenes + UGC script). Pass higher max_tokens
+    # to prevent truncation (default CI_LLM_MAX_TOKENS=2000 is too low).
+    raw = llm.complete_json(_SYSTEM_PROMPT, user_prompt, temperature=0.7, max_tokens=4096)
     if isinstance(raw, dict) and "storyboard" in raw:
         raw = raw["storyboard"]
 

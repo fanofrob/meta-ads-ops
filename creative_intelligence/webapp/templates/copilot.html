@@ -939,8 +939,10 @@ function goVideoStoryboard() {
   window.open('/video?' + params.toString(), '_blank');
 }
 
-function triggerVideoStoryboard(outputId, outputType) {
-  const concept = (document.getElementById('concept')?.value || '').trim();
+function triggerVideoStoryboard(outputId, outputType, btn) {
+  // Prefer the package's own hook/concept; fall back to copilot concept box
+  const pkgHook = btn?.dataset?.pkgHook || '';
+  const concept = pkgHook || (document.getElementById('concept')?.value || '').trim();
   const params = new URLSearchParams({
     concept:                     concept,
     product_id:                  productId || '',
@@ -1081,9 +1083,12 @@ function buildProductionCard(result) {
     <button class="card-btn" onclick="triggerRender(${outputId},'${outputType}')" title="Generate render images from this brief">🎨 Render</button>
   ` : '';
 
+  // Pass the package's own hook/concept via data-attr so the video page shows the right concept
+  const pkgHook = esc(data.hook || data.opening_line || data.concept_text || '');
   const videoBtn = outputId ? `
     <button class="card-btn" style="color:#c07be0;border-color:#4a2a6a"
-      onclick="triggerVideoStoryboard(${outputId},'${outputType}')"
+      data-pkg-hook="${pkgHook}"
+      onclick="triggerVideoStoryboard(${outputId},'${outputType}',this)"
       title="Build video storyboard from this output">
       🎬 Video
     </button>

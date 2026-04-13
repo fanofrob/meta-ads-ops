@@ -435,6 +435,13 @@ function renderStoryboard(sb, detail) {
   `;
 
   document.getElementById('mainArea').innerHTML = html;
+
+  // Populate regen prompt textareas after innerHTML is set
+  // (can't use inline template literals safely — backticks break the outer string)
+  scenes.forEach(s => {
+    const ta = document.getElementById(`regenPrompt_${s.scene_index}`);
+    if (ta) ta.value = s.visual_description || '';
+  });
 }
 
 function renderScene(s, sbId) {
@@ -464,7 +471,7 @@ function renderScene(s, sbId) {
         <button class="scene-regen-btn" onclick="toggleRegenPanel(${s.scene_index})" title="Regenerate / edit this frame">↻ Regen</button>
         <div class="regen-panel" id="regenPanel_${s.scene_index}">
           <label>Visual prompt (edit freely)</label>
-          <textarea class="regen-prompt-box" id="regenPrompt_${s.scene_index}">${esc(s.visual_description || '')}</textarea>
+          <textarea class="regen-prompt-box" id="regenPrompt_${s.scene_index}"></textarea>
           <label>Direction notes <span style="color:var(--muted2);font-style:italic;text-transform:none">(e.g. "more smile", "add product in hand", "remove text")</span></label>
           <textarea class="regen-notes-box" id="regenNotes_${s.scene_index}" placeholder="Any extra instructions…"></textarea>
           <div class="regen-panel-actions">
