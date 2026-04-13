@@ -540,7 +540,7 @@ def assemble_video(
     fps: int = 24,
     add_text_overlays: bool = True,
     text_overlay_style: str | None = None,   # None → infer from video_type
-    motion_mode: str = "ken_burns",          # "ken_burns" | "ai_video"
+    motion_mode: str = "ken_burns",          # "ken_burns" | "ai_video" | "clip"
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """
@@ -556,7 +556,8 @@ def assemble_video(
     fps             : Output frames per second (default 24)
     add_text_overlays: Draw scene text_overlay on each clip
     text_overlay_style: Override style from video_type config
-    motion_mode     : "ken_burns" (zoom/pan on stills) | "ai_video" (Replicate i2v)
+    motion_mode     : "ken_burns" (zoom/pan on stills) | "ai_video" (Replicate i2v) |
+                      "clip" (use pre-generated video_scene_clips rows, fallback to ken_burns)
     dry_run         : If True, do not write MP4 or DB row
 
     Returns
@@ -689,6 +690,85 @@ def assemble_video(
 
             if not ai_success:
                 # Fallback: Ken Burns for any scene where AI generation failed/skipped
+                try:
+                    movement = scene.get("movement") or cfg.ken_burns_map.get(
+                        (scene.get("purpose") or "demo").lower(), cfg.default_movement
+                    )
+                    frame_arrays = _make_scene_frames(
+                        img_path, duration, movement, target_w, target_h, fps
+                    )
+                    if add_text_overlays and text:
+                        frame_arrays = _draw_text_on_frames(
+                            frame_arrays, text, overlay_style, target_w, target_h
+                        )
+                    clips.append(ImageSequenceClip(frame_arrays, fps=fps))
+                    total_duration += duration
+                    scenes_used += 1
+                except Exception:
+                    pass
+
+    elif motion_mode == "clip":
+        # ── Pre-generated clip mode ────────────────────────────────────
+        # Look up video_scene_clips rows (status=ok) for each scene.
+        # Falls back to Ken Burns for any scene without a ready clip.
+        clip_rows = conn.execute(
+            """SELECT scene_id, scene_index, clip_local_path, clip_url
+               FROM video_scene_clips
+               WHERE storyboard_id = ? AND status = 'ok'
+               ORDER BY scene_index""",
+            (storyboard_id,),
+        ).fetchall()
+        clip_by_scene_id: dict[int, dict] = {r["scene_id"]: dict(r) for r in clip_rows}
+
+        for scene, img_path in scene_paths:
+            scene_id = scene.get("id", 0)
+            duration = float(scene.get("duration_seconds") or cfg.avg_scene_seconds)
+            text = scene.get("text_overlay") or ""
+            clip_record = clip_by_scene_id.get(scene_id)
+            used_clip = False
+
+            if clip_record:
+                clip_path_str = clip_record.get("clip_local_path") or clip_record.get("clip_url") or ""
+                if clip_path_str and not clip_path_str.startswith("mock://"):
+                    local_path = _resolve_image_path(clip_path_str) if not clip_path_str.startswith("http") else clip_path_str
+                    # For http paths, download first
+                    if clip_path_str.startswith(("http://", "https://")):
+                        import tempfile as _tf
+                        tmp_clip = Path(_tf.mktemp(suffix=".mp4"))
+                        if _download_video_clip(clip_path_str, tmp_clip):
+                            local_path = str(tmp_clip)
+                        else:
+                            local_path = None
+                    else:
+                        local_path = clip_path_str if Path(clip_path_str).exists() else None
+
+                    if local_path:
+                        try:
+                            from moviepy.editor import VideoFileClip
+                            vc = VideoFileClip(str(local_path))
+                            vc_resized = vc.resize((target_w, target_h))
+                            if add_text_overlays and text:
+                                raw_frames = [
+                                    vc_resized.get_frame(t)
+                                    for t in [i / fps for i in range(int(vc_resized.duration * fps))]
+                                ]
+                                raw_frames = _draw_text_on_frames(
+                                    raw_frames, text, overlay_style, target_w, target_h
+                                )
+                                clip = ImageSequenceClip(raw_frames, fps=fps)
+                                vc_resized.close()
+                            else:
+                                clip = vc_resized
+                            clips.append(clip)
+                            total_duration += vc.duration
+                            scenes_used += 1
+                            vc.close()
+                            used_clip = True
+                        except Exception:
+                            pass
+
+            if not used_clip:
+                # Fallback to Ken Burns
                 try:
                     movement = scene.get("movement") or cfg.ken_burns_map.get(
                         (scene.get("purpose") or "demo").lower(), cfg.default_movement

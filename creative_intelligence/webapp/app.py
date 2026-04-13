@@ -2455,6 +2455,75 @@ def video_types_list() -> Any:
 
 
 # ─────────────────────────────────────────────
+# Scene-level clip generation routes  (v1.7)
+# ─────────────────────────────────────────────
+
+@app.post("/api/video/storyboard/<int:storyboard_id>/generate-clips")
+def video_generate_clips(storyboard_id: int) -> Any:
+    """Generate per-scene MP4 clips for a storyboard via a clip provider.
+
+    Body (all optional):
+      provider        str  — "mock" | "replicate" (default: CI_CLIP_PROVIDER)
+      aspect_ratio    str  — default "9:16"
+      skip_existing   bool — skip scenes with an existing ok clip (default true)
+      max_workers     int  — parallel workers (default 3)
+      dry_run         bool — prompt only, no API calls or DB writes (default false)
+    """
+    from creative_intelligence.video.clip_generator import generate_storyboard_clips
+    try:
+        body = request.get_json(force=True, silent=True) or {}
+        provider_name = body.get("provider") or None
+        aspect_ratio  = body.get("aspect_ratio", "9:16")
+        skip_existing = bool(body.get("skip_existing", True))
+        max_workers   = int(body.get("max_workers", 3))
+        dry_run       = bool(body.get("dry_run", False))
+
+        conn = _db()
+        # Check storyboard exists
+        sb = conn.execute(
+            "SELECT id FROM video_storyboards WHERE id = ?", (storyboard_id,)
+        ).fetchone()
+        if not sb:
+            conn.close()
+            return jsonify({"error": f"Storyboard {storyboard_id} not found"}), 404
+
+        result = generate_storyboard_clips(
+            storyboard_id=storyboard_id,
+            conn=conn,
+            provider_name=provider_name,
+            aspect_ratio=aspect_ratio,
+            skip_existing=skip_existing,
+            max_workers=max_workers,
+            dry_run=dry_run,
+        )
+        conn.close()
+        return jsonify(result)
+    except Exception as exc:
+        app.logger.exception("video/generate-clips failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/video/storyboard/<int:storyboard_id>/clips")
+def video_scene_clips_list(storyboard_id: int) -> Any:
+    """Return all video_scene_clips rows for a storyboard."""
+    try:
+        conn = _db()
+        sb = conn.execute(
+            "SELECT id FROM video_storyboards WHERE id = ?", (storyboard_id,)
+        ).fetchone()
+        if not sb:
+            conn.close()
+            return jsonify({"error": "storyboard not found"}), 404
+
+        from creative_intelligence.video.clip_generator import get_scene_clips
+        clips = get_scene_clips(storyboard_id, conn)
+        conn.close()
+        return jsonify(clips)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ─────────────────────────────────────────────
 # Storage / maintenance
 # ─────────────────────────────────────────────
 

@@ -108,6 +108,28 @@ def _migrate(conn: sqlite3.Connection) -> None:
         )""",
         """CREATE INDEX IF NOT EXISTS idx_video_outputs_storyboard
            ON video_outputs(storyboard_id)""",
+        # ── scene-level clip generation (v1.7) ──────────────────────────
+        """CREATE TABLE IF NOT EXISTS video_scene_clips (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            storyboard_id       INTEGER NOT NULL,
+            scene_id            INTEGER NOT NULL,
+            scene_index         INTEGER NOT NULL,
+            provider            TEXT NOT NULL DEFAULT 'replicate',
+            model               TEXT,
+            prompt              TEXT,
+            clip_local_path     TEXT,
+            clip_url            TEXT,
+            duration_seconds    REAL,
+            aspect_ratio        TEXT DEFAULT '9:16',
+            status              TEXT NOT NULL DEFAULT 'pending',
+            error_message       TEXT,
+            metadata_json       TEXT DEFAULT '{}',
+            created_at          TEXT DEFAULT (datetime('now'))
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_video_scene_clips_storyboard
+           ON video_scene_clips(storyboard_id)""",
+        """CREATE INDEX IF NOT EXISTS idx_video_scene_clips_scene
+           ON video_scene_clips(scene_id)""",
     ]
     for stmt in migrations:
         try:
