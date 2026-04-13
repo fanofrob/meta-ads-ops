@@ -1059,15 +1059,15 @@ function buildProductionCard(result) {
     ? `/api/production/package/${outputId}/export`
     : `/api/production/${outputId}/export`;
 
-  const renderBtn = (outputId && outputType === 'static_brief') ? `
-    <button class="card-btn" onclick="triggerRender(${outputId})" title="Generate render specs for this brief">🎨 Render</button>
+  const renderBtn = outputId ? `
+    <button class="card-btn" onclick="triggerRender(${outputId},'${outputType}')" title="Generate render images from this output">🎨 Render</button>
   ` : '';
 
-  const videoBtn = (outputId && (outputType === 'script_package' || outputType === 'ugc_brief')) ? `
+  const videoBtn = outputId ? `
     <button class="card-btn" style="color:#c07be0;border-color:#4a2a6a"
       onclick="triggerVideoStoryboard(${outputId},'${outputType}')"
-      title="Build video storyboard from this ${outputType === 'script_package' ? 'Script Package' : 'UGC Brief'}">
-      🎬 Video Storyboard
+      title="Build video storyboard from this output">
+      🎬 Video
     </button>
   ` : '';
 
@@ -1236,7 +1236,7 @@ async function toggleProdFav(btn) {
   } catch(e) { toast('Failed: ' + e.message, true); }
 }
 
-async function triggerRender(outputId) {
+async function triggerRender(outputId, outputType) {
   try {
     toast('Generating render specs…');
     const res = await fetch('/api/render/generate', {

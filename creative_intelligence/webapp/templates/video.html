@@ -131,6 +131,22 @@
   .opening-line { font-size: 15px; font-weight: 600; font-style: italic; color: var(--accent2); }
   .cta-line { font-size: 14px; font-weight: 600; color: var(--yellow); }
 
+  /* ── Storyboard action buttons (approve/fav) ── */
+  .sb-action-btn {
+    font-size: 12px; padding: 5px 12px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface2); color: var(--text2);
+    transition: all .15s;
+  }
+  .sb-action-btn:hover { border-color: var(--accent); color: var(--text); }
+  .sb-action-btn.active { background: #052e16; border-color: #166534; color: var(--green); }
+  .sb-action-btn.fav.active { background: #1c1200; border-color: #92400e; color: var(--gold); }
+  .scene-regen-btn {
+    font-size: 11px; padding: 3px 8px; border-radius: 5px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface2); color: var(--muted);
+    margin-top: 6px;
+  }
+  .scene-regen-btn:hover { border-color: var(--accent); color: var(--text2); }
+
   /* ── Toast ── */
   #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 9px 18px; border-radius: 8px; font-size: 12px; opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 999; }
   #toast.show { opacity: 1; }
@@ -173,6 +189,14 @@
         <option value="4:5">4:5 — Feed Portrait</option>
         <option value="1:1">1:1 — Square</option>
         <option value="16:9">16:9 — Landscape</option>
+      </select>
+
+      <div class="field-label" style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.7px;margin-top:10px;margin-bottom:6px">MODEL</div>
+      <select id="modelSelect" class="field-select" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 9px;font-size:12px">
+        <option value="">Default</option>
+        <option value="black-forest-labs/flux-1.1-pro">Flux 1.1 Pro</option>
+        <option value="black-forest-labs/flux-schnell">Flux Schnell (fast)</option>
+        <option value="stability-ai/sdxl">SDXL</option>
       </select>
 
       <div class="check-row">
@@ -359,7 +383,9 @@ function renderStoryboard(sb, detail) {
                      border-radius:4px; font-size:10px; font-weight:600;">
           ${sourceBadge.label}
         </span>
-        <span style="margin-left:auto">
+        <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+          <button id="sbApproveBtn" class="sb-action-btn" onclick="toggleStoryboardApprove()" title="Approve this storyboard">✓ Approve</button>
+          <button id="sbFavBtn" class="sb-action-btn fav" onclick="toggleStoryboardFav()" title="Save to favorites">★</button>
           <button class="gen-frames-btn" id="genFramesBtn"
             onclick="generateFrames(${sb.id || detail.storyboard_id})">
             🖼 Generate All Frames
@@ -381,9 +407,9 @@ function renderStoryboard(sb, detail) {
 function renderScene(s, sbId) {
   const purpose = (s.purpose || 'demo').toLowerCase();
   const imgHtml = s.image_url
-    ? `<img src="${s.image_url}" alt="scene ${s.scene_index}"
+    ? `<img src="${s.image_url}" alt="scene ${s.scene_index}" data-scene-img="${s.scene_index}"
            onerror="this.parentElement.innerHTML='<div class=scene-frame-placeholder>Image unavailable</div>'">`
-    : `<div class="scene-frame-placeholder">No frame yet</div>`;
+    : `<div class="scene-frame-placeholder" data-scene-placeholder="${s.scene_index}">No frame yet</div>`;
 
   const shots = [s.camera_type, s.framing, s.movement, s.lighting_style].filter(Boolean);
 
@@ -402,6 +428,7 @@ function renderScene(s, sbId) {
           ${s.product_focus ? `<span class="shot-tag" title="product focus">${esc(s.product_focus)}</span>` : ''}
         </div>
         <div class="scene-duration">⏱ ${s.duration_seconds}s</div>
+        <button class="scene-regen-btn" data-regen-scene="${s.scene_index}" onclick="regenSceneFrame(${s.scene_index})" title="Regenerate this frame">↻ Regen</button>
       </div>
     </div>`;
 }
@@ -439,9 +466,13 @@ function renderScript(ugc) {
     </div>`;
 }
 
+/* ── Track current storyboard id for approve/fav/regen ── */
+let currentStoryboardId = null;
+
 /* ── Load existing storyboard ── */
 async function loadStoryboard(id, prefetched=null) {
   try {
+    currentStoryboardId = id;
     const detail = prefetched || await api(`/api/video/storyboard/${id}`);
     // For prefetched (from generate), reconstruct sb shape
     const sb = prefetched ? {
@@ -462,6 +493,16 @@ async function loadStoryboard(id, prefetched=null) {
     }
 
     renderStoryboard(sb, detail);
+
+    // Restore approve/fav button state from fetched data
+    const data = prefetched ? detail : detail;
+    const sbApproveBtn = document.getElementById('sbApproveBtn');
+    if (sbApproveBtn) {
+      sbApproveBtn.classList.toggle('active', !!data.is_approved);
+      sbApproveBtn.textContent = data.is_approved ? '✓ Approved' : '✓ Approve';
+    }
+    const sbFavBtn = document.getElementById('sbFavBtn');
+    if (sbFavBtn) sbFavBtn.classList.toggle('active', !!data.is_favorite);
   } catch(e) {
     toast('Failed to load storyboard: ' + e.message, true);
   }
@@ -475,13 +516,93 @@ async function generateFrames(sbId) {
   btn.textContent = '⏳ Generating…';
   try {
     const aspect = document.getElementById('aspectRatio').value;
-    await api(`/api/video/storyboard/${sbId}/generate-frames`, { aspect_ratio: aspect });
+    const model  = document.getElementById('modelSelect')?.value || null;
+    await api(`/api/video/storyboard/${sbId}/generate-frames`, {
+      model: model,
+      aspect_ratio: aspect,
+    });
     toast('✓ Frames generated — reloading…');
     setTimeout(() => loadStoryboard(sbId), 800);
   } catch(e) {
     toast('Frame generation failed: ' + e.message, true);
     btn.disabled = false;
     btn.textContent = '🖼 Generate All Frames';
+  }
+}
+
+/* ── Storyboard approve / fav / per-scene regen ── */
+async function toggleStoryboardApprove() {
+  if (!currentStoryboardId) return;
+  const btn = document.getElementById('sbApproveBtn');
+  const isApproved = btn.classList.contains('active');
+  try {
+    const res = await fetch(`/api/video/storyboard/${currentStoryboardId}/approve`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({approved: !isApproved}),
+    });
+    const data = await res.json();
+    btn.classList.toggle('active', data.is_approved);
+    btn.textContent = data.is_approved ? '✓ Approved' : '✓ Approve';
+    toast(data.is_approved ? 'Storyboard approved' : 'Approval removed');
+  } catch(e) { toast('Error: ' + e.message, true); }
+}
+
+async function toggleStoryboardFav() {
+  if (!currentStoryboardId) return;
+  const btn = document.getElementById('sbFavBtn');
+  const isFav = btn.classList.contains('active');
+  try {
+    const res = await fetch(`/api/video/storyboard/${currentStoryboardId}/favorite`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({favorite: !isFav}),
+    });
+    const data = await res.json();
+    btn.classList.toggle('active', data.is_favorite);
+    toast(data.is_favorite ? '★ Saved to favorites' : 'Removed from favorites');
+  } catch(e) { toast('Error: ' + e.message, true); }
+}
+
+async function regenSceneFrame(sceneIdx) {
+  if (!currentStoryboardId) return;
+  const model = document.getElementById('modelSelect')?.value || null;
+  const aspectRatio = document.getElementById('aspectRatio')?.value || '9:16';
+  const btn = document.querySelector(`[data-regen-scene="${sceneIdx}"]`);
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const res = await fetch(`/api/video/storyboard/${currentStoryboardId}/scene/${sceneIdx}/regenerate`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({model, aspect_ratio: aspectRatio}),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'failed');
+    // Update the scene image
+    const imgEl = document.querySelector(`[data-scene-img="${sceneIdx}"]`);
+    if (imgEl && data.image_url) {
+      imgEl.src = data.image_url + '?t=' + Date.now();
+      imgEl.style.display = '';
+      const placeholder = document.querySelector(`[data-scene-placeholder="${sceneIdx}"]`);
+      if (placeholder) placeholder.style.display = 'none';
+    } else if (data.image_url) {
+      // img not found (placeholder shown); replace placeholder
+      const placeholder = document.querySelector(`[data-scene-placeholder="${sceneIdx}"]`);
+      if (placeholder) {
+        const img = document.createElement('img');
+        img.src = data.image_url + '?t=' + Date.now();
+        img.setAttribute('data-scene-img', sceneIdx);
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'cover';
+        placeholder.replaceWith(img);
+      }
+    }
+    toast('Frame regenerated');
+  } catch(e) {
+    toast('Regen failed: ' + e.message, true);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '↻ Regen'; }
   }
 }
 
@@ -516,6 +637,12 @@ function applyUrlParams() {
   const params = new URLSearchParams(window.location.search);
   if (params.get('concept') && params.get('autogen') === '1') {
     generateStoryboard();
+  }
+
+  // Auto-load storyboard if storyboard_id is in URL (e.g. from Collection)
+  const preloadId = params.get('storyboard_id');
+  if (preloadId) {
+    loadStoryboard(parseInt(preloadId, 10));
   }
 })();
 </script>

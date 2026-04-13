@@ -86,6 +86,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
             lighting_style      TEXT DEFAULT '',
             render_asset_id     INTEGER
         )""",
+        "ALTER TABLE video_storyboards ADD COLUMN is_favorite INTEGER DEFAULT 0",
+        "ALTER TABLE video_storyboards ADD COLUMN is_approved INTEGER DEFAULT 0",
+        "ALTER TABLE video_storyboards ADD COLUMN review_notes TEXT DEFAULT ''",
     ]
     for stmt in migrations:
         try:

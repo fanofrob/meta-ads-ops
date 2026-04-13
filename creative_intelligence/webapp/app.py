@@ -1660,7 +1660,9 @@ def collection_api() -> Any:
     """Return all approved/favorite/ready assets with their context."""
     try:
         conn = _db()
-        rows = conn.execute(
+
+        # Image render assets
+        image_rows = conn.execute(
             """SELECT
                 ra.id as asset_id,
                 ra.variant_label,
@@ -1683,8 +1685,34 @@ def collection_api() -> Any:
             WHERE ra.review_status = 'approved' OR ra.is_favorite = 1 OR ra.is_ready_to_test = 1
             ORDER BY ra.is_ready_to_test DESC, ra.is_favorite DESC, ra.id DESC"""
         ).fetchall()
+
+        # Video storyboards
+        video_rows = conn.execute(
+            """SELECT
+                vs.id as storyboard_id,
+                vs.concept_text,
+                vs.product_id,
+                vs.total_duration_seconds,
+                vs.source_output_type,
+                vs.is_favorite,
+                vs.is_approved,
+                vs.created_at,
+                p.name as product_name,
+                COUNT(sc.id) as scene_count,
+                SUM(CASE WHEN sc.render_asset_id IS NOT NULL THEN 1 ELSE 0 END) as frames_count
+            FROM video_storyboards vs
+            LEFT JOIN products p ON p.id = vs.product_id
+            LEFT JOIN video_scenes sc ON sc.storyboard_id = vs.id
+            WHERE vs.is_favorite = 1 OR vs.is_approved = 1
+            GROUP BY vs.id
+            ORDER BY vs.id DESC"""
+        ).fetchall()
+
         conn.close()
-        return jsonify([dict(r) for r in rows])
+        return jsonify({
+            "images": [dict(r) for r in image_rows],
+            "videos": [dict(r) for r in video_rows],
+        })
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -1824,24 +1852,77 @@ def video_storyboard_fetch(storyboard_id: int) -> Any:
         return jsonify({"error": str(exc)}), 500
 
 
+def _build_video_visual_seed(scenes: list[dict]) -> str:
+    """Build a visual consistency anchor prompt from the storyboard's scenes.
+
+    Extracts the talent/setting/lighting from the first person-facing scene
+    and returns a prefix string to prepend to each scene's image generation
+    prompt. This keeps the same person, background and lighting across all
+    generated frames unless a scene explicitly shows different subjects.
+    """
+    if not scenes:
+        return ""
+
+    # Gather lighting from first scene that has it
+    lighting = next(
+        (s.get("lighting_style", "") for s in scenes if s.get("lighting_style", "")), ""
+    )
+    # Find the first talent/person scene for character anchoring
+    talent_scene = next(
+        (s for s in scenes
+         if any(w in (s.get("visual_description") or "").lower()
+                for w in ["talent", "creator", "person", "woman", "man", "face", "smile"])),
+        None,
+    )
+    seed_parts: list[str] = []
+
+    if talent_scene:
+        vd = talent_scene.get("visual_description", "")
+        # Take first sentence as character/setting anchor
+        anchor = vd.split(".")[0].strip()
+        if anchor:
+            seed_parts.append(
+                f"Maintain visual consistency with this reference scene: {anchor}"
+            )
+    if lighting:
+        seed_parts.append(f"Lighting: {lighting}")
+
+    seed_parts.append(
+        "Same person, same environment, same color grade throughout. "
+        "Realistic UGC aesthetic, warm natural tones."
+    )
+    return " | ".join(seed_parts) + " || "
+
+
 @app.post("/api/video/storyboard/<int:storyboard_id>/generate-frames")
 def video_generate_frames(storyboard_id: int) -> Any:
-    """Generate scene frame images for an existing storyboard."""
+    """Generate scene frame images for an existing storyboard (parallel, visually consistent)."""
     from creative_intelligence.rendering.providers import get_provider
     from creative_intelligence.rendering.asset_store import save_asset
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import threading
+
     try:
         body  = request.get_json(force=True, silent=True) or {}
         model = body.get("model") or None
         aspect_ratio = body.get("aspect_ratio", "9:16")
+        # Optional: override specific scene indices (default: all)
+        scene_indices = body.get("scene_indices") or None  # list[int] or None = all
 
         conn = _db()
-        scenes = conn.execute(
+        scene_rows = conn.execute(
             "SELECT * FROM video_scenes WHERE storyboard_id = ? ORDER BY scene_index",
             (storyboard_id,),
         ).fetchall()
-        if not scenes:
+        if not scene_rows:
             conn.close()
             return jsonify({"error": "storyboard not found or has no scenes"}), 404
+
+        scenes = [dict(s) for s in scene_rows]
+
+        # Build visual consistency seed from first scene
+        # This anchors person/setting/lighting across all generated frames
+        visual_seed = _build_video_visual_seed(scenes)
 
         provider   = get_provider(None)
         gen_kwargs: dict = {}
@@ -1852,47 +1933,88 @@ def video_generate_frames(storyboard_id: int) -> Any:
             "text overlays, watermarks, blurry, low quality, distorted, "
             "generic stock photo, fake-looking, oversaturated, pixelated"
         )
-        generated = []
-        for scene in scenes:
-            s = dict(scene)
-            if s.get("render_asset_id"):
-                # already has a frame — skip
-                generated.append({"scene_index": s["scene_index"], "skipped": True,
-                                   "render_asset_id": s["render_asset_id"]})
+
+        # Determine which scenes need generation
+        to_generate = []
+        skipped = []
+        for s in scenes:
+            if scene_indices is not None and s["scene_index"] not in scene_indices:
                 continue
+            if s.get("render_asset_id"):
+                skipped.append({"scene_index": s["scene_index"], "skipped": True,
+                                 "render_asset_id": s["render_asset_id"]})
+            else:
+                to_generate.append(s)
+
+        # Thread-safe DB connection factory (each thread gets its own connection)
+        db_path = None
+        try:
+            from creative_intelligence.db import get_db_path
+            db_path = get_db_path()
+        except Exception:
+            pass
+
+        lock = threading.Lock()
+        results = list(skipped)
+
+        def gen_scene(s):
+            from creative_intelligence.db import get_connection
+            thread_conn = get_connection(db_path) if db_path else _db()
             try:
+                # Prefix with visual seed for consistency; skip seed for obvious product-only shots
+                vd = s.get("visual_description", "")
+                lower_vd = vd.lower()
+                # Use seed unless it's a pure product/macro shot with no person
+                use_seed = visual_seed and any(
+                    w in lower_vd for w in ["talent", "creator", "person", "hand", "face", "smile", "camera"]
+                )
+                prompt = (visual_seed + vd) if use_seed else vd
+
                 paths = provider.generate(
-                    prompt=s["visual_description"],
+                    prompt=prompt,
                     negative_prompt=negative,
                     aspect_ratio=aspect_ratio,
                     **gen_kwargs,
                 )
-                if paths:
-                    asset_id = save_asset(
-                        render_output_id=0,
-                        variant_label=f"video_scene_{s['scene_index']}",
-                        source=paths[0],
-                        conn=conn,
-                        metadata={
-                            "storyboard_id": storyboard_id,
-                            "scene_id":      s["scene_index"],
-                            "purpose":       s.get("purpose", ""),
-                            "aspect_ratio":  aspect_ratio,
-                        },
+                if not paths:
+                    return {"scene_index": s["scene_index"], "error": "no paths returned"}
+
+                asset_id = save_asset(
+                    render_output_id=0,
+                    variant_label=f"video_scene_{s['scene_index']}",
+                    source=paths[0],
+                    conn=thread_conn,
+                    metadata={
+                        "storyboard_id": storyboard_id,
+                        "scene_id":      s["scene_index"],
+                        "purpose":       s.get("purpose", ""),
+                        "aspect_ratio":  aspect_ratio,
+                    },
+                )
+                with thread_conn:
+                    thread_conn.execute(
+                        "UPDATE video_scenes SET render_asset_id=? WHERE id=?",
+                        (asset_id, s["id"]),
                     )
-                    with conn:
-                        conn.execute(
-                            "UPDATE video_scenes SET render_asset_id=? WHERE id=?",
-                            (asset_id, s["id"]),
-                        )
-                    generated.append({"scene_index": s["scene_index"],
-                                      "render_asset_id": asset_id,
-                                      "image_url": f"/api/render/asset/{asset_id}/image"})
+                return {"scene_index": s["scene_index"], "render_asset_id": asset_id,
+                        "image_url": f"/api/render/asset/{asset_id}/image"}
             except Exception as fe:
-                generated.append({"scene_index": s["scene_index"], "error": str(fe)})
+                return {"scene_index": s["scene_index"], "error": str(fe)}
+            finally:
+                try:
+                    thread_conn.close()
+                except Exception:
+                    pass
+
+        # Generate all scenes in parallel (max 5 workers)
+        with ThreadPoolExecutor(max_workers=min(5, len(to_generate) or 1)) as executor:
+            futures = {executor.submit(gen_scene, s): s for s in to_generate}
+            for future in as_completed(futures):
+                with lock:
+                    results.append(future.result())
 
         conn.close()
-        return jsonify({"ok": True, "storyboard_id": storyboard_id, "frames": generated})
+        return jsonify({"ok": True, "storyboard_id": storyboard_id, "frames": results})
     except Exception as exc:
         app.logger.exception("video/generate-frames failed")
         return jsonify({"error": str(exc)}), 500
@@ -1905,6 +2027,7 @@ def video_list() -> Any:
         conn = _db()
         rows = conn.execute(
             """SELECT vs.id, vs.concept_text, vs.product_id, vs.total_duration_seconds,
+                      vs.source_output_type, vs.is_favorite, vs.is_approved,
                       vs.created_at, p.name as product_name,
                       COUNT(sc.id) as scene_count,
                       SUM(CASE WHEN sc.render_asset_id IS NOT NULL THEN 1 ELSE 0 END) as frames_count
@@ -1917,6 +2040,127 @@ def video_list() -> Any:
         conn.close()
         return jsonify([dict(r) for r in rows])
     except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/video/storyboard/<int:storyboard_id>/favorite")
+def video_storyboard_favorite(storyboard_id: int) -> Any:
+    """Toggle is_favorite on a video storyboard."""
+    try:
+        body = request.get_json(force=True) or {}
+        fav  = bool(body.get("favorite", True))
+        conn = _db()
+        conn.execute(
+            "UPDATE video_storyboards SET is_favorite = ? WHERE id = ?",
+            (1 if fav else 0, storyboard_id),
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "is_favorite": fav})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/video/storyboard/<int:storyboard_id>/approve")
+def video_storyboard_approve(storyboard_id: int) -> Any:
+    """Toggle is_approved on a video storyboard."""
+    try:
+        body     = request.get_json(force=True) or {}
+        approved = bool(body.get("approved", True))
+        conn     = _db()
+        conn.execute(
+            "UPDATE video_storyboards SET is_approved = ? WHERE id = ?",
+            (1 if approved else 0, storyboard_id),
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "is_approved": approved})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/video/storyboard/<int:storyboard_id>/scene/<int:scene_idx>/regenerate")
+def video_scene_regenerate(storyboard_id: int, scene_idx: int) -> Any:
+    """Regenerate the frame image for a single scene."""
+    from creative_intelligence.rendering.providers import get_provider
+    from creative_intelligence.rendering.asset_store import save_asset
+    try:
+        body         = request.get_json(force=True, silent=True) or {}
+        model        = body.get("model") or None
+        aspect_ratio = body.get("aspect_ratio", "9:16")
+        prompt_override = body.get("visual_prompt") or None
+
+        conn = _db()
+        # Get ALL scenes for the storyboard (needed for visual seed)
+        all_scenes = [dict(r) for r in conn.execute(
+            "SELECT * FROM video_scenes WHERE storyboard_id = ? ORDER BY scene_index",
+            (storyboard_id,),
+        ).fetchall()]
+        if not all_scenes:
+            conn.close()
+            return jsonify({"error": "storyboard not found"}), 404
+
+        scene = next((s for s in all_scenes if s["scene_index"] == scene_idx), None)
+        if not scene:
+            conn.close()
+            return jsonify({"error": f"scene {scene_idx} not found"}), 404
+
+        # Build visual seed for consistency
+        visual_seed = _build_video_visual_seed(all_scenes)
+
+        gen_kwargs: dict = {}
+        if model:
+            gen_kwargs["model"] = model
+
+        vd = prompt_override or scene.get("visual_description", "")
+        lower_vd = vd.lower()
+        use_seed = visual_seed and any(
+            w in lower_vd for w in ["talent", "creator", "person", "hand", "face", "smile", "camera"]
+        )
+        prompt = (visual_seed + vd) if use_seed else vd
+
+        negative = (
+            "text overlays, watermarks, blurry, low quality, distorted, "
+            "generic stock photo, fake-looking, oversaturated, pixelated"
+        )
+
+        provider = get_provider(None)
+        paths = provider.generate(
+            prompt=prompt,
+            negative_prompt=negative,
+            aspect_ratio=aspect_ratio,
+            **gen_kwargs,
+        )
+        if not paths:
+            conn.close()
+            return jsonify({"error": "provider returned no images"}), 500
+
+        asset_id = save_asset(
+            render_output_id=0,
+            variant_label=f"video_scene_{scene_idx}",
+            source=paths[0],
+            conn=conn,
+            metadata={
+                "storyboard_id": storyboard_id,
+                "scene_id":      scene_idx,
+                "purpose":       scene.get("purpose", ""),
+                "aspect_ratio":  aspect_ratio,
+            },
+        )
+        with conn:
+            conn.execute(
+                "UPDATE video_scenes SET render_asset_id=? WHERE storyboard_id=? AND scene_index=?",
+                (asset_id, storyboard_id, scene_idx),
+            )
+        conn.close()
+        return jsonify({
+            "ok": True,
+            "scene_index":    scene_idx,
+            "render_asset_id": asset_id,
+            "image_url":      f"/api/render/asset/{asset_id}/image",
+        })
+    except Exception as exc:
+        app.logger.exception("video/scene-regenerate failed")
         return jsonify({"error": str(exc)}), 500
 
 
