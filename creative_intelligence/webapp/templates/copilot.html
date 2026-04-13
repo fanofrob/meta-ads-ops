@@ -443,6 +443,14 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /* ── Product dropdown ───────────────────────────────── */
+function cleanProductLabel(raw) {
+  // Shopify categories use "Type: Name, Variant" (e.g. "Fruit: Orange, Blood").
+  // Strip the prefix, then reverse comma-separated parts so "Orange, Blood" → "Blood Orange".
+  let s = (raw || '').replace(/^[^:]+:\s*/, '').trim();
+  const parts = s.split(',').map(p => p.trim()).filter(Boolean);
+  return parts.length > 1 ? parts.reverse().join(' ') : (s || raw);
+}
+
 async function loadProducts() {
   try {
     const r = await fetch('/api/products');
@@ -451,7 +459,8 @@ async function loadProducts() {
     products.forEach(p => {
       const opt = document.createElement('option');
       opt.value = p.id;
-      opt.textContent = (p.label || p.name) + (p.price ? ` — $${Math.round(p.price)}` : '');
+      const label = cleanProductLabel(p.label || p.name);
+      opt.textContent = label + (p.price ? ` — $${Math.round(p.price)}` : '');
       sel.appendChild(opt);
     });
   } catch (e) { console.warn('Could not load products', e); }
