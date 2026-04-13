@@ -1077,8 +1077,8 @@ function buildProductionCard(result) {
     ? `/api/production/package/${outputId}/export`
     : `/api/production/${outputId}/export`;
 
-  const renderBtn = outputId ? `
-    <button class="card-btn" onclick="triggerRender(${outputId},'${outputType}')" title="Generate render images from this output">🎨 Render</button>
+  const renderBtn = (outputId && outputType === 'static_brief') ? `
+    <button class="card-btn" onclick="triggerRender(${outputId},'${outputType}')" title="Generate render images from this brief">🎨 Render</button>
   ` : '';
 
   const videoBtn = outputId ? `

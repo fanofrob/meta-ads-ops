@@ -141,11 +141,44 @@
   .sb-action-btn.active { background: #052e16; border-color: #166534; color: var(--green); }
   .sb-action-btn.fav.active { background: #1c1200; border-color: #92400e; color: var(--gold); }
   .scene-regen-btn {
-    font-size: 11px; padding: 3px 8px; border-radius: 5px; cursor: pointer;
+    font-size: 11px; padding: 3px 10px; border-radius: 5px; cursor: pointer;
     border: 1px solid var(--border); background: var(--surface2); color: var(--muted);
     margin-top: 6px;
   }
-  .scene-regen-btn:hover { border-color: var(--accent); color: var(--text2); }
+  .scene-regen-btn:hover { border-color: var(--accent2); color: var(--text2); }
+
+  /* Inline regen panel */
+  .regen-panel {
+    display: none; margin-top: 10px; padding: 12px;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+  }
+  .regen-panel.open { display: block; }
+  .regen-panel label { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); display: block; margin-bottom: 5px; }
+  .regen-prompt-box {
+    width: 100%; min-height: 60px; resize: vertical; font-size: 12px; line-height: 1.5;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); padding: 8px; font-family: inherit; margin-bottom: 8px;
+  }
+  .regen-prompt-box:focus { outline: none; border-color: var(--accent2); }
+  .regen-notes-box {
+    width: 100%; font-size: 12px; line-height: 1.5;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); padding: 7px; font-family: inherit; resize: none; height: 52px;
+  }
+  .regen-notes-box:focus { outline: none; border-color: var(--accent2); }
+  .regen-notes-box::placeholder { color: var(--muted2); }
+  .regen-panel-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .regen-go-btn {
+    font-size: 12px; padding: 5px 14px; border-radius: 6px; cursor: pointer;
+    background: var(--accent); border: none; color: #fff; font-weight: 600;
+  }
+  .regen-go-btn:hover { background: #4338ca; }
+  .regen-go-btn:disabled { opacity: .5; cursor: wait; }
+  .regen-cancel-btn {
+    font-size: 12px; padding: 5px 10px; border-radius: 6px; cursor: pointer;
+    background: transparent; border: 1px solid var(--border); color: var(--muted);
+  }
+  .regen-cancel-btn:hover { color: var(--text2); border-color: var(--text2); }
 
   /* ── Toast ── */
   #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 9px 18px; border-radius: 8px; font-size: 12px; opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 999; }
@@ -428,7 +461,17 @@ function renderScene(s, sbId) {
           ${s.product_focus ? `<span class="shot-tag" title="product focus">${esc(s.product_focus)}</span>` : ''}
         </div>
         <div class="scene-duration">⏱ ${s.duration_seconds}s</div>
-        <button class="scene-regen-btn" data-regen-scene="${s.scene_index}" onclick="regenSceneFrame(${s.scene_index})" title="Regenerate this frame">↻ Regen</button>
+        <button class="scene-regen-btn" onclick="toggleRegenPanel(${s.scene_index})" title="Regenerate / edit this frame">↻ Regen</button>
+        <div class="regen-panel" id="regenPanel_${s.scene_index}">
+          <label>Visual prompt (edit freely)</label>
+          <textarea class="regen-prompt-box" id="regenPrompt_${s.scene_index}">${esc(s.visual_description || '')}</textarea>
+          <label>Direction notes <span style="color:var(--muted2);font-style:italic;text-transform:none">(e.g. "more smile", "add product in hand", "remove text")</span></label>
+          <textarea class="regen-notes-box" id="regenNotes_${s.scene_index}" placeholder="Any extra instructions…"></textarea>
+          <div class="regen-panel-actions">
+            <button class="regen-go-btn" id="regenGoBtn_${s.scene_index}" onclick="submitRegenFrame(${s.scene_index})">↻ Generate Frame</button>
+            <button class="regen-cancel-btn" onclick="toggleRegenPanel(${s.scene_index})">Cancel</button>
+          </div>
+        </div>
       </div>
     </div>`;
 }
@@ -564,45 +607,59 @@ async function toggleStoryboardFav() {
   } catch(e) { toast('Error: ' + e.message, true); }
 }
 
-async function regenSceneFrame(sceneIdx) {
+function toggleRegenPanel(sceneIdx) {
+  const panel = document.getElementById(`regenPanel_${sceneIdx}`);
+  if (panel) panel.classList.toggle('open');
+}
+
+async function submitRegenFrame(sceneIdx) {
   if (!currentStoryboardId) return;
-  const model = document.getElementById('modelSelect')?.value || null;
+  const model       = document.getElementById('modelSelect')?.value || null;
   const aspectRatio = document.getElementById('aspectRatio')?.value || '9:16';
-  const btn = document.querySelector(`[data-regen-scene="${sceneIdx}"]`);
-  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  const promptEl    = document.getElementById(`regenPrompt_${sceneIdx}`);
+  const notesEl     = document.getElementById(`regenNotes_${sceneIdx}`);
+  const goBtn       = document.getElementById(`regenGoBtn_${sceneIdx}`);
+
+  const basePrompt = (promptEl?.value || '').trim();
+  const notes      = (notesEl?.value || '').trim();
+  const finalPrompt = notes ? `${basePrompt}. Direction: ${notes}` : basePrompt;
+
+  if (goBtn) { goBtn.disabled = true; goBtn.textContent = 'Generating…'; }
   try {
     const res = await fetch(`/api/video/storyboard/${currentStoryboardId}/scene/${sceneIdx}/regenerate`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({model, aspect_ratio: aspectRatio}),
+      body: JSON.stringify({ model, aspect_ratio: aspectRatio, visual_prompt: finalPrompt || null }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'failed');
-    // Update the scene image
-    const imgEl = document.querySelector(`[data-scene-img="${sceneIdx}"]`);
-    if (imgEl && data.image_url) {
-      imgEl.src = data.image_url + '?t=' + Date.now();
-      imgEl.style.display = '';
+
+    // Update scene image in place
+    if (data.image_url) {
+      let imgEl = document.querySelector(`[data-scene-img="${sceneIdx}"]`);
       const placeholder = document.querySelector(`[data-scene-placeholder="${sceneIdx}"]`);
-      if (placeholder) placeholder.style.display = 'none';
-    } else if (data.image_url) {
-      // img not found (placeholder shown); replace placeholder
-      const placeholder = document.querySelector(`[data-scene-placeholder="${sceneIdx}"]`);
-      if (placeholder) {
+      if (imgEl) {
+        imgEl.src = data.image_url + '?t=' + Date.now();
+        imgEl.style.display = '';
+        if (placeholder) placeholder.style.display = 'none';
+      } else if (placeholder) {
         const img = document.createElement('img');
         img.src = data.image_url + '?t=' + Date.now();
         img.setAttribute('data-scene-img', sceneIdx);
-        img.style.width = '100%';
-        img.style.height = '100%';
-        img.style.objectFit = 'cover';
+        img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
         placeholder.replaceWith(img);
       }
     }
+
+    // Close panel, clear notes
+    if (notesEl) notesEl.value = '';
+    const panel = document.getElementById(`regenPanel_${sceneIdx}`);
+    if (panel) panel.classList.remove('open');
     toast('Frame regenerated');
   } catch(e) {
     toast('Regen failed: ' + e.message, true);
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '↻ Regen'; }
+    if (goBtn) { goBtn.disabled = false; goBtn.textContent = '↻ Generate Frame'; }
   }
 }
 
