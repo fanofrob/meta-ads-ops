@@ -629,6 +629,10 @@ def build_output(
     if output_type == "static_brief":
         return build_static_brief(concept, product_id, conn,
                                   source_iteration_id, session_id, dry_run)
+    elif output_type == "video_brief":
+        return build_video_brief(concept, product_id, conn,
+                                 source_iteration_id, session_id,
+                                 video_type="ugc", dry_run=dry_run)
     elif output_type == "ugc_brief":
         return build_ugc_brief(concept, product_id, conn,
                                source_iteration_id, session_id, dry_run)
