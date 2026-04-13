@@ -180,6 +180,57 @@
   }
   .regen-cancel-btn:hover { color: var(--text2); border-color: var(--text2); }
 
+  /* ── Video type badge ── */
+  .vtype-badge {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px;
+    padding: 3px 9px; border-radius: 4px; border: 1px solid;
+  }
+  .vtype-ugc               { color: #6c63ff; border-color: #6c63ff44; background: #6c63ff18; }
+  .vtype-farm_origin       { color: #22c55e; border-color: #22c55e44; background: #22c55e18; }
+  .vtype-product_hero      { color: #f59e0b; border-color: #f59e0b44; background: #f59e0b18; }
+  .vtype-comparison_reveal { color: #ef4444; border-color: #ef444444; background: #ef444418; }
+
+  /* ── Assembled video section ── */
+  .video-output-section {
+    margin-top: 28px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+  }
+  .video-output-header {
+    padding: 14px 20px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .video-output-header h2 { font-size: 14px; font-weight: 600; flex: 1; }
+  .video-output-body { padding: 20px; }
+  .video-player-wrap {
+    background: #000; border-radius: 8px; overflow: hidden; max-width: 360px;
+    margin: 0 auto 16px;
+  }
+  .video-player-wrap video { display: block; width: 100%; max-height: 640px; }
+  .video-meta { font-size: 12px; color: var(--text2); text-align: center; margin-bottom: 14px; }
+  .video-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .assemble-btn {
+    padding: 9px 18px; background: #7c3aed; border: none; border-radius: 8px;
+    color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; display: flex;
+    align-items: center; gap: 6px;
+  }
+  .assemble-btn:hover { background: #6d28d9; }
+  .assemble-btn:disabled { opacity: .45; cursor: default; }
+  .video-output-card {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; margin-bottom: 10px; display: flex; align-items: center; gap: 12px;
+  }
+  .video-output-card .voc-info { flex: 1; min-width: 0; }
+  .video-output-card .voc-meta { font-size: 11px; color: var(--text2); margin-top: 3px; }
+  .video-output-card .voc-actions { display: flex; gap: 6px; }
+  .voc-btn {
+    font-size: 11px; padding: 4px 10px; border-radius: 5px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text2);
+  }
+  .voc-btn:hover { border-color: var(--accent); color: var(--text); }
+  .voc-btn.active-approve { background: #052e16; border-color: #166534; color: var(--green); }
+  .voc-btn.active-fav { background: #1c1200; border-color: #92400e; color: var(--yellow); }
+  .voc-btn.active-ready { background: #0c1445; border-color: #1e3a8a; color: #93c5fd; }
+
   /* ── Toast ── */
   #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 9px 18px; border-radius: 8px; font-size: 12px; opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 999; }
   #toast.show { opacity: 1; }
@@ -214,6 +265,14 @@
       <label style="margin-top:10px">Product</label>
       <select id="productSelect">
         <option value="">— No product context —</option>
+      </select>
+
+      <label style="margin-top:10px">Video Type</label>
+      <select id="videoType">
+        <option value="ugc">UGC</option>
+        <option value="farm_origin">Farm / Origin</option>
+        <option value="product_hero">Product Hero</option>
+        <option value="comparison_reveal">Comparison / Reveal</option>
       </select>
 
       <label style="margin-top:10px">Aspect Ratio</label>
@@ -356,6 +415,7 @@ async function generateStoryboard() {
     const body = {
       concept,
       product_id:                   document.getElementById('productSelect').value || null,
+      video_type:                   document.getElementById('videoType').value || 'ugc',
       aspect_ratio:                 document.getElementById('aspectRatio').value,
       generate_frames:              document.getElementById('genFrames').checked,
       source_production_output_id:  window._sourceProductionOutputId ? parseInt(window._sourceProductionOutputId) : null,
@@ -392,17 +452,23 @@ function renderStoryboard(sb, detail) {
     el.classList.toggle('active', el.dataset.id == sb.id);
   });
 
-  const scenes   = detail.scenes_detail || [];
-  const ugc      = JSON.parse(sb.ugc_script_json || detail.ugc_script_json || '{}');
-  const duration = sb.total_duration_seconds || detail.total_duration_seconds || 0;
-  const srcType  = sb.source_output_type || detail.source_output_type || 'concept';
-  const srcId    = sb.source_production_output_id || detail.source_production_output_id || null;
+  const scenes    = detail.scenes_detail || [];
+  const ugc       = JSON.parse(sb.ugc_script_json || detail.ugc_script_json || '{}');
+  const duration  = sb.total_duration_seconds || detail.total_duration_seconds || 0;
+  const srcType   = sb.source_output_type || detail.source_output_type || 'concept';
+  const vtype     = sb.video_type || detail.video_type || 'ugc';
 
   const sourceBadge = {
     script_package: { label: 'From Script Package', color: '#8b5cf6' },
     ugc_brief:      { label: 'From UGC Brief',      color: '#3b82f6' },
+    video_brief:    { label: 'From Video Brief',     color: '#06b6d4' },
     concept:        { label: 'From Concept',         color: '#6b7280' },
   }[srcType] || { label: srcType, color: '#6b7280' };
+
+  const vtypeLabels = {
+    ugc: 'UGC', farm_origin: 'Farm / Origin',
+    product_hero: 'Product Hero', comparison_reveal: 'Comparison / Reveal',
+  };
 
   const html = `
     <div class="sb-header">
@@ -411,17 +477,22 @@ function renderStoryboard(sb, detail) {
         <span>🎬 ${scenes.length} scenes</span>
         <span>⏱ ${duration}s</span>
         ${sb.product_name ? `<span>📦 ${esc(sb.product_name)}</span>` : ''}
+        <span class="vtype-badge vtype-${vtype}">${vtypeLabels[vtype] || vtype}</span>
         <span style="background:${sourceBadge.color}22; color:${sourceBadge.color};
                      border:1px solid ${sourceBadge.color}44; padding:2px 8px;
                      border-radius:4px; font-size:10px; font-weight:600;">
           ${sourceBadge.label}
         </span>
-        <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+        <span style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <button id="sbApproveBtn" class="sb-action-btn" onclick="toggleStoryboardApprove()" title="Approve this storyboard">✓ Approve</button>
           <button id="sbFavBtn" class="sb-action-btn fav" onclick="toggleStoryboardFav()" title="Save to favorites">★</button>
           <button class="gen-frames-btn" id="genFramesBtn"
             onclick="generateFrames(${sb.id || detail.storyboard_id})">
             🖼 Generate All Frames
+          </button>
+          <button class="assemble-btn" id="assembleBtn"
+            onclick="assembleVideo(${sb.id || detail.storyboard_id}, '${vtype}')">
+            🎬 Generate Video
           </button>
         </span>
       </div>
@@ -432,6 +503,17 @@ function renderStoryboard(sb, detail) {
     </div>
 
     ${ugc && Object.keys(ugc).length ? renderScript(ugc) : ''}
+
+    <div class="video-output-section" id="videoOutputSection">
+      <div class="video-output-header">
+        <span>🎬</span>
+        <h2>Assembled Video</h2>
+        <span id="videoOutputStatus" style="font-size:11px;color:var(--text2)">No video assembled yet — click Generate Video above</span>
+      </div>
+      <div class="video-output-body" id="videoOutputBody">
+        <div id="videoOutputList"></div>
+      </div>
+    </div>
   `;
 
   document.getElementById('mainArea').innerHTML = html;
@@ -442,6 +524,10 @@ function renderStoryboard(sb, detail) {
     const ta = document.getElementById(`regenPrompt_${s.scene_index}`);
     if (ta) ta.value = s.visual_description || '';
   });
+
+  // Load any previously assembled videos for this storyboard
+  const sbId = sb.id || detail.storyboard_id;
+  if (sbId) loadVideoOutputs(sbId);
 }
 
 function renderScene(s, sbId) {
@@ -670,6 +756,131 @@ async function submitRegenFrame(sceneIdx) {
   }
 }
 
+/* ── Assemble video from existing frames ── */
+async function assembleVideo(sbId, videoType) {
+  const btn = document.getElementById('assembleBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Assembling…'; }
+  const statusEl = document.getElementById('videoOutputStatus');
+  if (statusEl) statusEl.textContent = 'Assembling video…';
+  try {
+    const aspect = document.getElementById('aspectRatio')?.value || '9:16';
+    const result = await api(`/api/video/storyboard/${sbId}/assemble`, {
+      video_type:        videoType || document.getElementById('videoType')?.value || 'ugc',
+      aspect_ratio:      aspect,
+      add_text_overlays: true,
+    });
+
+    if (result.status === 'no_frames') {
+      toast('Generate scene frames first, then assemble', true);
+      if (statusEl) statusEl.textContent = 'No frames available — generate frames first';
+      return;
+    }
+    if (result.status === 'error') {
+      toast(result.error || 'Assembly failed', true);
+      if (statusEl) statusEl.textContent = result.error || 'Assembly failed';
+      return;
+    }
+
+    toast(`✓ Video assembled — ${result.scenes_used}/${result.scene_count} scenes, ${Math.round(result.duration)}s`);
+    await loadVideoOutputs(sbId);
+  } catch(e) {
+    toast('Assembly failed: ' + e.message, true);
+    if (statusEl) statusEl.textContent = 'Assembly failed: ' + e.message;
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '🎬 Generate Video'; }
+  }
+}
+
+/* ── Load and render assembled video outputs for a storyboard ── */
+async function loadVideoOutputs(sbId) {
+  try {
+    const outputs = await api(`/api/video/storyboard/${sbId}/outputs`);
+    const listEl  = document.getElementById('videoOutputList');
+    const statusEl = document.getElementById('videoOutputStatus');
+    if (!listEl) return;
+
+    if (!outputs.length) {
+      listEl.innerHTML = '';
+      if (statusEl) statusEl.textContent = 'No video assembled yet — click Generate Video above';
+      return;
+    }
+
+    if (statusEl) statusEl.textContent = `${outputs.length} video${outputs.length > 1 ? 's' : ''} assembled`;
+
+    const vtypeLabels = {
+      ugc: 'UGC', farm_origin: 'Farm / Origin',
+      product_hero: 'Product Hero', comparison_reveal: 'Comparison / Reveal',
+    };
+
+    listEl.innerHTML = outputs.map(o => {
+      const meta = JSON.parse(o.metadata_json || '{}');
+      const label = vtypeLabels[o.video_type] || o.video_type;
+      const dur   = meta.duration ? `${Math.round(meta.duration)}s` : '';
+      const sc    = meta.scenes_used != null ? `${meta.scenes_used}/${meta.scene_count} scenes` : '';
+
+      return `
+        <div class="video-output-card" id="voc-${o.id}">
+          <div style="flex-shrink:0">
+            ${o.video_url
+              ? `<video src="${o.video_url}" style="width:90px;height:160px;object-fit:cover;border-radius:6px;background:#000"
+                       controls playsinline></video>`
+              : `<div style="width:90px;height:160px;background:var(--surface);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:10px">no file</div>`}
+          </div>
+          <div class="voc-info">
+            <div style="font-size:12px;font-weight:600">${esc(label)} — ${esc(o.status)}</div>
+            <div class="voc-meta">${[dur, sc, o.created_at?.slice(0,10)].filter(Boolean).join(' · ')}</div>
+            <div class="voc-actions" style="margin-top:8px">
+              <button class="voc-btn ${o.is_approved ? 'active-approve' : ''}" id="voc-approve-${o.id}"
+                onclick="toggleVideoOutputFlag(${o.id},'approve',this)">
+                ${o.is_approved ? '✓ Approved' : '✓ Approve'}
+              </button>
+              <button class="voc-btn ${o.is_favorite ? 'active-fav' : ''}" id="voc-fav-${o.id}"
+                onclick="toggleVideoOutputFlag(${o.id},'favorite',this)">★</button>
+              <button class="voc-btn ${o.is_ready_to_test ? 'active-ready' : ''}" id="voc-ready-${o.id}"
+                onclick="toggleVideoOutputFlag(${o.id},'ready',this)">
+                ${o.is_ready_to_test ? '✓ Ready' : '→ Ready to Test'}
+              </button>
+              ${o.video_url ? `<a class="voc-btn" href="${o.video_url}" download="video_${o.id}.mp4" style="text-decoration:none">⬇ Download</a>` : ''}
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) {
+    console.warn('loadVideoOutputs failed', e);
+  }
+}
+
+/* ── Toggle approve / fav / ready on a video output ── */
+async function toggleVideoOutputFlag(outputId, flag, btn) {
+  const endpointMap = { approve: 'approve', favorite: 'favorite', ready: 'ready' };
+  const endpoint = endpointMap[flag];
+  if (!endpoint) return;
+
+  const isActive = btn.classList.contains('active-' + (flag === 'favorite' ? 'fav' : flag));
+  const body = flag === 'approve' ? { approved: !isActive }
+             : flag === 'favorite' ? { favorite: !isActive }
+             : { ready: !isActive };
+  try {
+    const res = await fetch(`/api/video/output/${outputId}/${endpoint}`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (flag === 'approve') {
+      btn.classList.toggle('active-approve', !!data.is_approved);
+      btn.textContent = data.is_approved ? '✓ Approved' : '✓ Approve';
+      toast(data.is_approved ? 'Video approved' : 'Approval removed');
+    } else if (flag === 'favorite') {
+      btn.classList.toggle('active-fav', !!data.is_favorite);
+      toast(data.is_favorite ? '★ Saved' : 'Removed from favorites');
+    } else {
+      btn.classList.toggle('active-ready', !!data.is_ready_to_test);
+      btn.textContent = data.is_ready_to_test ? '✓ Ready' : '→ Ready to Test';
+      toast(data.is_ready_to_test ? '→ Marked ready to test' : 'Removed from ready');
+    }
+  } catch(e) { toast('Error: ' + e.message, true); }
+}
+
 /* ── Read concept/product/package from URL params (from Copilot → Video) ── */
 function applyUrlParams() {
   const params = new URLSearchParams(window.location.search);
@@ -685,6 +896,13 @@ function applyUrlParams() {
   window._sourceProductionOutputId = params.get('source_production_output_id') || null;
   window._sourceOutputType         = params.get('source_output_type') || null;
   window._sessionId                = params.get('session_id') || null;
+
+  // Preset video type from URL (e.g. from a future "UGC Video" button)
+  const vtParam = params.get('video_type');
+  if (vtParam) {
+    const vtSel = document.getElementById('videoType');
+    if (vtSel) vtSel.value = vtParam;
+  }
 }
 
 /* ── Init ── */

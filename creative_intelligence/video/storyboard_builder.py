@@ -43,7 +43,7 @@ from creative_intelligence.product_knowledge.enricher import build_prompt_contex
 # System prompt (shared for all upstream sources)
 # ─────────────────────────────────────────────────────────────────────
 
-_SYSTEM_PROMPT = """You are a direct-response video creative director specialising
+_SYSTEM_PROMPT_BASE = """You are a direct-response video creative director specialising
 in short-form social video (TikTok / Reels / Shorts / Meta Feed).
 
 Your storyboards are:
@@ -53,6 +53,19 @@ Your storyboards are:
 - Specific over generic: name the product, the benefit, the sensation
 
 Return ONLY valid JSON — no prose, no markdown fences."""
+
+
+def _build_system_prompt(video_type: str | None = None) -> str:
+    """Build the system prompt with type-specific addendum injected."""
+    from creative_intelligence.video.types import get_config
+    cfg = get_config(video_type)
+    if cfg.system_addendum:
+        return _SYSTEM_PROMPT_BASE + "\n" + cfg.system_addendum.strip()
+    return _SYSTEM_PROMPT_BASE
+
+
+# Keep backward-compatible alias
+_SYSTEM_PROMPT = _SYSTEM_PROMPT_BASE
 
 # ─────────────────────────────────────────────────────────────────────
 # Output JSON schema (shared)
@@ -88,7 +101,14 @@ _OUTPUT_SCHEMA = """{
 # User prompt builders — one per upstream source type
 # ─────────────────────────────────────────────────────────────────────
 
-def _prompt_from_script_package(pkg: dict, product_ctx: str) -> str:
+def _video_type_scene_guidance(video_type: str | None) -> str:
+    """Return the scene-structure guidance block for the given video type."""
+    from creative_intelligence.video.types import get_config
+    cfg = get_config(video_type)
+    return cfg.scene_guidance.strip() if cfg.scene_guidance else ""
+
+
+def _prompt_from_script_package(pkg: dict, product_ctx: str, video_type: str | None = None) -> str:
     """Build a storyboard prompt from a Script Package.
 
     The Script Package already has beat_structure — map beats → scenes
@@ -103,6 +123,8 @@ def _prompt_from_script_package(pkg: dict, product_ctx: str) -> str:
 
     alt_hooks = pkg.get("alternate_hooks") or []
     alt_ctas   = pkg.get("alternate_ctas")  or []
+    guidance   = _video_type_scene_guidance(video_type)
+    guidance_block = f"\n## Video Type Scene Structure\n{guidance}\n" if guidance else ""
 
     return f"""Build a scene-by-scene video storyboard from this Script Package.
 
@@ -135,14 +157,14 @@ Production notes: {pkg.get('production_notes', '')}
   consistent with the production_notes above
 - Total duration must match the Script Package duration
 - Shot list must be practical for a solo creator with a phone
-
+{guidance_block}
 ## Output JSON schema
 {_OUTPUT_SCHEMA}
 
 Generate the storyboard now."""
 
 
-def _prompt_from_ugc_brief(brief: dict, product_ctx: str) -> str:
+def _prompt_from_ugc_brief(brief: dict, product_ctx: str, video_type: str | None = None) -> str:
     """Build a storyboard prompt from a UGC Creator Brief.
 
     The brief has opening_line, talking_points, demo_beats, creator_persona.
@@ -152,6 +174,8 @@ def _prompt_from_ugc_brief(brief: dict, product_ctx: str) -> str:
     talking  = brief.get("talking_points") or []
     demos    = brief.get("demo_beats")     or []
     no_go    = brief.get("no_go_notes")    or []
+    guidance = _video_type_scene_guidance(video_type)
+    guidance_block = f"\n## Video Type Scene Structure\n{guidance}\n" if guidance else ""
 
     return f"""Build a scene-by-scene video storyboard from this UGC Creator Brief.
 
@@ -186,15 +210,18 @@ Closing CTA: {brief.get('cta', '')}
 - demo_actions come from the Demo Beats above
 - Follow the "Do NOT include" rules strictly
 - Shot list should feel natural and handheld — phone creator aesthetic
-
+{guidance_block}
 ## Output JSON schema
 {_OUTPUT_SCHEMA}
 
 Generate the storyboard now."""
 
 
-def _prompt_from_concept(concept: str, product_ctx: str) -> str:
+def _prompt_from_concept(concept: str, product_ctx: str, video_type: str | None = None) -> str:
     """Fallback: build storyboard from raw concept text."""
+    guidance = _video_type_scene_guidance(video_type)
+    guidance_block = f"\n## Video Type Scene Structure\n{guidance}\n" if guidance else ""
+
     return f"""Create a complete video storyboard for this concept.
 
 ## Concept (winning hook)
@@ -211,6 +238,7 @@ def _prompt_from_concept(concept: str, product_ctx: str) -> str:
 - text_overlay = on-screen text (max 8 words) or empty string
 - UGC script must be natural, first-person, conversational
 - Shot list practical for a solo creator with a phone
+{guidance_block}
 
 ## Output JSON schema
 {_OUTPUT_SCHEMA}
@@ -291,12 +319,13 @@ def _save_storyboard(
     source_production_output_id: int | None,
     source_output_type: str,
     conn: sqlite3.Connection,
+    video_type: str = "ugc",
 ) -> int:
     cursor = conn.execute(
         """INSERT INTO video_storyboards
            (product_id, concept_text, scenes_json, ugc_script_json,
-            total_duration_seconds, source_production_output_id, source_output_type)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            total_duration_seconds, source_production_output_id, source_output_type, video_type)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             product_id,
             concept,
@@ -305,6 +334,7 @@ def _save_storyboard(
             total_duration,
             source_production_output_id,
             source_output_type,
+            video_type,
         ),
     )
     return cursor.lastrowid
@@ -406,6 +436,8 @@ def build_storyboard(
     source_output_type: str | None = None,
     # Auto-resolve from session when no explicit package given
     session_id: str | None = None,
+    # Video format
+    video_type: str | None = "ugc",
     # Image generation
     aspect_ratio: str = "9:16",
     generate_frames: bool = False,
@@ -419,6 +451,9 @@ def build_storyboard(
     2. session_id / concept match            — auto-find best package
     3. Raw concept text fallback             — generate everything from scratch
 
+    video_type controls the scene structure, pacing and CTA style.
+    Supported: "ugc" | "farm_origin" | "product_hero" | "comparison_reveal"
+
     Returns
     -------
     {
@@ -427,6 +462,7 @@ def build_storyboard(
         scenes,                  list[dict]
         ugc_script,              dict
         total_duration_seconds,  int
+        video_type,              str
         source_output_type,      str   ("script_package"|"ugc_brief"|"concept")
         source_production_output_id,  int | None
         dry_run,                 bool
@@ -434,6 +470,8 @@ def build_storyboard(
     """
     from creative_intelligence.db import get_connection
     _conn = conn or get_connection()
+
+    resolved_video_type = video_type or "ugc"
 
     # ── 1. Product context ────────────────────────────────────────────
     product_ctx = ""
@@ -461,18 +499,19 @@ def build_storyboard(
 
     # ── 3. Build prompt based on source ──────────────────────────────
     if pkg and resolved_output_type == "script_package":
-        user_prompt = _prompt_from_script_package(pkg["output_data"], product_ctx)
+        user_prompt = _prompt_from_script_package(pkg["output_data"], product_ctx, resolved_video_type)
     elif pkg and resolved_output_type == "ugc_brief":
-        user_prompt = _prompt_from_ugc_brief(pkg["output_data"], product_ctx)
+        user_prompt = _prompt_from_ugc_brief(pkg["output_data"], product_ctx, resolved_video_type)
     else:
         resolved_output_type = "concept"
-        user_prompt = _prompt_from_concept(concept, product_ctx)
+        user_prompt = _prompt_from_concept(concept, product_ctx, resolved_video_type)
 
     # ── 4. LLM call ───────────────────────────────────────────────────
     llm = get_llm_client(dry_run=dry_run)
     # Storyboards are long JSON (5 scenes + UGC script). Pass higher max_tokens
     # to prevent truncation (default CI_LLM_MAX_TOKENS=2000 is too low).
-    raw = llm.complete_json(_SYSTEM_PROMPT, user_prompt, temperature=0.7, max_tokens=4096)
+    system_prompt = _build_system_prompt(resolved_video_type)
+    raw = llm.complete_json(system_prompt, user_prompt, temperature=0.7, max_tokens=4096)
     if isinstance(raw, dict) and "storyboard" in raw:
         raw = raw["storyboard"]
 
@@ -500,6 +539,7 @@ def build_storyboard(
             storyboard_id = _save_storyboard(
                 concept, product_id, scenes, ugc_script, total_duration,
                 resolved_output_id, resolved_output_type, _conn,
+                video_type=resolved_video_type,
             )
             _save_scenes(storyboard_id, scenes, _conn)
 
@@ -522,6 +562,7 @@ def build_storyboard(
         "scenes":                       scenes,
         "ugc_script":                   ugc_script,
         "total_duration_seconds":       total_duration,
+        "video_type":                   resolved_video_type,
         "source_output_type":           resolved_output_type,
         "source_production_output_id":  resolved_output_id,
         "dry_run":                      dry_run,

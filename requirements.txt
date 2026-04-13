@@ -13,3 +13,8 @@ flask>=3.0.0
 anthropic>=0.20.0
 # openai>=1.0.0
 replicate>=0.34.0
+
+# Creative Intelligence — Video assembly
+moviepy>=1.0.3
+Pillow>=10.0.0
+numpy>=1.24.0

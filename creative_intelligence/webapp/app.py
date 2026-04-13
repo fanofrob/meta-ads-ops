@@ -1800,6 +1800,7 @@ def video_storyboard_create() -> Any:
       source_production_output_id  int? — explicit package to use as input
       source_output_type           str? — hint for the source type
       session_id                   str? — used for auto-package resolution
+      video_type                   str? — ugc|farm_origin|product_hero|comparison_reveal
       aspect_ratio                 str? — default "9:16"
       generate_frames              bool?— generate scene images (default false)
       model                        str? — Replicate model slug override
@@ -1817,6 +1818,7 @@ def video_storyboard_create() -> Any:
         source_id      = int(source_id_raw) if source_id_raw else None
         source_type    = body.get("source_output_type") or None
         session_id     = body.get("session_id") or None
+        video_type     = body.get("video_type") or "ugc"
         aspect_ratio   = body.get("aspect_ratio", "9:16")
         generate_frames= bool(body.get("generate_frames", False))
         model          = body.get("model") or None
@@ -1830,6 +1832,7 @@ def video_storyboard_create() -> Any:
             source_production_output_id  = source_id,
             source_output_type           = source_type,
             session_id                   = session_id,
+            video_type                   = video_type,
             aspect_ratio                 = aspect_ratio,
             generate_frames              = generate_frames,
             model                        = model,
@@ -2094,7 +2097,7 @@ def video_list() -> Any:
         conn = _db()
         rows = conn.execute(
             """SELECT vs.id, vs.concept_text, vs.product_id, vs.total_duration_seconds,
-                      vs.source_output_type, vs.is_favorite, vs.is_approved,
+                      vs.source_output_type, vs.video_type, vs.is_favorite, vs.is_approved,
                       vs.created_at, p.name as product_name,
                       COUNT(sc.id) as scene_count,
                       SUM(CASE WHEN sc.render_asset_id IS NOT NULL THEN 1 ELSE 0 END) as frames_count
@@ -2242,6 +2245,182 @@ def video_scene_regenerate(storyboard_id: int, scene_idx: int) -> Any:
     except Exception as exc:
         app.logger.exception("video/scene-regenerate failed")
         return jsonify({"error": str(exc)}), 500
+
+
+# ─────────────────────────────────────────────
+# Video assembly routes  (v1.6)
+# ─────────────────────────────────────────────
+
+@app.post("/api/video/storyboard/<int:storyboard_id>/assemble")
+def video_assemble(storyboard_id: int) -> Any:
+    """Assemble an MP4 from existing scene frames for a storyboard.
+
+    Body (all optional):
+      video_type       str  — ugc|farm_origin|product_hero|comparison_reveal
+      aspect_ratio     str  — default "9:16"
+      add_text_overlays bool — draw scene text overlays (default true)
+      dry_run          bool — skip file write and DB row (default false)
+    """
+    from creative_intelligence.video.assembler import assemble_video
+    from creative_intelligence import config
+    try:
+        body = request.get_json(force=True, silent=True) or {}
+        video_type        = body.get("video_type") or "ugc"
+        aspect_ratio      = body.get("aspect_ratio", "9:16")
+        add_text_overlays = bool(body.get("add_text_overlays", True))
+        dry_run           = bool(body.get("dry_run", False))
+
+        conn = _db()
+        result = assemble_video(
+            storyboard_id     = storyboard_id,
+            conn              = conn,
+            output_dir        = config.CI_VIDEO_OUTPUT_DIR,
+            video_type        = video_type,
+            aspect_ratio      = aspect_ratio,
+            add_text_overlays = add_text_overlays,
+            dry_run           = dry_run,
+        )
+        conn.close()
+        if result.get("output_id"):
+            result["video_url"] = f"/api/video/output/{result['output_id']}/file"
+        return jsonify(result)
+    except Exception as exc:
+        app.logger.exception("video/assemble failed")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/video/output/<int:output_id>")
+def video_output_get(output_id: int) -> Any:
+    """Fetch a video_outputs row with its storyboard info."""
+    try:
+        conn = _db()
+        row = conn.execute(
+            """SELECT vo.*, vs.concept_text, vs.source_output_type as sb_source_type
+               FROM video_outputs vo
+               LEFT JOIN video_storyboards vs ON vs.id = vo.storyboard_id
+               WHERE vo.id = ?""",
+            (output_id,),
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "video output not found"}), 404
+        return jsonify(dict(row))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/video/output/<int:output_id>/file")
+def video_output_file(output_id: int) -> Any:
+    """Serve the assembled MP4 file."""
+    import os
+    try:
+        conn = _db()
+        row = conn.execute(
+            "SELECT output_path FROM video_outputs WHERE id = ?", (output_id,)
+        ).fetchone()
+        conn.close()
+        if not row or not row["output_path"]:
+            return jsonify({"error": "video file not found"}), 404
+        path = row["output_path"]
+        if not os.path.exists(path):
+            return jsonify({"error": "video file missing from disk"}), 404
+        from flask import send_file
+        return send_file(path, mimetype="video/mp4", as_attachment=False)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/video/storyboard/<int:storyboard_id>/outputs")
+def video_storyboard_outputs(storyboard_id: int) -> Any:
+    """List all assembled video outputs for a storyboard."""
+    try:
+        conn = _db()
+        rows = conn.execute(
+            """SELECT id, video_type, status, output_path, metadata_json,
+                      is_approved, is_favorite, is_ready_to_test, created_at
+               FROM video_outputs WHERE storyboard_id = ? ORDER BY id DESC""",
+            (storyboard_id,),
+        ).fetchall()
+        conn.close()
+        result = []
+        for r in rows:
+            d = dict(r)
+            if d.get("output_path"):
+                d["video_url"] = f"/api/video/output/{d['id']}/file"
+            result.append(d)
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/video/output/<int:output_id>/approve")
+def video_output_approve(output_id: int) -> Any:
+    """Toggle is_approved on a video output."""
+    try:
+        body     = request.get_json(force=True) or {}
+        approved = bool(body.get("approved", True))
+        conn = _db()
+        with conn:
+            conn.execute(
+                "UPDATE video_outputs SET is_approved=? WHERE id=?",
+                (1 if approved else 0, output_id),
+            )
+        row = conn.execute("SELECT is_approved FROM video_outputs WHERE id=?", (output_id,)).fetchone()
+        conn.close()
+        return jsonify({"ok": True, "is_approved": row["is_approved"] if row else approved})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/video/output/<int:output_id>/favorite")
+def video_output_favorite(output_id: int) -> Any:
+    """Toggle is_favorite on a video output."""
+    try:
+        body = request.get_json(force=True) or {}
+        fav  = bool(body.get("favorite", True))
+        conn = _db()
+        with conn:
+            conn.execute(
+                "UPDATE video_outputs SET is_favorite=? WHERE id=?",
+                (1 if fav else 0, output_id),
+            )
+        row = conn.execute("SELECT is_favorite FROM video_outputs WHERE id=?", (output_id,)).fetchone()
+        conn.close()
+        return jsonify({"ok": True, "is_favorite": row["is_favorite"] if row else fav})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/video/output/<int:output_id>/ready")
+def video_output_ready(output_id: int) -> Any:
+    """Toggle is_ready_to_test on a video output."""
+    try:
+        body  = request.get_json(force=True) or {}
+        ready = bool(body.get("ready", True))
+        conn  = _db()
+        with conn:
+            conn.execute(
+                "UPDATE video_outputs SET is_ready_to_test=? WHERE id=?",
+                (1 if ready else 0, output_id),
+            )
+        row = conn.execute("SELECT is_ready_to_test FROM video_outputs WHERE id=?", (output_id,)).fetchone()
+        conn.close()
+        return jsonify({"ok": True, "is_ready_to_test": row["is_ready_to_test"] if row else ready})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/video/types")
+def video_types_list() -> Any:
+    """Return all supported video types with labels."""
+    from creative_intelligence.video.types import VIDEO_TYPE_LABELS, VIDEO_TYPE_CONFIGS
+    return jsonify([
+        {"value": k, "label": v,
+         "scene_count_min": VIDEO_TYPE_CONFIGS[k].scene_count_min,
+         "scene_count_max": VIDEO_TYPE_CONFIGS[k].scene_count_max,
+         "pacing": VIDEO_TYPE_CONFIGS[k].pacing}
+        for k, v in VIDEO_TYPE_LABELS.items()
+    ])
 
 
 # ─────────────────────────────────────────────

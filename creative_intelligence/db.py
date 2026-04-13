@@ -89,6 +89,25 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "ALTER TABLE video_storyboards ADD COLUMN is_favorite INTEGER DEFAULT 0",
         "ALTER TABLE video_storyboards ADD COLUMN is_approved INTEGER DEFAULT 0",
         "ALTER TABLE video_storyboards ADD COLUMN review_notes TEXT DEFAULT ''",
+        # ── video types + assembly (v1.6) ─────────────────────────────
+        "ALTER TABLE video_storyboards ADD COLUMN video_type TEXT DEFAULT 'ugc'",
+        "ALTER TABLE video_scenes ADD COLUMN video_type TEXT DEFAULT 'ugc'",
+        """CREATE TABLE IF NOT EXISTS video_outputs (
+            id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+            storyboard_id               INTEGER NOT NULL,
+            video_type                  TEXT NOT NULL DEFAULT 'ugc',
+            source_output_type          TEXT DEFAULT 'concept',
+            source_production_output_id INTEGER,
+            output_path                 TEXT,
+            metadata_json               TEXT DEFAULT '{}',
+            status                      TEXT NOT NULL DEFAULT 'pending',
+            is_approved                 INTEGER DEFAULT 0,
+            is_favorite                 INTEGER DEFAULT 0,
+            is_ready_to_test            INTEGER DEFAULT 0,
+            created_at                  TEXT DEFAULT (datetime('now'))
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_video_outputs_storyboard
+           ON video_outputs(storyboard_id)""",
     ]
     for stmt in migrations:
         try:
