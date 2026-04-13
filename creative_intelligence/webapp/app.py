@@ -2460,44 +2460,68 @@ def video_types_list() -> Any:
 
 @app.post("/api/video/storyboard/<int:storyboard_id>/generate-clips")
 def video_generate_clips(storyboard_id: int) -> Any:
-    """Generate per-scene MP4 clips for a storyboard via a clip provider.
+    """Start async clip generation for a storyboard. Returns immediately.
+
+    Clips are generated in a background thread (each Replicate call takes
+    30-60s). Poll GET /api/video/storyboard/<id>/clips to watch progress.
 
     Body (all optional):
       provider        str  — "mock" | "replicate" (default: CI_CLIP_PROVIDER)
       aspect_ratio    str  — default "9:16"
       skip_existing   bool — skip scenes with an existing ok clip (default true)
-      max_workers     int  — parallel workers (default 3)
       dry_run         bool — prompt only, no API calls or DB writes (default false)
     """
+    import threading
     from creative_intelligence.video.clip_generator import generate_storyboard_clips
     try:
         body = request.get_json(force=True, silent=True) or {}
         provider_name = body.get("provider") or None
         aspect_ratio  = body.get("aspect_ratio", "9:16")
         skip_existing = bool(body.get("skip_existing", True))
-        max_workers   = int(body.get("max_workers", 3))
         dry_run       = bool(body.get("dry_run", False))
 
         conn = _db()
-        # Check storyboard exists
         sb = conn.execute(
-            "SELECT id FROM video_storyboards WHERE id = ?", (storyboard_id,)
+            "SELECT id, video_type FROM video_storyboards WHERE id = ?", (storyboard_id,)
         ).fetchone()
         if not sb:
             conn.close()
             return jsonify({"error": f"Storyboard {storyboard_id} not found"}), 404
 
-        result = generate_storyboard_clips(
-            storyboard_id=storyboard_id,
-            conn=conn,
-            provider_name=provider_name,
-            aspect_ratio=aspect_ratio,
-            skip_existing=skip_existing,
-            max_workers=max_workers,
-            dry_run=dry_run,
-        )
+        # Count scenes to return immediately
+        scene_count = conn.execute(
+            "SELECT COUNT(*) as n FROM video_scenes WHERE storyboard_id = ?",
+            (storyboard_id,),
+        ).fetchone()["n"]
         conn.close()
-        return jsonify(result)
+
+        # Run generation in background thread — each Replicate call is 30-60s
+        def _bg():
+            from creative_intelligence.db import get_connection
+            bg_conn = get_connection()
+            try:
+                generate_storyboard_clips(
+                    storyboard_id=storyboard_id,
+                    conn=bg_conn,
+                    provider_name=provider_name,
+                    aspect_ratio=aspect_ratio,
+                    skip_existing=skip_existing,
+                    max_workers=1,   # serial — avoids Replicate rate limits
+                    dry_run=dry_run,
+                )
+            except Exception:
+                app.logger.exception("bg clip generation failed")
+            finally:
+                bg_conn.close()
+
+        threading.Thread(target=_bg, daemon=True).start()
+
+        return jsonify({
+            "status": "started",
+            "storyboard_id": storyboard_id,
+            "scene_count": scene_count,
+            "message": f"Generating {scene_count} clips in background (~30-60s each). Poll /api/video/storyboard/{storyboard_id}/clips for progress.",
+        })
     except Exception as exc:
         app.logger.exception("video/generate-clips failed")
         return jsonify({"error": str(exc)}), 500
