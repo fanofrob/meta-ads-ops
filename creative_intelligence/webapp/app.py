@@ -1770,16 +1770,20 @@ def video_available_packages() -> Any:
             return jsonify({"package": None})
 
         conn = _db()
-        # Look for Script Package first, then UGC Brief
+        # Look for Video Brief first (unified), then Script Package, then UGC Brief
         row = conn.execute(
             """SELECT id, output_type, concept_text, created_at
                FROM production_outputs
-               WHERE output_type IN ('script_package', 'ugc_brief')
+               WHERE output_type IN ('video_brief', 'script_package', 'ugc_brief')
                  AND (concept_text = ?
                       OR concept_text LIKE ?
                       OR (? IS NOT NULL AND session_id = ?))
                ORDER BY
-                 CASE output_type WHEN 'script_package' THEN 0 ELSE 1 END,
+                 CASE output_type
+                   WHEN 'video_brief'    THEN 0
+                   WHEN 'script_package' THEN 1
+                   ELSE 2
+                 END,
                  id DESC
                LIMIT 1""",
             (concept, f"%{concept[:40]}%", session_id, session_id),

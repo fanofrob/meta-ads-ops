@@ -217,6 +217,73 @@ Closing CTA: {brief.get('cta', '')}
 Generate the storyboard now."""
 
 
+def _prompt_from_video_brief(brief: dict, product_ctx: str, video_type: str | None = None) -> str:
+    """Build a storyboard prompt from a unified Video Brief.
+
+    Video Brief combines UGC creator brief + script package fields:
+    hook, talking_points, demo_beats, beat_structure, cta, duration,
+    creator_persona, production_notes, no_go_notes, alternate_hooks.
+    """
+    talking  = brief.get("talking_points") or []
+    demos    = brief.get("demo_beats")     or []
+    beats    = brief.get("beat_structure") or []
+    no_go    = brief.get("no_go_notes")    or []
+    alt_hooks = brief.get("alternate_hooks") or []
+    guidance = _video_type_scene_guidance(video_type)
+    guidance_block = f"\n## Video Type Scene Structure\n{guidance}\n" if guidance else ""
+
+    beats_fmt = "\n".join(
+        f"  Beat {i+1}: [{b.get('beat','')}] {b.get('seconds','')} — "
+        f'"{b.get("line","")}" | Direction: {b.get("direction","")}'
+        for i, b in enumerate(beats)
+    ) or "  (no beat structure — infer from talking points)"
+
+    return f"""Build a scene-by-scene video storyboard from this Video Brief.
+
+## Video Brief (already approved)
+Creator persona: {brief.get('creator_persona', '')}
+Hook (opening line): {brief.get('hook', '')}
+CTA (closing line): {brief.get('cta', '')}
+Duration: {brief.get('duration', '')}
+Production notes: {brief.get('production_notes', '')}
+
+## Talking Points
+{chr(10).join(f'  {i+1}. {p}' for i, p in enumerate(talking)) or '  (none)'}
+
+## Demo Beats (physical on-camera actions)
+{chr(10).join(f'  - {d}' for d in demos) or '  (none)'}
+
+## Beat Structure (if present, map each beat to one scene)
+{beats_fmt}
+
+## Alternate Hook Options
+{chr(10).join(f'  - {h}' for h in alt_hooks) or '  (none)'}
+
+## No-Go Notes (strictly enforce)
+{chr(10).join(f'  - {n}' for n in no_go) or '  (none)'}
+
+## Product Context
+{product_ctx}
+
+## Instructions
+- If beat_structure is present, create one scene per beat (minimum 4 scenes)
+- If no beat_structure, use talking points + demo beats to build scenes
+- Scene 1 = hook: creator delivering the opening hook line to camera
+- Last scene = CTA: creator delivering closing line with product visible
+- The opening_line in ugc_script MUST be the hook verbatim
+- The closing_cta in ugc_script MUST be the cta verbatim
+- talking_points in ugc_script come from the Talking Points above
+- demo_actions come from the Demo Beats above
+- Follow No-Go Notes strictly — never include restricted content
+- Shot list should match the creator_persona energy and production_notes
+- Visual descriptions must be specific and filmable by a solo phone creator
+{guidance_block}
+## Output JSON schema
+{_OUTPUT_SCHEMA}
+
+Generate the storyboard now."""
+
+
 def _prompt_from_concept(concept: str, product_ctx: str, video_type: str | None = None) -> str:
     """Fallback: build storyboard from raw concept text."""
     guidance = _video_type_scene_guidance(video_type)
@@ -287,10 +354,14 @@ def _find_best_package(
 
     row = conn.execute(
         f"""SELECT * FROM production_outputs
-            WHERE output_type IN ('script_package', 'ugc_brief')
+            WHERE output_type IN ('video_brief', 'script_package', 'ugc_brief')
               AND (concept_text = ? OR concept_text LIKE ? {session_clause})
             ORDER BY
-              CASE output_type WHEN 'script_package' THEN 0 ELSE 1 END,
+              CASE output_type
+                WHEN 'video_brief'     THEN 0
+                WHEN 'script_package'  THEN 1
+                ELSE 2
+              END,
               id DESC
             LIMIT 1""",
         [concept, f"%{concept[:40]}%"] + ([session_id, session_id] if session_id else []),
@@ -498,7 +569,9 @@ def build_storyboard(
             resolved_output_type = pkg["output_type"]
 
     # ── 3. Build prompt based on source ──────────────────────────────
-    if pkg and resolved_output_type == "script_package":
+    if pkg and resolved_output_type == "video_brief":
+        user_prompt = _prompt_from_video_brief(pkg["output_data"], product_ctx, resolved_video_type)
+    elif pkg and resolved_output_type == "script_package":
         user_prompt = _prompt_from_script_package(pkg["output_data"], product_ctx, resolved_video_type)
     elif pkg and resolved_output_type == "ugc_brief":
         user_prompt = _prompt_from_ugc_brief(pkg["output_data"], product_ctx, resolved_video_type)

@@ -413,6 +413,93 @@ def _test_package_text(data: dict) -> str:
 
 
 # ─────────────────────────────────────────────
+# Video Brief  (unified — replaces ugc_brief + script_package)
+# ─────────────────────────────────────────────
+
+def _video_brief_md(data: dict) -> str:
+    video_type = data.get("video_type", "")
+    type_label = f" — {video_type.replace('_', ' ').title()}" if video_type else ""
+    lines = [
+        f"## Video Brief{type_label}",
+        "",
+        f"**Duration:** {data.get('duration', '')}",
+        f"**Creator Persona:** {data.get('creator_persona', '')}",
+        "",
+        "### Hook",
+        data.get("hook", ""),
+        "",
+        "### Talking Points",
+        _bullet_list(data.get("talking_points") or []),
+        "",
+        "### Demo Beats (what to show on camera)",
+        _bullet_list(data.get("demo_beats") or []),
+        "",
+        "### Beat Structure",
+        "",
+        _beat_table_md(data.get("beat_structure") or []),
+        "",
+        "### CTA",
+        data.get("cta", ""),
+        "",
+        "### Production Notes",
+        data.get("production_notes", ""),
+        "",
+        "### No-Go Notes",
+        _bullet_list(data.get("no_go_notes") or []),
+        "",
+        "### Alternate Hooks",
+        _bullet_list(data.get("alternate_hooks") or []),
+    ]
+    return "\n".join(lines)
+
+
+def _video_brief_text(data: dict) -> str:
+    video_type = data.get("video_type", "")
+    type_label = f" [{video_type.upper()}]" if video_type else ""
+    lines = [
+        f"VIDEO BRIEF{type_label}",
+        "=" * 40,
+        f"Duration: {data.get('duration', '')}",
+        f"Creator Persona: {data.get('creator_persona', '')}",
+        "",
+        "HOOK",
+        f"  {data.get('hook', '')}",
+        "",
+        "TALKING POINTS",
+    ]
+    for tp in (data.get("talking_points") or []):
+        lines.append(f"  • {tp}")
+    lines += [
+        "",
+        "DEMO BEATS",
+    ]
+    for db in (data.get("demo_beats") or []):
+        lines.append(f"  • {db}")
+    lines += [
+        "",
+        "BEAT STRUCTURE",
+        _beat_table_text(data.get("beat_structure") or []),
+        "",
+        "CTA",
+        f"  {data.get('cta', '')}",
+        "",
+        "PRODUCTION NOTES",
+        f"  {data.get('production_notes', '')}",
+        "",
+        "NO-GO NOTES",
+    ]
+    for ng in (data.get("no_go_notes") or []):
+        lines.append(f"  ✗ {ng}")
+    lines += [
+        "",
+        "ALTERNATE HOOKS",
+    ]
+    for ah in (data.get("alternate_hooks") or []):
+        lines.append(f"  • {ah}")
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────
 # Public API
 # ─────────────────────────────────────────────
 
@@ -423,6 +510,8 @@ def to_markdown(output_type: str, data: dict[str, Any]) -> str:
     """
     if output_type == "static_brief":
         return _static_brief_md(data)
+    elif output_type == "video_brief":
+        return _video_brief_md(data)
     elif output_type == "ugc_brief":
         return _ugc_brief_md(data)
     elif output_type == "script_package":
@@ -448,6 +537,8 @@ def to_text_block(output_type: str, data: dict[str, Any]) -> str:
     """
     if output_type == "static_brief":
         return _static_brief_text(data)
+    elif output_type == "video_brief":
+        return _video_brief_text(data)
     elif output_type == "ugc_brief":
         return _ugc_brief_text(data)
     elif output_type == "script_package":

@@ -252,6 +252,7 @@ header .subtitle { font-size: 12px; color: var(--muted); }
   text-transform: uppercase; letter-spacing: .5px; flex-shrink: 0;
 }
 .prod-badge-static  { background: #0c2040; color: #5ba4e8; }
+.prod-badge-video   { background: #0d2420; color: #4ecdc4; }
 .prod-badge-ugc     { background: #1a2a0c; color: #7ecb5b; }
 .prod-badge-script  { background: #2a0c2a; color: #c07be0; }
 .prod-badge-package { background: #2a1a08; color: #e09a3b; }
@@ -399,8 +400,7 @@ header .subtitle { font-size: 12px; color: var(--muted); }
         <button class="action-btn rich" onclick="runAction('creator_brief')">→ Brief</button>
         <div class="action-sep"></div>
         <button class="action-btn prod" onclick="runProduction('static_brief')" title="Full static ad brief for designers">→ Static Brief</button>
-        <button class="action-btn prod" onclick="runProduction('ugc_brief')" title="Full creator brief for UGC talent">→ UGC Brief</button>
-        <button class="action-btn prod" onclick="runProduction('script_package')" title="Script with beat structure">→ Script Package</button>
+        <button class="action-btn prod" onclick="runProduction('video_brief')" title="Unified video brief: creator persona, hook, beat structure, demo beats, production notes">→ Video Brief</button>
         <button class="action-btn prod" id="videoStoryboardBtn" onclick="goVideoStoryboard()" title="Build a scene-by-scene video storyboard">🎬 Video Storyboard</button>
       </div>
     </div>
@@ -928,7 +928,10 @@ async function updateVideoBtn() {
     const res = await fetch('/api/video/packages?' + params.toString());
     const data = await res.json();
     _videoPkg = data.package || null;
-    if (_videoPkg?.output_type === 'script_package') {
+    if (_videoPkg?.output_type === 'video_brief') {
+      btn.textContent = '🎬 Build from Video Brief';
+      btn.title = 'Build video storyboard from Video Brief';
+    } else if (_videoPkg?.output_type === 'script_package') {
       btn.textContent = '🎬 Build from Script';
       btn.title = 'Build video storyboard from Script Package';
     } else if (_videoPkg?.output_type === 'ugc_brief') {
@@ -1005,8 +1008,8 @@ async function runProduction(outputType) {
     loadCard.remove();
     appendProductionCard(result);
     toast(`${outputType.replace(/_/g,' ')} generated`);
-    // Update video button label — a new Script/UGC package is now available
-    if (outputType === 'script_package' || outputType === 'ugc_brief') {
+    // Update video button label — a new video-capable package is now available
+    if (outputType === 'video_brief' || outputType === 'script_package' || outputType === 'ugc_brief') {
       updateVideoBtn();
     }
   } catch(e) {
@@ -1062,7 +1065,7 @@ async function showSavedOutputs() {
     const items = await res.json();
     const list  = document.getElementById('prodSavedList');
     if (!items.length) { list.innerHTML = '<p style="color:var(--muted);padding:16px">No production outputs yet.</p>'; return; }
-    const badgeClass = { static_brief:'prod-badge-static', ugc_brief:'prod-badge-ugc', script_package:'prod-badge-script' };
+    const badgeClass = { static_brief:'prod-badge-static', video_brief:'prod-badge-video', ugc_brief:'prod-badge-ugc', script_package:'prod-badge-script' };
     list.innerHTML = items.map(it => `
       <div class="prod-saved-row">
         <span class="pstype prod-type-badge ${badgeClass[it.output_type]||'prod-badge-static'}">${(it.output_type||'').replace(/_/g,' ')}</span>
@@ -1087,6 +1090,7 @@ function buildProductionCard(result) {
   // Badge style
   const badgeClass = {
     static_brief:   'prod-badge-static',
+    video_brief:    'prod-badge-video',
     ugc_brief:      'prod-badge-ugc',
     script_package: 'prod-badge-script',
   }[outputType] || 'prod-badge-static';
@@ -1096,6 +1100,7 @@ function buildProductionCard(result) {
   const preview = esc(
     data.hook || data.opening_line || ''
   ).slice(0, 80);
+
 
   // Action buttons HTML
   const exportBase = `/api/production/${outputId}/export`;
@@ -1130,6 +1135,8 @@ function buildProductionCard(result) {
   let bodyHtml = '';
   if (outputType === 'static_brief') {
     bodyHtml = buildStaticBriefBody(data);
+  } else if (outputType === 'video_brief') {
+    bodyHtml = buildVideoBriefBody(data);
   } else if (outputType === 'ugc_brief') {
     bodyHtml = buildUGCBriefBody(data);
   } else if (outputType === 'script_package') {
@@ -1173,6 +1180,28 @@ function buildStaticBriefBody(d) {
     ${prodSection('Text Overlay', `<p>${esc(d.text_overlay || '')}</p>`)}
     ${prodSection('CTA', `<p>${esc(d.cta || '')}</p>`)}
     ${prodSection('Why This Works', `<p>${esc(d.why_it_works || '')}</p>`)}
+  `;
+}
+
+function buildVideoBriefBody(d) {
+  const dur = d.duration ? `<span class="rich-badge">${esc(d.duration)}</span>` : '';
+  const beats = Array.isArray(d.beat_structure) ? d.beat_structure : [];
+  let beatHtml = '';
+  if (beats.length) {
+    beatHtml = '<table class="prod-variants-table"><thead><tr><th>Beat</th><th>Time</th><th>Line</th><th>Direction</th></tr></thead><tbody>' +
+      beats.map(b => `<tr><td>${esc(b.beat||'')}</td><td>${esc(b.seconds||'')}</td><td>${esc(b.line||'')}</td><td>${esc(b.direction||'')}</td></tr>`).join('') +
+      '</tbody></table>';
+  }
+  return `
+    ${prodSection('Creator Persona', `<p>${esc(d.creator_persona || '')}</p>`)}
+    <div class="prod-section"><h5>Hook ${dur}</h5><p><em>"${esc(d.hook || '')}"</em></p></div>
+    ${prodSection('Talking Points', prodList(d.talking_points))}
+    ${prodSection('Demo Beats (on camera)', prodList(d.demo_beats))}
+    ${beatHtml ? `<div class="prod-section"><h5>Beat Structure</h5>${beatHtml}</div>` : ''}
+    ${prodSection('CTA', `<p>${esc(d.cta || '')}</p>`)}
+    ${prodSection('Production Notes', `<p>${esc(d.production_notes || '')}</p>`)}
+    ${prodSection('No-Go Notes', prodList(d.no_go_notes))}
+    ${prodSection('Alternate Hooks', prodList(d.alternate_hooks))}
   `;
 }
 

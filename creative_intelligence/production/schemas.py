@@ -19,6 +19,8 @@ from typing import Any
 
 OUTPUT_TYPES = frozenset({
     "static_brief",
+    "video_brief",
+    # Legacy — kept for backward-compat with existing DB rows; hidden in UI
     "ugc_brief",
     "script_package",
 })
@@ -162,6 +164,64 @@ class ScriptPackage:
 
 
 # ─────────────────────────────────────────────
+# Video Brief  (replaces ugc_brief + script_package)
+# Unified brief for all video ad formats
+# ─────────────────────────────────────────────
+
+class VideoBrief:
+    """
+    Unified video production brief — replaces separate UGC Brief and Script Package.
+
+    Combines the creator-facing clarity of a UGC brief with the beat-structure
+    precision of a script package. Works with all video_type formats:
+    ugc | farm_origin | product_hero | comparison_reveal
+
+    Fields
+    ------
+    hook                : Opening line / hook text — exact words to open with.
+    talking_points      : 3-5 ordered key messages (hook → value → proof → CTA).
+    demo_beats          : Physical on-camera actions to show or do.
+    beat_structure      : Scene-by-scene breakdown [{beat, seconds, line, direction}].
+    cta                 : Closing call-to-action (verbal).
+    duration            : Estimated total duration (e.g. "25-30s").
+    creator_persona     : Creator energy/archetype — who delivers this.
+    production_notes    : Shot type, pacing, lighting, B-roll, editing hints.
+    no_go_notes         : Brand guardrails — what NOT to say or do.
+    alternate_hooks     : 2-3 hook variants to test.
+    """
+    FIELDS = (
+        "hook",
+        "talking_points",
+        "demo_beats",
+        "beat_structure",
+        "cta",
+        "duration",
+        "creator_persona",
+        "production_notes",
+        "no_go_notes",
+        "alternate_hooks",
+    )
+
+    SCHEMA_HINT = """{
+  "hook": "Exact opening line — what the creator says or what appears on screen first",
+  "talking_points": ["Key message 1 (value)", "Key message 2 (proof)", "Key message 3 (benefit)"],
+  "demo_beats": ["Physical action 1 to show on camera", "What to demonstrate 2", "Action 3"],
+  "beat_structure": [
+    {"beat": "Hook",  "seconds": "0-4s",  "line": "spoken line", "direction": "camera/action note"},
+    {"beat": "Value", "seconds": "4-18s", "line": "spoken line", "direction": "camera/action note"},
+    {"beat": "Proof", "seconds": "18-24s","line": "spoken line", "direction": "camera/action note"},
+    {"beat": "CTA",   "seconds": "24-30s","line": "spoken line", "direction": "camera/action note"}
+  ],
+  "cta": "Closing call-to-action line (verbal)",
+  "duration": "Estimated total e.g. '25-30s'",
+  "creator_persona": "Creator energy/archetype e.g. 'Authentic home cook who discovers premium quality'",
+  "production_notes": "Shot type, pacing, lighting, whether B-roll is needed, key visual moments",
+  "no_go_notes": ["Avoid X", "Do NOT say Y", "Never Z"],
+  "alternate_hooks": ["Hook variant A — different angle", "Hook variant B"]
+}"""
+
+
+# ─────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────
 
@@ -216,6 +276,8 @@ def validate_output(output_type: str, data: dict[str, Any]) -> list[str]:
         required = UGCCreatorBrief.FIELDS
     elif output_type == "script_package":
         required = ScriptPackage.FIELDS
+    elif output_type == "video_brief":
+        required = VideoBrief.FIELDS
     else:
         return [f"unknown output_type: {output_type!r}"]
 
