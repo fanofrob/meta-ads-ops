@@ -2684,7 +2684,47 @@ def admin_cleanup() -> Any:
 # Entrypoint
 # ─────────────────────────────────────────────
 
+def _startup_cleanup() -> None:
+    """Delete non-protected render images older than 1 day on startup.
+
+    Keeps the Railway volume from filling up between deploys without
+    losing any favorited / approved / ready-to-test assets.
+    """
+    try:
+        import shutil as _sh, time as _t
+        from creative_intelligence.rendering.asset_store import get_render_output_dir
+        from creative_intelligence.db import get_connection, init_db, get_db_path
+
+        init_db()
+        conn = get_connection()
+        protected = set()
+        for r in conn.execute(
+            """SELECT asset_path_or_url FROM render_assets
+               WHERE is_favorite=1 OR review_status='approved' OR is_ready_to_test=1"""
+        ).fetchall():
+            p = r["asset_path_or_url"] or ""
+            if p and not p.startswith(("http", "mock://")):
+                protected.add(str(Path(p).resolve()))
+        conn.close()
+
+        cutoff = _t.time() - 86_400  # 1 day
+        volume_render = get_db_path().parent / "render_outputs"
+        for d in {get_render_output_dir(), volume_render}:
+            if not d.exists():
+                continue
+            for f in d.rglob("*"):
+                if not f.is_file():
+                    continue
+                if str(f.resolve()) in protected:
+                    continue
+                if f.stat().st_mtime < cutoff:
+                    f.unlink(missing_ok=True)
+    except Exception:
+        pass  # Never block startup
+
+
 if __name__ == "__main__":
+    _startup_cleanup()
     # Railway injects PORT; CI_WEB_PORT used locally.
     port = int(os.getenv("PORT", os.getenv("CI_WEB_PORT", "5555")))
     # Bind to 0.0.0.0 so Railway (and other hosts) can reach the app.
