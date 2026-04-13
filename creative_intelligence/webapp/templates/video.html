@@ -846,7 +846,7 @@ async function generateClips(sbId) {
         const total = result.scene_count;
         if (btn) btn.textContent = `⏳ ${done}/${total} clips…`;
         if (statusEl) statusEl.textContent = `${done}/${total} clips ready…`;
-        if (done >= total) {
+        if (total > 0 && done >= total) {
           clearInterval(_clipPollInterval);
           _clipPollInterval = null;
           if (btn) { btn.disabled = false; btn.innerHTML = '🎞 Generate Clips'; }

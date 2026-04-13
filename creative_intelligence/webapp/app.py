@@ -2482,11 +2482,47 @@ def video_generate_clips(storyboard_id: int) -> Any:
 
         conn = _db()
         sb = conn.execute(
-            "SELECT id, video_type FROM video_storyboards WHERE id = ?", (storyboard_id,)
+            "SELECT id, video_type, scenes_json FROM video_storyboards WHERE id = ?", (storyboard_id,)
         ).fetchone()
         if not sb:
             conn.close()
             return jsonify({"error": f"Storyboard {storyboard_id} not found"}), 404
+
+        # Backfill video_scenes from scenes_json for storyboards created before
+        # per-scene rows were introduced (old storyboards only have scenes_json).
+        existing = conn.execute(
+            "SELECT COUNT(*) as n FROM video_scenes WHERE storyboard_id = ?",
+            (storyboard_id,),
+        ).fetchone()["n"]
+        if existing == 0 and sb["scenes_json"]:
+            try:
+                import json as _json
+                raw_scenes = _json.loads(sb["scenes_json"]) or []
+                for s in raw_scenes:
+                    shot = s.get("shot") or {}
+                    conn.execute(
+                        """INSERT INTO video_scenes
+                           (storyboard_id, scene_index, purpose, visual_description,
+                            text_overlay, duration_seconds,
+                            camera_type, framing, movement, product_focus, lighting_style)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                        (
+                            storyboard_id,
+                            s.get("scene_id", 0),
+                            s.get("purpose", ""),
+                            s.get("visual_description", ""),
+                            s.get("text_overlay", ""),
+                            s.get("duration_seconds", 5),
+                            shot.get("camera_type", "handheld"),
+                            shot.get("framing", "medium"),
+                            shot.get("movement", "none"),
+                            shot.get("product_focus", ""),
+                            shot.get("lighting_style", ""),
+                        ),
+                    )
+                conn.commit()
+            except Exception:
+                app.logger.exception("Failed to backfill video_scenes from scenes_json")
 
         # Count scenes to return immediately
         scene_count = conn.execute(
