@@ -379,11 +379,14 @@ def _animate_scene(
     client = replicate.Client(api_token=api_key)
     model_lower = motion_model.lower()
 
+    # Prepend motion instruction so minimax/SVD generate actual movement
+    motion_prompt = f"Smooth cinematic motion, natural movement. {prompt}"
+
     try:
         if "minimax" in model_lower or "video-01" in model_lower:
             output = client.run(
                 motion_model,
-                input={"prompt": prompt, "first_frame_image": img_input},
+                input={"prompt": motion_prompt, "first_frame_image": img_input},
             )
         elif "stable-video" in model_lower or "svd" in model_lower:
             output = client.run(
@@ -399,13 +402,13 @@ def _animate_scene(
         elif "wan" in model_lower:
             output = client.run(
                 motion_model,
-                input={"image": img_input, "prompt": prompt},
+                input={"image": img_input, "prompt": motion_prompt},
             )
         else:
             # Generic: try all common keys; models ignore unknown ones
             output = client.run(
                 motion_model,
-                input={"image": img_input, "prompt": prompt,
+                input={"image": img_input, "prompt": motion_prompt,
                        "first_frame_image": img_input},
             )
     except Exception:
@@ -657,16 +660,14 @@ def assemble_video(
             clip_path = ai_clips.get(idx)
             duration = float(scene.get("duration_seconds") or cfg.avg_scene_seconds)
             text = scene.get("text_overlay") or ""
+            ai_success = False
 
             if clip_path:
-                # Load AI-generated clip and resize to target dimensions
                 try:
                     from moviepy.editor import VideoFileClip
                     vc = VideoFileClip(str(clip_path))
-                    # Resize to target (maintain aspect, crop/pad to exact size)
                     vc_resized = vc.resize((target_w, target_h))
                     if add_text_overlays and text:
-                        # Draw text on each frame via PIL then rebuild clip
                         raw_frames = [
                             vc_resized.get_frame(t)
                             for t in [i / fps for i in range(int(vc_resized.duration * fps))]
@@ -682,19 +683,18 @@ def assemble_video(
                     total_duration += vc.duration
                     scenes_used += 1
                     vc.close()
+                    ai_success = True
                 except Exception:
-                    # AI clip failed to load — fall back to Ken Burns for this scene
                     pass
 
-            if not clip_path or len(clips) < scenes_used + (1 if clip_path else 0):
-                # Fallback: Ken Burns for scenes where AI generation failed
+            if not ai_success:
+                # Fallback: Ken Burns for any scene where AI generation failed/skipped
                 try:
+                    movement = scene.get("movement") or cfg.ken_burns_map.get(
+                        (scene.get("purpose") or "demo").lower(), cfg.default_movement
+                    )
                     frame_arrays = _make_scene_frames(
-                        img_path, duration,
-                        scene.get("movement") or cfg.ken_burns_map.get(
-                            (scene.get("purpose") or "demo").lower(), cfg.default_movement
-                        ),
-                        target_w, target_h, fps
+                        img_path, duration, movement, target_w, target_h, fps
                     )
                     if add_text_overlays and text:
                         frame_arrays = _draw_text_on_frames(
