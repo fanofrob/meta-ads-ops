@@ -89,13 +89,40 @@ _OUTPUT_SCHEMA = """{
     }
   ],
   "ugc_script": {
-    "opening_line": "string — exact hook line spoken to camera (word-for-word)",
+    "opening_line": "string — [see script guidance below for this video type]",
     "talking_points": ["string", "string", "string"],
-    "demo_actions": ["string — physical action to show on camera"],
-    "closing_cta": "string — exact closing line spoken to camera"
+    "demo_actions": ["string — [see script guidance below]"],
+    "closing_cta": "string — [see script guidance below]"
   },
   "total_duration_seconds": 30
 }"""
+
+# Per-type script guidance injected into prompts so the LLM fills ugc_script correctly
+_SCRIPT_GUIDANCE = {
+    "ugc": """## Script Guidance (ugc_script fields)
+- opening_line: exact hook line spoken directly to camera by the creator (word-for-word)
+- talking_points: 3-4 key messages the creator delivers conversationally on camera
+- demo_actions: physical on-camera actions — what the creator does or shows with the product
+- closing_cta: exact closing line spoken to camera (e.g. "Link in bio to get yours")""",
+
+    "farm_origin": """## Script Guidance (ugc_script fields)
+- opening_line: opening narration line — can be voiceover OR on-screen text that opens the story
+- talking_points: 3-4 story beats — origin, journey, quality proof, emotional payoff
+- demo_actions: visual cues to direct the camera operator — what to capture at each beat
+- closing_cta: closing narration/voiceover line (e.g. "Grown with care. Delivered to your door.")""",
+
+    "product_hero": """## Script Guidance (ugc_script fields)
+- opening_line: opening on-screen text copy or voiceover — draws attention to the product (NOT a creator greeting)
+- talking_points: 3-4 concise copy points that appear as text overlays or voiceover during macro shots
+- demo_actions: visual focus directions — what the camera highlights in each close-up or macro shot
+- closing_cta: CTA text that appears on screen or voiceover (e.g. "Shop now. Link in bio.")""",
+
+    "comparison_reveal": """## Script Guidance (ugc_script fields)
+- opening_line: hook that establishes the contrast (e.g. "Most people settle for X. We don't.")
+- talking_points: before/after or contrast points — what's wrong with the alternative, what's right about this
+- demo_actions: visual reveal beats — what to show in the split or side-by-side comparison
+- closing_cta: closing line that reinforces the winning side (e.g. "See the difference. Link in bio.")""",
+}
 
 # ─────────────────────────────────────────────────────────────────────
 # User prompt builders — one per upstream source type
@@ -106,6 +133,11 @@ def _video_type_scene_guidance(video_type: str | None) -> str:
     from creative_intelligence.video.types import get_config
     cfg = get_config(video_type)
     return cfg.scene_guidance.strip() if cfg.scene_guidance else ""
+
+
+def _script_guidance_block(video_type: str | None) -> str:
+    """Return the ugc_script field guidance for the given video type."""
+    return _SCRIPT_GUIDANCE.get(video_type or "ugc", _SCRIPT_GUIDANCE["ugc"])
 
 
 def _prompt_from_script_package(pkg: dict, product_ctx: str, video_type: str | None = None) -> str:
@@ -125,6 +157,7 @@ def _prompt_from_script_package(pkg: dict, product_ctx: str, video_type: str | N
     alt_ctas   = pkg.get("alternate_ctas")  or []
     guidance   = _video_type_scene_guidance(video_type)
     guidance_block = f"\n## Video Type Scene Structure\n{guidance}\n" if guidance else ""
+    script_guidance = _script_guidance_block(video_type)
 
     return f"""Build a scene-by-scene video storyboard from this Script Package.
 
@@ -158,6 +191,8 @@ Production notes: {pkg.get('production_notes', '')}
 - Total duration must match the Script Package duration
 - Shot list must be practical for a solo creator with a phone
 {guidance_block}
+{script_guidance}
+
 ## Output JSON schema
 {_OUTPUT_SCHEMA}
 
@@ -176,6 +211,7 @@ def _prompt_from_ugc_brief(brief: dict, product_ctx: str, video_type: str | None
     no_go    = brief.get("no_go_notes")    or []
     guidance = _video_type_scene_guidance(video_type)
     guidance_block = f"\n## Video Type Scene Structure\n{guidance}\n" if guidance else ""
+    script_guidance = _script_guidance_block(video_type)
 
     return f"""Build a scene-by-scene video storyboard from this UGC Creator Brief.
 
@@ -211,6 +247,8 @@ Closing CTA: {brief.get('cta', '')}
 - Follow the "Do NOT include" rules strictly
 - Shot list should feel natural and handheld — phone creator aesthetic
 {guidance_block}
+{script_guidance}
+
 ## Output JSON schema
 {_OUTPUT_SCHEMA}
 
@@ -231,6 +269,7 @@ def _prompt_from_video_brief(brief: dict, product_ctx: str, video_type: str | No
     alt_hooks = brief.get("alternate_hooks") or []
     guidance = _video_type_scene_guidance(video_type)
     guidance_block = f"\n## Video Type Scene Structure\n{guidance}\n" if guidance else ""
+    script_guidance = _script_guidance_block(video_type)
 
     beats_fmt = "\n".join(
         f"  Beat {i+1}: [{b.get('beat','')}] {b.get('seconds','')} — "
@@ -278,6 +317,8 @@ Production notes: {brief.get('production_notes', '')}
 - Shot list should match the creator_persona energy and production_notes
 - Visual descriptions must be specific and filmable by a solo phone creator
 {guidance_block}
+{script_guidance}
+
 ## Output JSON schema
 {_OUTPUT_SCHEMA}
 
@@ -288,6 +329,7 @@ def _prompt_from_concept(concept: str, product_ctx: str, video_type: str | None 
     """Fallback: build storyboard from raw concept text."""
     guidance = _video_type_scene_guidance(video_type)
     guidance_block = f"\n## Video Type Scene Structure\n{guidance}\n" if guidance else ""
+    script_guidance = _script_guidance_block(video_type)
 
     return f"""Create a complete video storyboard for this concept.
 
@@ -303,9 +345,9 @@ def _prompt_from_concept(concept: str, product_ctx: str, video_type: str | None 
 - Scene purposes must include "hook" (scene 1), at least one "demo" or "reveal", and "cta" (last)
 - Each visual_description must be specific and filmable
 - text_overlay = on-screen text (max 8 words) or empty string
-- UGC script must be natural, first-person, conversational
-- Shot list practical for a solo creator with a phone
+- Shot list practical for a solo creator or product shoot
 {guidance_block}
+{script_guidance}
 
 ## Output JSON schema
 {_OUTPUT_SCHEMA}
