@@ -813,33 +813,73 @@ async function submitRegenFrame(sceneIdx) {
   }
 }
 
-/* ── Generate per-scene clips via Runway/Replicate ── */
+/* ── Generate per-scene clips via Runway/Replicate (async) ── */
+let _clipPollInterval = null;
+
 async function generateClips(sbId) {
-  const btn     = document.getElementById('genClipsBtn');
+  const btn      = document.getElementById('genClipsBtn');
   const statusEl = document.getElementById('videoOutputStatus');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating clips…'; }
-  if (statusEl) statusEl.textContent = 'Generating scene clips via Runway/Replicate (~30-60s per scene)…';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Starting…'; }
+
   try {
     const result = await api(`/api/video/storyboard/${sbId}/generate-clips`, {
       aspect_ratio: document.getElementById('aspectRatio')?.value || '9:16',
       skip_existing: true,
-      max_workers: 3,
     });
-    const { generated = 0, skipped = 0, failed = 0, total_scenes = 0 } = result;
-    if (result.status === 'no_scenes') {
-      toast('No scenes found — generate a storyboard first', true);
-    } else if (result.status === 'all_failed') {
-      toast(`Clip generation failed for all ${total_scenes} scenes`, true);
-    } else {
-      toast(`✓ Clips ready — ${generated} generated, ${skipped} skipped, ${failed} failed`);
+
+    if (result.error) {
+      toast(result.error, true);
+      return;
     }
-    await loadSceneClips(sbId);
+
+    // Generation started in background — poll clips endpoint for progress
+    toast(`🎞 Generating ${result.scene_count} clips via Runway (~30-60s each)…`);
+    if (statusEl) statusEl.textContent = `Generating ${result.scene_count} clips in background…`;
+    if (btn) btn.textContent = '⏳ Generating…';
+
+    if (_clipPollInterval) clearInterval(_clipPollInterval);
+    _clipPollInterval = setInterval(async () => {
+      try {
+        const clips = await api(`/api/video/storyboard/${sbId}/clips`);
+        await _applyClipBadges(clips);
+        const done  = clips.filter(c => c.status === 'ok' && (c.clip_local_path || c.clip_url)).length;
+        const total = result.scene_count;
+        if (btn) btn.textContent = `⏳ ${done}/${total} clips…`;
+        if (statusEl) statusEl.textContent = `${done}/${total} clips ready…`;
+        if (done >= total) {
+          clearInterval(_clipPollInterval);
+          _clipPollInterval = null;
+          if (btn) { btn.disabled = false; btn.innerHTML = '🎞 Generate Clips'; }
+          toast(`✓ All ${total} clips ready — click Use Clips to assemble`);
+          if (statusEl) statusEl.textContent = `${total} clips ready`;
+        }
+      } catch(e) { /* ignore poll errors */ }
+    }, 8000);  // poll every 8s
+
   } catch(e) {
-    toast('Clip generation failed: ' + e.message, true);
-    if (statusEl) statusEl.textContent = 'Clip generation failed: ' + e.message;
-  } finally {
+    toast('Failed to start clip generation: ' + e.message, true);
     if (btn) { btn.disabled = false; btn.innerHTML = '🎞 Generate Clips'; }
   }
+}
+
+function _applyClipBadges(clips) {
+  const bySceneId = {};
+  (clips || []).forEach(c => { bySceneId[c.scene_id] = c; });
+  Object.entries(bySceneId).forEach(([sceneId, clip]) => {
+    const badge = document.getElementById(`clip-badge-${sceneId}`);
+    if (!badge) return;
+    badge.style.display = 'inline-block';
+    if (clip.status === 'ok') {
+      const isMock = !clip.clip_local_path && !clip.clip_url;
+      badge.innerHTML = isMock
+        ? '<span style="background:#2a2a2a;color:#666;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px" title="Mock clip — set CI_CLIP_PROVIDER=replicate to generate real clips">🎞 Mock (no file)</span>'
+        : '<span style="background:#1a1a3a;color:#a78bfa;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px">🎞 Clip ready</span>';
+    } else if (clip.status === 'error') {
+      badge.innerHTML = `<span style="background:#2a1a1a;color:#ef4444;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px" title="${esc(clip.error_message||'')}">✗ Clip failed</span>`;
+    } else {
+      badge.innerHTML = '<span style="background:#2a2a1a;color:#f59e0b;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px">⏳ Generating…</span>';
+    }
+  });
 }
 
 /* ── Load per-scene clip status badges ── */
