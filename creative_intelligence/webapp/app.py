@@ -1698,17 +1698,58 @@ def video_page() -> Any:
     return render_template("video.html")
 
 
+@app.get("/api/video/packages")
+def video_available_packages() -> Any:
+    """Return the best available upstream package for a concept/session.
+
+    Query params:
+      concept     str  — concept text (used for fuzzy match)
+      session_id  str? — copilot session id (narrows search)
+
+    Returns the most relevant script_package or ugc_brief if one exists,
+    so the UI can show "Build from Script" / "Build from UGC Brief" labels.
+    """
+    try:
+        concept    = request.args.get("concept", "").strip()
+        session_id = request.args.get("session_id") or None
+        if not concept:
+            return jsonify({"package": None})
+
+        conn = _db()
+        # Look for Script Package first, then UGC Brief
+        row = conn.execute(
+            """SELECT id, output_type, concept_text, created_at
+               FROM production_outputs
+               WHERE output_type IN ('script_package', 'ugc_brief')
+                 AND (concept_text = ?
+                      OR concept_text LIKE ?
+                      OR (? IS NOT NULL AND session_id = ?))
+               ORDER BY
+                 CASE output_type WHEN 'script_package' THEN 0 ELSE 1 END,
+                 id DESC
+               LIMIT 1""",
+            (concept, f"%{concept[:40]}%", session_id, session_id),
+        ).fetchone()
+        conn.close()
+        return jsonify({"package": dict(row) if row else None})
+    except Exception as exc:
+        return jsonify({"error": str(exc), "package": None}), 500
+
+
 @app.post("/api/video/storyboard")
 def video_storyboard_create() -> Any:
-    """Generate a video storyboard from a concept.
+    """Generate a video storyboard from a concept or production package.
 
     Body:
-      concept           str  — the hook / concept text (required)
-      product_id        str? — product for context
-      aspect_ratio      str? — default "9:16"
-      generate_frames   bool?— generate scene images (default false)
-      model             str? — Replicate model slug override
-      dry_run           bool?— skip DB writes (default false)
+      concept                      str  — the hook / concept text (required)
+      product_id                   str? — product for context
+      source_production_output_id  int? — explicit package to use as input
+      source_output_type           str? — hint for the source type
+      session_id                   str? — used for auto-package resolution
+      aspect_ratio                 str? — default "9:16"
+      generate_frames              bool?— generate scene images (default false)
+      model                        str? — Replicate model slug override
+      dry_run                      bool?— skip DB writes (default false)
     """
     from creative_intelligence.video.storyboard_builder import build_storyboard
     try:
@@ -1718,6 +1759,10 @@ def video_storyboard_create() -> Any:
             return jsonify({"error": "concept is required"}), 400
 
         product_id     = body.get("product_id") or None
+        source_id_raw  = body.get("source_production_output_id")
+        source_id      = int(source_id_raw) if source_id_raw else None
+        source_type    = body.get("source_output_type") or None
+        session_id     = body.get("session_id") or None
         aspect_ratio   = body.get("aspect_ratio", "9:16")
         generate_frames= bool(body.get("generate_frames", False))
         model          = body.get("model") or None
@@ -1725,13 +1770,16 @@ def video_storyboard_create() -> Any:
 
         conn   = _db()
         result = build_storyboard(
-            concept        = concept,
-            product_id     = product_id,
-            conn           = conn,
-            aspect_ratio   = aspect_ratio,
-            generate_frames= generate_frames,
-            model          = model,
-            dry_run        = dry_run,
+            concept                      = concept,
+            product_id                   = product_id,
+            conn                         = conn,
+            source_production_output_id  = source_id,
+            source_output_type           = source_type,
+            session_id                   = session_id,
+            aspect_ratio                 = aspect_ratio,
+            generate_frames              = generate_frames,
+            model                        = model,
+            dry_run                      = dry_run,
         )
         conn.close()
         return jsonify(result)

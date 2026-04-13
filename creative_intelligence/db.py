@@ -57,14 +57,19 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "ALTER TABLE render_outputs ADD COLUMN error_message TEXT",
         # ── video module (v1.5) ──────────────────────────────────────────
         """CREATE TABLE IF NOT EXISTS video_storyboards (
-            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-            product_id              TEXT,
-            concept_text            TEXT NOT NULL,
-            scenes_json             TEXT,
-            ugc_script_json         TEXT,
-            total_duration_seconds  INTEGER DEFAULT 30,
-            created_at              TEXT DEFAULT (datetime('now'))
+            id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id                  TEXT,
+            concept_text                TEXT NOT NULL,
+            scenes_json                 TEXT,
+            ugc_script_json             TEXT,
+            total_duration_seconds      INTEGER DEFAULT 30,
+            source_production_output_id INTEGER,
+            source_output_type          TEXT DEFAULT 'concept',
+            created_at                  TEXT DEFAULT (datetime('now'))
         )""",
+        # Additive columns for storyboards created before lineage tracking
+        "ALTER TABLE video_storyboards ADD COLUMN source_production_output_id INTEGER",
+        "ALTER TABLE video_storyboards ADD COLUMN source_output_type TEXT DEFAULT 'concept'",
         """CREATE TABLE IF NOT EXISTS video_scenes (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
             storyboard_id       INTEGER NOT NULL

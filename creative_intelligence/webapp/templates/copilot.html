@@ -401,7 +401,7 @@ header .subtitle { font-size: 12px; color: var(--muted); }
         <button class="action-btn prod" onclick="runProduction('static_brief')" title="Full static ad brief for designers">→ Static Brief</button>
         <button class="action-btn prod" onclick="runProduction('ugc_brief')" title="Full creator brief for UGC talent">→ UGC Brief</button>
         <button class="action-btn prod" onclick="runProduction('script_package')" title="Script with beat structure">→ Script Package</button>
-        <button class="action-btn prod" onclick="goVideoStoryboard()" title="Build a scene-by-scene video storyboard">🎬 Video Storyboard</button>
+        <button class="action-btn prod" id="videoStoryboardBtn" onclick="goVideoStoryboard()" title="Build a scene-by-scene video storyboard">🎬 Video Storyboard</button>
         <button class="action-btn prod" onclick="runProduction('test_package')" title="Bundle core concept + session variants for testing">→ Test Package</button>
       </div>
     </div>
@@ -440,7 +440,14 @@ let scoreTimer  = null;
 document.addEventListener('DOMContentLoaded', () => {
   loadProducts();
   loadSessions();
-  document.getElementById('concept').addEventListener('input', debouncedScore);
+  const conceptEl = document.getElementById('concept');
+  conceptEl.addEventListener('input', debouncedScore);
+  // Debounced package check — updates the video button label
+  let _videoBtnTimer = null;
+  conceptEl.addEventListener('input', () => {
+    clearTimeout(_videoBtnTimer);
+    _videoBtnTimer = setTimeout(updateVideoBtn, 800);
+  });
 });
 
 /* ── Product dropdown ───────────────────────────────── */
@@ -859,20 +866,58 @@ function toast(msg, isErr) {
 
 /* ── Production Handoff ─────────────────────────────── */
 
+// Track best available video package for current concept
+let _videoPkg = null;
+
+async function updateVideoBtn() {
+  const concept = (document.getElementById('concept')?.value || '').trim();
+  const btn = document.getElementById('videoStoryboardBtn');
+  if (!btn) return;
+  if (!concept) {
+    btn.textContent = '🎬 Video Storyboard';
+    btn.title = 'Build a scene-by-scene video storyboard';
+    _videoPkg = null;
+    return;
+  }
+  try {
+    const params = new URLSearchParams({ concept });
+    if (sessionId) params.set('session_id', sessionId);
+    const res = await fetch('/api/video/packages?' + params.toString());
+    const data = await res.json();
+    _videoPkg = data.package || null;
+    if (_videoPkg?.output_type === 'script_package') {
+      btn.textContent = '🎬 Build from Script';
+      btn.title = 'Build video storyboard from Script Package';
+    } else if (_videoPkg?.output_type === 'ugc_brief') {
+      btn.textContent = '🎬 Build from UGC Brief';
+      btn.title = 'Build video storyboard from UGC Brief';
+    } else {
+      btn.textContent = '🎬 Video Storyboard';
+      btn.title = 'Build video storyboard from concept';
+    }
+  } catch(e) {
+    _videoPkg = null;
+  }
+}
+
 function goVideoStoryboard() {
-  // Read from textarea OR from the displayed concept text at top of action bar
   const conceptEl = document.getElementById('concept');
   const concept = (conceptEl ? conceptEl.value : '').trim();
   if (!concept) {
-    toast('Type or paste a concept into the box above first, then click Video Storyboard', true);
+    toast('Type or paste a concept into the box above first', true);
     if (conceptEl) conceptEl.focus();
     return;
   }
   const params = new URLSearchParams({
     concept:    concept,
     product_id: productId || '',
+    session_id: sessionId || '',
     autogen:    '1',
   });
+  if (_videoPkg?.id) {
+    params.set('source_production_output_id', _videoPkg.id);
+    params.set('source_output_type', _videoPkg.output_type);
+  }
   window.open('/video?' + params.toString(), '_blank');
 }
 
@@ -902,6 +947,10 @@ async function runProduction(outputType) {
     loadCard.remove();
     appendProductionCard(result);
     toast(`${outputType.replace(/_/g,' ')} generated`);
+    // Update video button label — a new Script/UGC package is now available
+    if (outputType === 'script_package' || outputType === 'ugc_brief') {
+      updateVideoBtn();
+    }
   } catch(e) {
     loadCard.remove();
     toast('Production generation failed: ' + e.message, true);
