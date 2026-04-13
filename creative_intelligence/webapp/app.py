@@ -2534,15 +2534,23 @@ def admin_storage_info() -> Any:
     from creative_intelligence.rendering.asset_store import get_render_output_dir
     from creative_intelligence import config as _cfg
     try:
+        from creative_intelligence.db import get_db_path as _get_db_path
+        # Always report the volume-backed data dir (not /tmp)
+        _volume_dir = _get_db_path().parent
+        _volume_dir.mkdir(parents=True, exist_ok=True)
+        total_b, used_b, free_b = _shutil.disk_usage(str(_volume_dir))
+        # Count image files in both volume render dir and current render dir
         render_dir = get_render_output_dir()
-        total_b, used_b, free_b = _shutil.disk_usage(str(render_dir))
-        # Count image files
-        img_files = list(render_dir.rglob("*"))
-        img_files = [f for f in img_files if f.is_file()]
-        img_bytes  = sum(f.stat().st_size for f in img_files)
+        _volume_render = _volume_dir / "render_outputs"
+        scan_dirs = {render_dir, _volume_render}
+        img_files = [
+            f for d in scan_dirs if d.exists()
+            for f in d.rglob("*") if f.is_file()
+        ]
+        img_bytes = sum(f.stat().st_size for f in img_files)
         # DB size
-        db_path = Path(_cfg.CI_DB_PATH) if _cfg.CI_DB_PATH else None
-        db_bytes = db_path.stat().st_size if db_path and db_path.exists() else 0
+        db_path = _get_db_path()
+        db_bytes = db_path.stat().st_size if db_path.exists() else 0
         return jsonify({
             "disk_total_mb":  round(total_b / 1_048_576),
             "disk_used_mb":   round(used_b  / 1_048_576),
@@ -2593,14 +2601,16 @@ def admin_cleanup() -> Any:
             if p and not p.startswith("http") and not p.startswith("mock://"):
                 protected_paths.add(str(Path(p).resolve()))
 
-        # 2. Collect ALL image files on disk — scan both current and legacy paths
+        # 2. Collect ALL image files on disk — scan current + volume render path
         render_dir = get_render_output_dir()
         from creative_intelligence.db import get_db_path as _get_db_path
-        _legacy_render = _get_db_path().parent / "render_outputs"
-        scan_dirs = {render_dir}
-        if _legacy_render.exists() and _legacy_render != render_dir:
-            scan_dirs.add(_legacy_render)
-        all_files = [f for d in scan_dirs for f in d.rglob("*") if f.is_file()]
+        # Always scan the volume-backed path regardless of CI_RENDER_OUTPUT_DIR
+        _volume_render = _get_db_path().parent / "render_outputs"
+        scan_dirs = {render_dir, _volume_render}
+        all_files = [
+            f for d in scan_dirs if d.exists()
+            for f in d.rglob("*") if f.is_file()
+        ]
 
         deleted_files, deleted_bytes, kept_files = [], 0, 0
         corrupt_deleted = 0
