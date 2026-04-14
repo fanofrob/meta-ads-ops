@@ -135,10 +135,20 @@ class ReplicateSceneClipProvider(SceneClipProvider):
                   scene_id, type(output).__name__, output)
         return None
 
-    def create_prediction(self, prompt: str, duration: float = 5.0) -> str | None:
+    def create_prediction(
+        self,
+        prompt: str,
+        duration: float = 5.0,
+        image_url: str | None = None,
+    ) -> str | None:
         """
         Create an async Replicate prediction. Returns prediction_id immediately (~1s).
         Use poll_prediction(prediction_id) to get the result URL when ready.
+
+        image_url: optional product reference image URL.
+            When provided, the model animates FROM this image (image-to-video),
+            ensuring the product looks consistent with the real product photo.
+            Field name is 'prompt_image' for runwayml/gen-4.5.
         """
         if not self._api_key:
             return None
@@ -146,10 +156,16 @@ class ReplicateSceneClipProvider(SceneClipProvider):
         if not client:
             return None
         duration_sec = 10 if duration >= 8 else 5
+        prediction_input: dict = {"prompt": prompt, "duration": duration_sec}
+        if image_url:
+            # runwayml/gen-4.5 uses 'prompt_image' for image-to-video conditioning.
+            # This anchors every clip to the actual product appearance.
+            prediction_input["prompt_image"] = image_url
+            log.info("Using product reference image for image-to-video: %s", image_url)
         try:
             prediction = client.predictions.create(
                 model=self._model,
-                input={"prompt": prompt, "duration": duration_sec},
+                input=prediction_input,
             )
             log.info("Created Replicate prediction %s for model %s", prediction.id, self._model)
             return prediction.id

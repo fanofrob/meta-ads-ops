@@ -93,12 +93,15 @@ def build_clip_prompt(
     scene: dict,
     video_type: str = "ugc",
     product_name: str | None = None,
+    product_description: str | None = None,
 ) -> str:
     """
     Build a detailed, consistent text-to-video prompt for a storyboard scene.
 
     Uses a style anchor (consistent across all scenes) + scene-specific subject/motion.
-    product_name is inserted into the prompt so the model renders the right product.
+    product_name and product_description are inserted so the model renders the right product.
+    product_description should include specific visual attributes (colour, texture, shape)
+    so the model generates the actual product rather than a generic approximation.
     """
     # 1. Style anchor — locks in consistent look across all scenes
     style_anchor = _TYPE_STYLE_ANCHOR.get(video_type, "Cinematic commercial footage.")
@@ -116,10 +119,17 @@ def build_clip_prompt(
     cam_key = f"{cam_type}_{movement}" if cam_type else None
     cam_motion = _CAMERA_MOTION.get(cam_key or "", "")
 
-    # 5. Product mention — always name the product explicitly for consistency
-    product_str = ""
+    # 5. Product — name + visual description for consistent appearance across clips.
+    # The description anchors the model to the real product's visual characteristics
+    # (colour, texture, shape, cut appearance) rather than a generic approximation.
+    product_parts: list[str] = []
     if product_name:
-        product_str = f"Product: {product_name}."
+        product_parts.append(f"Product: {product_name}.")
+    if product_description:
+        # Trim to first 200 chars — enough for visual anchoring, not overwhelming
+        desc = product_description.strip()[:200]
+        product_parts.append(f"Visual reference: {desc}.")
+    product_str = " ".join(product_parts)
 
     # 6. Lighting
     lighting = (scene.get("lighting_style") or "").strip()
@@ -127,7 +137,7 @@ def build_clip_prompt(
     # 7. Product focus detail
     product_focus = (scene.get("product_focus") or "").strip()
 
-    # Assemble prompt — order matters: style → subject → motion → details → quality
+    # Assemble prompt — order matters: style → subject → motion → product → details → quality
     parts: list[str] = [style_anchor]
     parts.append(purpose_guide)
     if visual:
@@ -334,15 +344,26 @@ def generate_storyboard_clips(
     ).fetchone()
     video_type = (sb_row["video_type"] if sb_row else None) or "ugc"
 
-    # Resolve product name for consistent prompt anchoring
+    # Resolve product name + description + image for consistent prompt anchoring.
+    # description gives the model specific visual attributes (colour, texture, shape)
+    # image_url enables image-to-video conditioning (animates FROM the real product photo)
     product_name: str | None = None
+    product_description: str | None = None
+    product_image_url: str | None = None
     if sb_row and sb_row["product_id"]:
         prod_row = conn.execute(
-            "SELECT name FROM products WHERE id = ? LIMIT 1",
+            "SELECT name, short_description, description, image_url FROM products WHERE id = ? LIMIT 1",
             (sb_row["product_id"],),
         ).fetchone()
         if prod_row:
             product_name = prod_row["name"]
+            # Prefer short_description for prompt brevity; fall back to first 200 chars of description
+            product_description = (
+                prod_row["short_description"]
+                or (prod_row["description"] or "")[:200]
+                or None
+            )
+            product_image_url = prod_row["image_url"] or None
         else:
             # product_id may be a plain name string
             product_name = str(sb_row["product_id"])
@@ -378,8 +399,14 @@ def generate_storyboard_clips(
             scene_id    = scene.get("id", 0)
             scene_index = scene.get("scene_index", 0)
             duration    = float(scene.get("duration_seconds") or 5.0)
-            prompt      = build_clip_prompt(scene, video_type, product_name=product_name)
-            pred_id = provider.create_prediction(prompt, duration)
+            prompt      = build_clip_prompt(
+                scene, video_type,
+                product_name=product_name,
+                product_description=product_description,
+            )
+            pred_id = provider.create_prediction(
+                prompt, duration, image_url=product_image_url
+            )
             if pred_id:
                 _logger.info("Created prediction %s for scene %s", pred_id, scene_id)
                 # Write pending row with prediction_id

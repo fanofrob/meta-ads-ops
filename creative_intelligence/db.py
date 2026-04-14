@@ -132,6 +132,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
            ON video_scene_clips(scene_id)""",
         # Add prediction_id for async Replicate predictions (survives container restarts)
         "ALTER TABLE video_scene_clips ADD COLUMN prediction_id TEXT",
+        # Add product image URL — used as first-frame reference for image-to-video clip generation
+        "ALTER TABLE products ADD COLUMN image_url TEXT",
     ]
     for stmt in migrations:
         try:

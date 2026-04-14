@@ -132,7 +132,9 @@ def api_products() -> Any:
                       COALESCE(category, name) as label,
                       category,
                       MIN(name) as raw_name,
-                      AVG(price) as price
+                      AVG(price) as price,
+                      MIN(image_url) as image_url,
+                      MIN(short_description) as short_description
                FROM products
                WHERE active = 1
                GROUP BY COALESCE(category, name)
@@ -145,6 +147,45 @@ def api_products() -> Any:
             d["display_name"] = _clean_product_display_name(d["raw_name"], d.get("category"))
             results.append(d)
         return jsonify(results)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/products/<product_id>", methods=["GET"])
+def api_product_detail(product_id: str) -> Any:
+    """Return full detail for a single product."""
+    try:
+        conn = _db()
+        row = conn.execute(
+            "SELECT * FROM products WHERE id = ? LIMIT 1", (product_id,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Product not found"}), 404
+        return jsonify(dict(row))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/products/<product_id>", methods=["PATCH"])
+def api_product_update(product_id: str) -> Any:
+    """Update editable product fields. Currently supports: image_url, short_description."""
+    try:
+        data = request.get_json(force=True) or {}
+        allowed = {"image_url", "short_description", "description", "positioning"}
+        updates = {k: v for k, v in data.items() if k in allowed}
+        if not updates:
+            return jsonify({"error": "No updatable fields provided"}), 400
+        conn = _db()
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [product_id]
+        with conn:
+            conn.execute(
+                f"UPDATE products SET {set_clause}, updated_at = datetime('now') WHERE id = ?",
+                values,
+            )
+        conn.close()
+        return jsonify({"ok": True, "updated": list(updates.keys())})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
