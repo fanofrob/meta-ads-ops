@@ -28,65 +28,121 @@ from typing import Any
 # Motion prompt building
 # ─────────────────────────────────────────────
 
-# Per-video-type prompt prefix
-_TYPE_MOTION_PREFIX: dict[str, str] = {
-    "ugc":               "Authentic handheld selfie-style footage, natural light, genuine emotion.",
-    "farm_origin":       "Cinematic nature footage, golden hour light, slow reveal, sweeping wide shots.",
-    "product_hero":      "Studio product shot, clean background, smooth camera orbit, dramatic lighting.",
-    "comparison_reveal": "Split-screen reveal, dramatic contrast, smooth transition between two states.",
+# Visual style anchor per video type — prepended to EVERY scene prompt for consistency
+_TYPE_STYLE_ANCHOR: dict[str, str] = {
+    "ugc": (
+        "Authentic smartphone-style handheld footage. Real person, natural skin tones. "
+        "Warm indoor or outdoor natural light. Genuine, unpolished aesthetic."
+    ),
+    "farm_origin": (
+        "Cinematic farm-origin commercial advertisement. Lush tropical orchard. "
+        "Rich saturated greens, golden hour warm light filtering through canopy leaves. "
+        "Shallow depth of field. Professional 4K cinematography. Warm earthy color grade."
+    ),
+    "product_hero": (
+        "Premium studio product advertisement. Clean neutral background. "
+        "Dramatic soft-box lighting with subtle rim light. Smooth camera orbit. "
+        "Ultra-sharp product detail. Professional commercial cinematography."
+    ),
+    "comparison_reveal": (
+        "Dramatic split-screen commercial. High contrast between two states. "
+        "Clean graphic aesthetic. Professional broadcast quality."
+    ),
 }
 
-# Per-purpose motion hints
-_PURPOSE_MOTION: dict[str, str] = {
-    "hook":      "Fast eye-catching open, bold movement to grab attention immediately.",
-    "problem":   "Relatable struggle, slightly chaotic, real-world handheld feel.",
-    "solution":  "Smooth reveal motion, satisfying product emergence.",
-    "demo":      "Close-up detail tracking shot, product in use, smooth slow motion.",
-    "proof":     "Confident on-screen text animation, testimonial feel, steady shot.",
-    "cta":       "Bold forward motion, energetic finish, camera push-in toward product.",
-    "origin":    "Wide establishing shot, slow pan across landscape or facility.",
-    "harvest":   "Macro detail shot of produce, gentle movement, natural textures.",
-    "lifestyle": "Aspirational lifestyle context, warm light, slow dolly or pan.",
-    "reveal":    "Before/after split, dramatic wipe transition, clean comparison.",
+# Camera motion per scene camera_type + movement combination
+_CAMERA_MOTION: dict[str, str] = {
+    "tripod_none":         "locked-off static shot, perfectly steady",
+    "tripod_pan":          "slow smooth tripod pan left to right",
+    "tripod_tilt":         "slow smooth tripod tilt down",
+    "tripod_zoom":         "slow smooth optical zoom in",
+    "handheld_none":       "subtle handheld breathing movement",
+    "handheld_tracking":   "gentle handheld follow/tracking shot",
+    "drone_none":          "steady aerial drone hover",
+    "drone_pan":           "slow aerial drone pan",
+    "drone_push":          "slow aerial drone push forward",
+    "gimbal_dolly":        "smooth gimbal dolly push forward",
+    "gimbal_orbit":        "smooth gimbal orbit around subject",
 }
 
-_DEFAULT_MOTION = "smooth cinematic motion, natural camera movement"
+# Per-purpose subject and motion guidance
+_PURPOSE_GUIDANCE: dict[str, str] = {
+    "establishing": "Wide establishing shot. Camera slowly reveals the full environment. Sense of place and scale.",
+    "hook":         "Dynamic opening shot. Bold striking visual. Immediate visual impact. Camera moves with energy.",
+    "harvest":      "Intimate close-up of hands harvesting. Slow deliberate movement. Tactile textures prominent.",
+    "quality":      "Extreme macro close-up revealing surface texture and freshness detail. Very slow drift.",
+    "process":      "Mid-shot showing careful skilled hands at work. Methodical deliberate movement.",
+    "hero":         "Beauty shot of product. Camera slowly orbits or glides. Maximum visual appeal.",
+    "lifestyle":    "Aspirational lifestyle context. Product integrated naturally. Warm inviting atmosphere.",
+    "cta":          "Bold confident final shot. Camera pushes toward product. Energetic decisive movement.",
+    "demo":         "Clear detailed product demonstration. Smooth tracking movement follows the action.",
+    "problem":      "Relatable real-world scene. Slightly imperfect, authentic feel.",
+    "solution":     "Satisfying reveal. Smooth controlled movement. Problem resolved.",
+    "proof":        "Confident steady shot. Clean and credible. Subtle slow zoom.",
+    "origin":       "Wide sweeping landscape. Slow cinematic pan. Sense of provenance and journey.",
+    "reveal":       "Dramatic reveal motion. Before/after contrast. Smooth transition.",
+}
+
+_DEFAULT_PURPOSE = "Smooth cinematic movement. Subject clearly visible. Professional commercial quality."
 
 
-def build_clip_prompt(scene: dict, video_type: str = "ugc") -> str:
+def build_clip_prompt(
+    scene: dict,
+    video_type: str = "ugc",
+    product_name: str | None = None,
+) -> str:
     """
-    Build a motion-optimised text prompt for a single storyboard scene.
+    Build a detailed, consistent text-to-video prompt for a storyboard scene.
 
-    Combines:
-      - video-type motion prefix (sets aesthetic tone)
-      - scene purpose hint (directs movement style)
-      - visual description (subject matter)
-      - product focus (if any)
-      - lighting style (if any)
-
-    The prompt intentionally emphasises MOTION over static description because
-    text-to-video models (e.g. runwayml/gen-4.5) respond well to action words
-    rather than purely visual descriptions.
+    Uses a style anchor (consistent across all scenes) + scene-specific subject/motion.
+    product_name is inserted into the prompt so the model renders the right product.
     """
-    type_prefix = _TYPE_MOTION_PREFIX.get(video_type, "Cinematic footage,")
+    # 1. Style anchor — locks in consistent look across all scenes
+    style_anchor = _TYPE_STYLE_ANCHOR.get(video_type, "Cinematic commercial footage.")
+
+    # 2. Purpose-based subject/motion guidance
     purpose = (scene.get("purpose") or "demo").lower().strip()
-    purpose_hint = _PURPOSE_MOTION.get(purpose, _DEFAULT_MOTION)
+    purpose_guide = _PURPOSE_GUIDANCE.get(purpose, _DEFAULT_PURPOSE)
+
+    # 3. Scene visual description (from storyboard LLM)
     visual = (scene.get("visual_description") or "").strip()
-    product_focus = (scene.get("product_focus") or "").strip()
+
+    # 4. Camera motion from shot metadata
+    cam_type = (scene.get("camera_type") or "").lower().strip()
+    movement = (scene.get("movement") or "none").lower().strip()
+    cam_key = f"{cam_type}_{movement}" if cam_type else None
+    cam_motion = _CAMERA_MOTION.get(cam_key or "", "")
+
+    # 5. Product mention — always name the product explicitly for consistency
+    product_str = ""
+    if product_name:
+        product_str = f"Product: {product_name}."
+
+    # 6. Lighting
     lighting = (scene.get("lighting_style") or "").strip()
 
-    parts = [type_prefix, purpose_hint]
+    # 7. Product focus detail
+    product_focus = (scene.get("product_focus") or "").strip()
+
+    # Assemble prompt — order matters: style → subject → motion → details → quality
+    parts: list[str] = [style_anchor]
+    parts.append(purpose_guide)
     if visual:
         parts.append(visual)
+    if cam_motion:
+        parts.append(f"Camera: {cam_motion}.")
+    if product_str:
+        parts.append(product_str)
     if product_focus:
-        parts.append(f"Product focus: {product_focus}.")
+        parts.append(product_focus)
     if lighting:
         parts.append(f"Lighting: {lighting}.")
+    parts.append(
+        "Photorealistic. No text overlays. No watermarks. No logos. "
+        "Smooth natural motion. Professional commercial advertisement quality."
+    )
 
-    # Append universal quality modifiers
-    parts.append("Photorealistic, high quality, no text overlays, no watermarks.")
-
-    return " ".join(p.rstrip(".") + "." for p in parts if p)
+    return " ".join(p.rstrip(".").strip() + "." for p in parts if p.strip())
 
 
 # ─────────────────────────────────────────────
@@ -102,6 +158,7 @@ def generate_scene_clip(
     aspect_ratio: str = "9:16",
     output_dir: Path | None = None,
     video_type: str = "ugc",
+    product_name: str | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """
@@ -124,7 +181,7 @@ def generate_scene_clip(
     scene_id = scene.get("id", 0)
     scene_index = scene.get("scene_index", 0)
     duration = float(scene.get("duration_seconds") or 5.0)
-    prompt = build_clip_prompt(scene, video_type)
+    prompt = build_clip_prompt(scene, video_type, product_name=product_name)
 
     if dry_run:
         return {
@@ -268,11 +325,24 @@ def generate_storyboard_clips(
         ).fetchall()
         existing_scene_ids = {r["scene_id"] for r in rows}
 
-    # Fetch storyboard metadata for video_type
+    # Fetch storyboard metadata for video_type + product name
     sb_row = conn.execute(
-        "SELECT video_type FROM video_storyboards WHERE id = ?", (storyboard_id,)
+        "SELECT video_type, product_id FROM video_storyboards WHERE id = ?", (storyboard_id,)
     ).fetchone()
     video_type = (sb_row["video_type"] if sb_row else None) or "ugc"
+
+    # Resolve product name for consistent prompt anchoring
+    product_name: str | None = None
+    if sb_row and sb_row["product_id"]:
+        prod_row = conn.execute(
+            "SELECT title FROM products WHERE id = ? OR shopify_id = ? LIMIT 1",
+            (sb_row["product_id"], sb_row["product_id"]),
+        ).fetchone()
+        if prod_row:
+            product_name = prod_row["title"]
+        else:
+            # product_id may be a plain name string
+            product_name = str(sb_row["product_id"])
 
     results: list[dict] = []
     skipped = 0
@@ -305,7 +375,7 @@ def generate_storyboard_clips(
             scene_id    = scene.get("id", 0)
             scene_index = scene.get("scene_index", 0)
             duration    = float(scene.get("duration_seconds") or 5.0)
-            prompt      = build_clip_prompt(scene, video_type)
+            prompt      = build_clip_prompt(scene, video_type, product_name=product_name)
             pred_id = provider.create_prediction(prompt, duration)
             if pred_id:
                 _logger.info("Created prediction %s for scene %s", pred_id, scene_id)
