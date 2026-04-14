@@ -774,6 +774,16 @@ async function loadStoryboard(id, prefetched=null) {
 
     renderStoryboard(sb, detail);
 
+    // Sync product selector to this storyboard's product, then show image panel
+    const sbProductId = detail.product_id || sb.product_id || null;
+    if (sbProductId) {
+      const pSel = document.getElementById('productSelect');
+      if (pSel && pSel.value !== sbProductId) {
+        pSel.value = sbProductId;
+      }
+      onProductChange();
+    }
+
     // Restore approve/fav button state from fetched data
     const data = prefetched ? detail : detail;
     const sbApproveBtn = document.getElementById('sbApproveBtn');
@@ -1197,6 +1207,7 @@ function applyUrlParams() {
   // Apply preset product after options are populated
   if (window._presetProductId) {
     document.getElementById('productSelect').value = window._presetProductId;
+    onProductChange();
   }
   try { await loadList(); } catch(e) { console.warn('loadList', e); }
 
