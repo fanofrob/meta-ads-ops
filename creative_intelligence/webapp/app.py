@@ -2569,6 +2569,8 @@ def video_generate_clips(storyboard_id: int) -> Any:
         aspect_ratio  = body.get("aspect_ratio", "9:16")
         skip_existing = bool(body.get("skip_existing", True))
         dry_run       = bool(body.get("dry_run", False))
+        # Allow UI to override the clip model (e.g. minimax/video-01-live for image-to-video)
+        clip_model    = body.get("clip_model") or None
 
         conn = _db()
         sb = conn.execute(
@@ -2639,6 +2641,7 @@ def video_generate_clips(storyboard_id: int) -> Any:
             storyboard_id=storyboard_id,
             conn=conn,
             provider_name=provider_name,
+            clip_model=clip_model,
             aspect_ratio=aspect_ratio,
             skip_existing=skip_existing,
             dry_run=dry_run,

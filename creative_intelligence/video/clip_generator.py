@@ -289,6 +289,7 @@ def generate_storyboard_clips(
     conn: sqlite3.Connection,
     *,
     provider_name: str | None = None,
+    clip_model: str | None = None,
     aspect_ratio: str = "9:16",
     output_dir: Path | None = None,
     max_workers: int = 3,
@@ -387,7 +388,7 @@ def generate_storyboard_clips(
     from creative_intelligence import config
 
     clip_dir = output_dir or Path(config.CI_CLIP_OUTPUT_DIR) / str(storyboard_id)
-    provider = get_clip_provider(provider_name)
+    provider = get_clip_provider(provider_name, clip_model=clip_model)
 
     # ── Async prediction path (Replicate) ────────────────────────────
     # Create all predictions instantly (~1s each), store prediction IDs in DB,
