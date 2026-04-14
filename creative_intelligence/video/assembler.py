@@ -743,20 +743,20 @@ def assemble_video(
 
                 local_path: str | None = None
                 if clip_path_str and not clip_path_str.startswith("mock://"):
-                    # Prefer local file (always use if it exists)
                     if local_stored and Path(local_stored).exists():
                         local_path = local_stored
+                        _log.getLogger(__name__).info("Scene %s: using local clip %s", scene_id, local_path)
                     elif remote_url and remote_url.startswith(("http://", "https://")):
-                        # Try passing URL directly to ffmpeg/moviepy first (no disk needed)
-                        local_path = remote_url  # moviepy/ffmpeg can open http:// URLs
+                        # Download URL to a temp file — more reliable than streaming via ffmpeg
+                        import tempfile as _tf
+                        tmp_clip = Path(_tf.mktemp(suffix=".mp4"))
+                        if _download_video_clip(remote_url, tmp_clip):
+                            local_path = str(tmp_clip)
+                            _log.getLogger(__name__).info("Scene %s: downloaded from URL", scene_id)
+                        else:
+                            _log.getLogger(__name__).warning("Scene %s: URL download failed (%s)", scene_id, remote_url[:60])
                     elif clip_path_str and not clip_path_str.startswith("http"):
                         local_path = clip_path_str if Path(clip_path_str).exists() else None
-
-                    if local_path:
-                        _log.getLogger(__name__).info(
-                            "Assembling scene %s from: %s", scene_id,
-                            "local" if local_path == local_stored else "url"
-                        )
 
                     if local_path:
                         try:
@@ -780,8 +780,8 @@ def assemble_video(
                             scenes_used += 1
                             vc.close()
                             used_clip = True
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            _log.getLogger(__name__).warning("Scene %s: VideoFileClip failed: %s", scene_id, e)
 
             if not used_clip:
                 # Fallback to Ken Burns only if a frame image is available
@@ -832,20 +832,10 @@ def assemble_video(
                 (storyboard_id,),
             ).fetchone()["n"]
             if has_ok_clips:
-                # Clips exist but files are unavailable (e.g. CDN URLs expired)
-                # Mark them all as failed so they get re-generated on next attempt
-                conn.execute(
-                    """UPDATE video_scene_clips SET status='error',
-                       error_message='Clip file unavailable (URL expired) — regenerate'
-                       WHERE storyboard_id=? AND status='ok'
-                       AND clip_local_path IS NULL""",
-                    (storyboard_id,),
-                )
-                conn.commit()
                 return {"output_id": None, "output_path": None, "duration": 0,
                         "scene_count": scene_count, "scenes_used": 0,
                         "status": "clips_expired",
-                        "error": "Clip files have expired. Add Replicate credits then click Retry Failed."}
+                        "error": "Clip files unavailable. Click Retry Failed to regenerate."}
         return {"output_id": None, "output_path": None, "duration": 0,
                 "scene_count": scene_count, "scenes_used": 0,
                 "status": "no_frames",
