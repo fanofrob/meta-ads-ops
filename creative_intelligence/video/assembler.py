@@ -718,7 +718,7 @@ def assemble_video(
         # Look up video_scene_clips rows (status=ok) for each scene.
         # Falls back to Ken Burns for any scene without a ready clip.
         clip_rows = conn.execute(
-            """SELECT scene_id, scene_index, clip_local_path, clip_url
+            """SELECT id, scene_id, scene_index, clip_local_path, clip_url
                FROM video_scene_clips
                WHERE storyboard_id = ? AND status = 'ok'
                ORDER BY scene_index""",
@@ -825,6 +825,27 @@ def assemble_video(
             scenes_used += 1
 
     if not clips:
+        # Give a specific error for clip mode when clips exist but couldn't be loaded
+        if motion_mode == "clip":
+            has_ok_clips = conn.execute(
+                "SELECT COUNT(*) as n FROM video_scene_clips WHERE storyboard_id=? AND status='ok'",
+                (storyboard_id,),
+            ).fetchone()["n"]
+            if has_ok_clips:
+                # Clips exist but files are unavailable (e.g. CDN URLs expired)
+                # Mark them all as failed so they get re-generated on next attempt
+                conn.execute(
+                    """UPDATE video_scene_clips SET status='error',
+                       error_message='Clip file unavailable (URL expired) — regenerate'
+                       WHERE storyboard_id=? AND status='ok'
+                       AND clip_local_path IS NULL""",
+                    (storyboard_id,),
+                )
+                conn.commit()
+                return {"output_id": None, "output_path": None, "duration": 0,
+                        "scene_count": scene_count, "scenes_used": 0,
+                        "status": "clips_expired",
+                        "error": "Clip files have expired. Add Replicate credits then click Retry Failed."}
         return {"output_id": None, "output_path": None, "duration": 0,
                 "scene_count": scene_count, "scenes_used": 0,
                 "status": "no_frames",
