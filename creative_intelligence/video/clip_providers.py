@@ -14,10 +14,13 @@ SceneClipProvider.generate(prompt, duration, aspect_ratio, scene_id) → str | N
 from __future__ import annotations
 
 import hashlib
+import logging
 import urllib.request
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 
 class SceneClipProvider(ABC):
@@ -115,18 +118,27 @@ class ReplicateSceneClipProvider(SceneClipProvider):
                 self._model,
                 input={"prompt": prompt, "duration": duration_sec},
             )
-        except Exception:
+        except Exception as exc:
+            log.error("Replicate call failed for scene %s: %s", scene_id, exc, exc_info=True)
             return None
 
-        # Extract URL from varied output shapes
+        log.debug("Replicate raw output type=%s value=%r", type(output).__name__, output)
+
+        # Extract URL from varied output shapes replicate SDK can return
         video_url: str | None = None
+
+        # 1. Plain string URL
         if isinstance(output, str) and output.startswith("http"):
             video_url = output
+
+        # 2. Object with .url attribute/method (FileOutput, etc.)
         elif hasattr(output, "url"):
             try:
                 video_url = str(output.url())
             except TypeError:
                 video_url = str(output.url)
+
+        # 3. List / tuple of items
         elif isinstance(output, (list, tuple)) and output:
             item = output[0]
             if isinstance(item, str) and item.startswith("http"):
@@ -137,7 +149,32 @@ class ReplicateSceneClipProvider(SceneClipProvider):
                 except TypeError:
                     video_url = str(item.url)
 
+        # 4. Generator / iterator — consume first item
+        else:
+            try:
+                first = next(iter(output))  # type: ignore[arg-type]
+                if isinstance(first, str) and first.startswith("http"):
+                    video_url = first
+                elif hasattr(first, "url"):
+                    try:
+                        video_url = str(first.url())
+                    except TypeError:
+                        video_url = str(first.url)
+            except (StopIteration, TypeError):
+                pass
+
+        # 5. Last resort: cast the whole output to str and see if it looks like a URL
         if not video_url:
+            candidate = str(output) if output is not None else ""
+            if candidate.startswith("http"):
+                video_url = candidate
+
+        if not video_url:
+            log.error(
+                "Replicate returned no usable URL for scene %s. "
+                "output type=%s repr=%r",
+                scene_id, type(output).__name__, output,
+            )
             return None
 
         # Return URL directly — avoids downloading large files to ephemeral disk.

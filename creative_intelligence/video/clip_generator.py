@@ -136,18 +136,29 @@ def generate_scene_clip(
     clip_dir = output_dir or Path(config.CI_CLIP_OUTPUT_DIR) / str(storyboard_id)
     provider = get_clip_provider(provider_name)
 
-    clip_path = provider.generate(
-        prompt=prompt,
-        duration=duration,
-        aspect_ratio=aspect_ratio,
-        scene_id=scene_id,
-        output_dir=clip_dir,
-    )
+    clip_path: str | None = None
+    error_msg: str | None = None
+    try:
+        clip_path = provider.generate(
+            prompt=prompt,
+            duration=duration,
+            aspect_ratio=aspect_ratio,
+            scene_id=scene_id,
+            output_dir=clip_dir,
+        )
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).error(
+            "Provider %s raised for scene %s: %s", provider.name, scene_id, exc, exc_info=True
+        )
+        error_msg = f"{type(exc).__name__}: {exc}"
+
+    if clip_path is None and error_msg is None:
+        error_msg = "Provider returned no clip"
 
     is_mock = clip_path and clip_path.startswith("mock://")
     is_url  = clip_path and clip_path.startswith(("http://", "https://"))
     status = "ok" if clip_path else "error"
-    error_msg = None if clip_path else "Provider returned no clip"
 
     if not dry_run:
         _upsert_scene_clip(
@@ -279,15 +290,29 @@ def generate_storyboard_clips(
                 "_scene": scene, "_duration": duration,
             }
 
-        clip_path = provider.generate(
-            prompt=prompt,
-            duration=duration,
-            aspect_ratio=aspect_ratio,
-            scene_id=scene_id,
-            output_dir=clip_dir,
-        )
+        clip_path_w: str | None = None
+        error_msg_w: str | None = None
+        try:
+            clip_path_w = provider.generate(
+                prompt=prompt,
+                duration=duration,
+                aspect_ratio=aspect_ratio,
+                scene_id=scene_id,
+                output_dir=clip_dir,
+            )
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error(
+                "Provider %s raised for scene %s: %s", provider.name, scene_id, exc, exc_info=True
+            )
+            error_msg_w = f"{type(exc).__name__}: {exc}"
+
+        if clip_path_w is None and error_msg_w is None:
+            error_msg_w = "Provider returned no clip"
+
+        clip_path = clip_path_w
         status    = "ok" if clip_path else "error"
-        error_msg = None if clip_path else "Provider returned no clip"
+        error_msg = error_msg_w
         return {
             "scene_id": scene_id, "scene_index": scene_index,
             "status": status, "clip_path": clip_path, "clip_url": None,
