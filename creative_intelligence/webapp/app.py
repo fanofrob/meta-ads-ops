@@ -1148,7 +1148,7 @@ def render_generate() -> Any:
       generate_images      : bool?  — override CI_IMAGE_GENERATION_ENABLED
       model                : str?   — Replicate model slug override (e.g. "black-forest-labs/flux-1.1-pro")
       dry_run              : bool?  — default False
-      background_only      : bool?  — skip PIL compositing, return raw images only (default: False)
+      background_only      : bool?  — skip PIL compositing, AI image is final ad (default: True)
     }
     """
     from creative_intelligence.rendering.static_renderer import render_static_brief
@@ -1165,7 +1165,7 @@ def render_generate() -> Any:
         gen_images      = body.get("generate_images")   # None = use config
         model           = body.get("model") or None
         dry_run         = bool(body.get("dry_run", False))
-        background_only = bool(body.get("background_only", False))
+        background_only = bool(body.get("background_only", True))
 
         conn   = _db()
         result = render_static_brief(
