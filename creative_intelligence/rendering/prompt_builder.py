@@ -59,10 +59,13 @@ _VARIANT_NEGATIVES: dict[str, str] = {
 }
 
 # Base negative prompt applied to all variants
+# NOTE: "text overlays" intentionally omitted — we want the AI to bake
+# the headline and CTA into the image as styled ad copy.
 _BASE_NEGATIVE = (
-    "text overlays, watermarks, blurry, low quality, distorted, out of focus, "
+    "blurry, low quality, distorted, out of focus, "
     "cluttered, generic stock photo, people looking at camera awkwardly, "
-    "fake-looking, oversaturated, pixelated, jpeg artifacts"
+    "fake-looking, oversaturated, pixelated, jpeg artifacts, "
+    "watermarks, logos, illegible text, random scribbles"
 )
 
 # Known shot-type keywords to detect in composition notes
@@ -116,13 +119,28 @@ def _background_style(visual_direction: str) -> str:
     return sentence.strip()
 
 
-def _build_visual_prompt(brief: dict[str, Any], variant: str) -> str:
+def _build_visual_prompt(
+    brief: dict[str, Any],
+    variant: str,
+    headline: str = "",
+    body: str = "",
+    cta: str = "",
+) -> str:
+    """Build the full image-generation prompt including ad copy so the AI
+    bakes the text directly into the image as styled ad typography."""
     parts = [
         brief.get("visual_direction", "").strip(),
         brief.get("product_visibility", "").strip(),
         brief.get("composition_notes", "").strip(),
         _VARIANT_MODIFIERS[variant],
     ]
+    # Inject ad copy — the model will render these as styled text in the image
+    if headline:
+        parts.append(f'large bold headline text reading "{headline.upper()}"')
+    if body:
+        parts.append(f'subtitle copy "{body}"')
+    if cta:
+        parts.append(f'prominent call-to-action button with text "{cta.upper()}"')
     return ". ".join(p for p in parts if p)
 
 
@@ -185,7 +203,12 @@ def build_render_specs(
         spec.update({
             "production_output_id": production_output_id,
             "concept_title":     headline_overlay[:80],
-            "visual_prompt":     _build_visual_prompt(brief, variant),
+            "visual_prompt":     _build_visual_prompt(
+                brief, variant,
+                headline=headline_overlay,
+                body=body_overlay,
+                cta=brief.get("cta", ""),
+            ),
             "negative_prompt":   _build_negative_prompt(variant),
             "headline_overlay":  headline_overlay,
             "body_overlay":      body_overlay,

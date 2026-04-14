@@ -44,7 +44,7 @@ def render_static_brief(
     provider_name: str | None = None,
     model: str | None = None,
     dry_run: bool = False,
-    background_only: bool = False,
+    background_only: bool = True,
 ) -> dict[str, Any]:
     """
     Build render specs for a stored StaticAdBrief and optionally generate images.
@@ -155,7 +155,11 @@ def render_static_brief(
                     **generate_kwargs,
                 )
                 for bg_path in paths:
-                    # ── 5a. Save background asset ──────────────────────────
+                    # ── 5a. Save generated image ───────────────────────────
+                    # background_only=True (default): AI image IS the final ad
+                    # (prompt already includes headline/CTA so text is baked in)
+                    # background_only=False: save as background, then composite
+                    primary_type = "final_ad" if background_only else "background"
                     bg_asset_id = save_asset(
                         render_output_id=render_output_id,
                         variant_label=spec["variant_label"],
@@ -164,20 +168,20 @@ def render_static_brief(
                         metadata={
                             "concept_title": spec.get("concept_title", ""),
                             "aspect_ratio":  spec["aspect_ratio"],
-                            "asset_role":    "background",
+                            "asset_role":    primary_type,
                         },
-                        asset_type="background",
+                        asset_type=primary_type,
                     )
                     assets.append({
                         "variant_label": spec["variant_label"],
                         "path":          bg_path,
                         "asset_id":      bg_asset_id,
-                        "asset_type":    "background",
+                        "asset_type":    primary_type,
                     })
 
-                    # ── 5b. Composite final ad ─────────────────────────────
+                    # ── 5b. Composite final ad (only when explicitly requested) ──
                     if background_only:
-                        continue  # skip compositing when caller opts out
+                        continue
 
                     # Use local file if save_asset already downloaded it
                     bg_for_composite = bg_path
