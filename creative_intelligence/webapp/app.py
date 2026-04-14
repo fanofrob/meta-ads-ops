@@ -2579,6 +2579,18 @@ def video_generate_clips(storyboard_id: int) -> Any:
             (storyboard_id,),
         ).fetchone()["n"]
 
+        # When retrying (skip_existing=False), reset expired/failed clips so they
+        # are treated as new and get fresh Replicate predictions.
+        if not skip_existing:
+            with conn:
+                conn.execute(
+                    """UPDATE video_scene_clips
+                       SET status = 'pending', clip_path = NULL, clip_url = NULL,
+                           prediction_id = NULL, error_message = NULL
+                       WHERE storyboard_id = ? AND status IN ('expired', 'failed')""",
+                    (storyboard_id,),
+                )
+
         # Create all Replicate predictions synchronously — each takes ~1s, not 30-90s.
         # Predictions run on Replicate's infrastructure and survive container restarts.
         # UI polls /sync-clips to pick up results as they complete.

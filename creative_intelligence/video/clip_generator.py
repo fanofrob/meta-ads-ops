@@ -31,22 +31,25 @@ from typing import Any
 # Visual style anchor per video type — prepended to EVERY scene prompt for consistency
 _TYPE_STYLE_ANCHOR: dict[str, str] = {
     "ugc": (
-        "Authentic smartphone-style handheld footage. Real person, natural skin tones. "
-        "Warm indoor or outdoor natural light. Genuine, unpolished aesthetic."
+        "Authentic UGC-style video ad. Real human hands and face, photorealistic skin, "
+        "natural proportions. Warm natural window light. Handheld, slightly unsteady. "
+        "Genuine unpolished feel. Shot on iPhone. NOT CGI, NOT animated, NOT illustrated."
     ),
     "farm_origin": (
-        "Cinematic farm-origin commercial advertisement. Lush tropical orchard. "
-        "Rich saturated greens, golden hour warm light filtering through canopy leaves. "
-        "Shallow depth of field. Professional 4K cinematography. Warm earthy color grade."
+        "Cinematic farm-origin commercial. Lush tropical orchard setting. "
+        "Rich saturated greens, golden hour sunlight through canopy. "
+        "Shallow depth of field. 4K cinematography. Warm earthy tones. "
+        "Photorealistic fruit and environment. NOT CGI, NOT illustrated."
     ),
     "product_hero": (
-        "Premium studio product advertisement. Clean neutral background. "
-        "Dramatic soft-box lighting with subtle rim light. Smooth camera orbit. "
-        "Ultra-sharp product detail. Professional commercial cinematography."
+        "Premium product hero commercial. Clean white or neutral studio background. "
+        "Dramatic soft-box rim lighting. Ultra-sharp photorealistic product detail. "
+        "Smooth slow camera movement. Professional commercial cinematography. "
+        "NOT CGI, NOT illustrated, NOT cartoon."
     ),
     "comparison_reveal": (
-        "Dramatic split-screen commercial. High contrast between two states. "
-        "Clean graphic aesthetic. Professional broadcast quality."
+        "Dramatic split-screen commercial ad. High contrast between two states. "
+        "Clean graphic aesthetic. Professional broadcast quality. Photorealistic."
     ),
 }
 
