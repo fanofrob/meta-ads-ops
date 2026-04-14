@@ -289,125 +289,77 @@ def generate_storyboard_clips(
         else:
             scenes_to_generate.append(scene)
 
-    # Parallel generation — only provider calls in threads; DB writes happen
-    # serially in the main thread afterward (SQLite is not thread-safe by default).
-    from creative_intelligence.video.clip_providers import get_clip_provider
+    from creative_intelligence.video.clip_providers import get_clip_provider, ReplicateSceneClipProvider
     from creative_intelligence import config
 
     clip_dir = output_dir or Path(config.CI_CLIP_OUTPUT_DIR) / str(storyboard_id)
     provider = get_clip_provider(provider_name)
 
-    def _worker(scene: dict) -> dict:
-        """Call provider only — no DB access."""
-        scene_id    = scene.get("id", 0)
-        scene_index = scene.get("scene_index", 0)
-        duration    = float(scene.get("duration_seconds") or 5.0)
-        prompt      = build_clip_prompt(scene, video_type)
-
-        if dry_run:
-            return {
-                "scene_id": scene_id, "scene_index": scene_index,
-                "status": "dry_run", "clip_path": None, "clip_url": None,
-                "prompt": prompt, "error": None,
-                "_scene": scene, "_duration": duration,
-            }
-
-        clip_path_w: str | None = None
-        error_msg_w: str | None = None
-        try:
-            clip_path_w = provider.generate(
-                prompt=prompt,
-                duration=duration,
-                aspect_ratio=aspect_ratio,
-                scene_id=scene_id,
-                output_dir=clip_dir,
-            )
-        except Exception as exc:
-            import logging
-            logging.getLogger(__name__).error(
-                "Provider %s raised for scene %s: %s", provider.name, scene_id, exc, exc_info=True
-            )
-            error_msg_w = f"{type(exc).__name__}: {exc}"
-
-        if clip_path_w is None and error_msg_w is None:
-            error_msg_w = "Provider returned no clip"
-
-        is_url_w = clip_path_w and clip_path_w.startswith(("http://", "https://"))
-        is_mock_w = clip_path_w and clip_path_w.startswith("mock://")
-
-        # Download URL clips to persistent volume immediately — CDN URLs expire ~24h
-        clip_local_w: str | None = None
-        if is_url_w and clip_path_w:
-            clip_dir.mkdir(parents=True, exist_ok=True)
-            local_dest = clip_dir / f"scene_{scene_id}.mp4"
-            try:
-                import urllib.request as _ur
-                _ur.urlretrieve(clip_path_w, str(local_dest))
-                if local_dest.exists() and local_dest.stat().st_size > 0:
-                    clip_local_w = str(local_dest)
-                else:
-                    local_dest.unlink(missing_ok=True)
-            except Exception as dl_exc:
-                import logging
-                logging.getLogger(__name__).warning(
-                    "Could not download clip URL for scene %s: %s", scene_id, dl_exc
+    # ── Async prediction path (Replicate) ────────────────────────────
+    # Create all predictions instantly (~1s each), store prediction IDs in DB,
+    # then poll for results. Predictions survive container restarts.
+    if isinstance(provider, ReplicateSceneClipProvider) and not dry_run:
+        import logging as _log
+        _logger = _log.getLogger(__name__)
+        for scene in scenes_to_generate:
+            scene_id    = scene.get("id", 0)
+            scene_index = scene.get("scene_index", 0)
+            duration    = float(scene.get("duration_seconds") or 5.0)
+            prompt      = build_clip_prompt(scene, video_type)
+            pred_id = provider.create_prediction(prompt, duration)
+            if pred_id:
+                _logger.info("Created prediction %s for scene %s", pred_id, scene_id)
+                # Write pending row with prediction_id
+                conn.execute(
+                    """DELETE FROM video_scene_clips WHERE storyboard_id=? AND scene_id=?""",
+                    (storyboard_id, scene_id),
                 )
-        elif not is_mock_w and clip_path_w:
-            clip_local_w = clip_path_w
-
-        status    = "ok" if clip_path_w else "error"
-        error_msg = error_msg_w
-        return {
-            "scene_id": scene_id, "scene_index": scene_index,
-            "status": status,
-            "clip_path": clip_local_w or clip_path_w,
-            "clip_url": clip_path_w if is_url_w else None,
-            "clip_local_path": clip_local_w,
-            "prompt": prompt, "error": error_msg,
-            "_scene": scene, "_duration": duration,
-        }
-
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(_worker, s): s for s in scenes_to_generate}
-        for fut in as_completed(futures):
-            try:
-                results.append(fut.result())
-            except Exception as exc:
-                scene = futures[fut]
+                conn.execute(
+                    """INSERT INTO video_scene_clips
+                       (storyboard_id, scene_id, scene_index, provider, model, prompt,
+                        duration_seconds, aspect_ratio, status, prediction_id)
+                       VALUES (?,?,?,?,?,?,?,?,'pending',?)""",
+                    (storyboard_id, scene_id, scene_index,
+                     provider.name, getattr(provider, "_model", provider.name),
+                     prompt, duration, aspect_ratio, pred_id),
+                )
+                conn.commit()
                 results.append({
-                    "scene_id": scene["id"], "scene_index": scene["scene_index"],
-                    "status": "error", "clip_path": None, "clip_url": None,
-                    "prompt": None, "error": str(exc),
-                    "_scene": scene, "_duration": 5.0,
+                    "scene_id": scene_id, "scene_index": scene_index,
+                    "status": "pending", "prediction_id": pred_id,
+                    "prompt": prompt, "error": None,
                 })
-
-    # Persist all results to DB serially (avoids SQLite cross-thread errors)
-    if not dry_run:
-        for r in results:
-            if r.get("status") in ("ok", "error") and r.get("_scene"):
-                _upsert_scene_clip(
-                    conn=conn,
-                    storyboard_id=storyboard_id,
-                    scene_id=r["scene_id"],
-                    scene_index=r["scene_index"],
-                    provider=provider.name,
-                    model=getattr(provider, "_model", provider.name),
-                    prompt=r["prompt"] or "",
-                    clip_local_path=r.get("clip_local_path"),
-                    clip_url=r.get("clip_url"),
-                    duration_seconds=r.get("_duration", 5.0),
-                    aspect_ratio=aspect_ratio,
-                    status=r["status"],
-                    error_message=r["error"],
+            else:
+                _logger.error("Failed to create prediction for scene %s", scene_id)
+                conn.execute(
+                    """DELETE FROM video_scene_clips WHERE storyboard_id=? AND scene_id=?""",
+                    (storyboard_id, scene_id),
                 )
+                conn.execute(
+                    """INSERT INTO video_scene_clips
+                       (storyboard_id, scene_id, scene_index, provider, model, prompt,
+                        duration_seconds, aspect_ratio, status, error_message)
+                       VALUES (?,?,?,?,?,?,?,?,'error','Failed to create prediction')""",
+                    (storyboard_id, scene_id, scene_index,
+                     provider.name, getattr(provider, "_model", provider.name),
+                     prompt, duration, aspect_ratio),
+                )
+                conn.commit()
+                results.append({
+                    "scene_id": scene_id, "scene_index": scene_index,
+                    "status": "error", "error": "Failed to create prediction",
+                })
 
     # Sort results by scene_index
     results.sort(key=lambda r: r.get("scene_index", 0))
 
+    pending  = sum(1 for r in results if r["status"] == "pending")
     generated = sum(1 for r in results if r["status"] in ("ok", "dry_run"))
     failed = sum(1 for r in results if r["status"] == "error")
 
-    if generated == 0 and failed > 0:
+    if pending > 0:
+        status = "pending"
+    elif generated == 0 and failed > 0:
         status = "all_failed"
     elif failed > 0:
         status = "partial"
@@ -417,11 +369,96 @@ def generate_storyboard_clips(
     return {
         "storyboard_id": storyboard_id,
         "total_scenes": len(scenes),
+        "pending": pending,
         "generated": generated,
         "skipped": skipped,
         "failed": failed,
         "results": results,
         "status": status,
+    }
+
+
+def poll_storyboard_clips(storyboard_id: int, conn: sqlite3.Connection) -> dict[str, Any]:
+    """
+    Poll Replicate for all pending predictions for a storyboard.
+    Updates DB rows from 'pending' → 'ok'/'error'.
+    Downloads clip to volume if succeeded.
+    Returns summary dict.
+    """
+    import logging as _log
+    from creative_intelligence.video.clip_providers import ReplicateSceneClipProvider
+    from creative_intelligence import config
+
+    _logger = _log.getLogger(__name__)
+    clip_dir = Path(config.CI_CLIP_OUTPUT_DIR)
+
+    pending_rows = conn.execute(
+        """SELECT id, scene_id, scene_index, storyboard_id, prediction_id, duration_seconds
+           FROM video_scene_clips
+           WHERE storyboard_id = ? AND status = 'pending' AND prediction_id IS NOT NULL""",
+        (storyboard_id,),
+    ).fetchall()
+
+    if not pending_rows:
+        return {"storyboard_id": storyboard_id, "polled": 0, "completed": 0, "still_pending": 0}
+
+    provider = ReplicateSceneClipProvider()
+    completed = 0
+    still_pending = 0
+
+    for row in pending_rows:
+        clip_id    = row["id"]
+        scene_id   = row["scene_id"]
+        pred_id    = row["prediction_id"]
+        duration   = float(row["duration_seconds"] or 5.0)
+
+        pred_status, video_url = provider.poll_prediction(pred_id)
+
+        if pred_status == "succeeded" and video_url:
+            # Download to persistent volume
+            scene_clip_dir = clip_dir / str(storyboard_id)
+            scene_clip_dir.mkdir(parents=True, exist_ok=True)
+            local_dest = scene_clip_dir / f"scene_{scene_id}.mp4"
+            clip_local_path: str | None = None
+            try:
+                import urllib.request as _ur
+                _ur.urlretrieve(video_url, str(local_dest))
+                if local_dest.exists() and local_dest.stat().st_size > 0:
+                    clip_local_path = str(local_dest)
+                else:
+                    local_dest.unlink(missing_ok=True)
+            except Exception as dl_exc:
+                _logger.warning("Download failed for scene %s: %s", scene_id, dl_exc)
+
+            conn.execute(
+                """UPDATE video_scene_clips
+                   SET status='ok', clip_url=?, clip_local_path=?
+                   WHERE id=?""",
+                (video_url, clip_local_path, clip_id),
+            )
+            conn.commit()
+            _logger.info("Clip ready for scene %s (local=%s)", scene_id, clip_local_path)
+            completed += 1
+
+        elif pred_status == "failed":
+            conn.execute(
+                """UPDATE video_scene_clips
+                   SET status='error', error_message='Replicate prediction failed'
+                   WHERE id=?""",
+                (clip_id,),
+            )
+            conn.commit()
+            _logger.error("Prediction %s failed for scene %s", pred_id, scene_id)
+            completed += 1  # done (with failure)
+
+        else:
+            still_pending += 1  # still processing
+
+    return {
+        "storyboard_id": storyboard_id,
+        "polled": len(pending_rows),
+        "completed": completed,
+        "still_pending": still_pending,
     }
 
 
