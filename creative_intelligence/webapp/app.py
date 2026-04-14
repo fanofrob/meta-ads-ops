@@ -2861,6 +2861,150 @@ def _startup_cleanup() -> None:
         pass  # Never block startup
 
 
+# ─────────────────────────────────────────────
+# Admin: disk cleanup
+# ─────────────────────────────────────────────
+
+@app.post("/api/admin/cleanup-disk")
+def admin_cleanup_disk() -> Any:
+    """
+    Free disk space on the Railway volume:
+    - Delete clip files for storyboards older than 7 days
+    - Delete render output files (background images) older than 7 days,
+      keeping files for approved / favorited / ready-to-test assets
+    - VACUUM the SQLite database to reclaim pages
+    Returns a summary of bytes freed.
+    """
+    import shutil
+    import time as _time
+    from creative_intelligence import config
+
+    freed_bytes  = 0
+    deleted_files = 0
+    errors: list[str] = []
+
+    cutoff = _time.time() - 7 * 86400  # 7 days ago
+
+    # ── 1. Clip files ──────────────────────────────────────────────────────
+    clip_dir = Path(config.CI_CLIP_OUTPUT_DIR)
+    if clip_dir.exists():
+        for f in clip_dir.rglob("*.mp4"):
+            try:
+                if f.stat().st_mtime < cutoff:
+                    sz = f.stat().st_size
+                    f.unlink()
+                    freed_bytes  += sz
+                    deleted_files += 1
+            except Exception as e:
+                errors.append(str(e))
+
+    # ── 2. Render output files (background images only — keep final ads) ───
+    render_dir = Path(config.CI_RENDER_OUTPUT_DIR)
+    conn = _db()
+    try:
+        # Collect paths we must keep: approved / fav / ready assets
+        keep_rows = conn.execute(
+            """SELECT asset_path_or_url FROM render_assets
+               WHERE is_favorite=1 OR is_ready_to_test=1
+                  OR review_status='approved'"""
+        ).fetchall()
+        keep_paths = {r["asset_path_or_url"] for r in keep_rows if r["asset_path_or_url"]}
+    except Exception as e:
+        keep_paths = set()
+        errors.append(f"keep-paths query: {e}")
+    finally:
+        conn.close()
+
+    if render_dir.exists():
+        for f in render_dir.rglob("*"):
+            if not f.is_file():
+                continue
+            if str(f) in keep_paths:
+                continue
+            try:
+                if f.stat().st_mtime < cutoff:
+                    sz = f.stat().st_size
+                    f.unlink()
+                    freed_bytes  += sz
+                    deleted_files += 1
+            except Exception as e:
+                errors.append(str(e))
+        # Remove empty subdirectories
+        for d in sorted(render_dir.rglob("*"), reverse=True):
+            if d.is_dir():
+                try:
+                    d.rmdir()  # only removes if empty
+                except Exception:
+                    pass
+
+    # ── 3. VACUUM SQLite ───────────────────────────────────────────────────
+    try:
+        vconn = _db()
+        vconn.execute("VACUUM")
+        vconn.close()
+        vacuum_ok = True
+    except Exception as e:
+        vacuum_ok = False
+        errors.append(f"VACUUM: {e}")
+
+    # ── 4. Report disk usage ───────────────────────────────────────────────
+    try:
+        usage = shutil.disk_usage("/app")
+        disk_info = {
+            "total_gb":  round(usage.total / 1e9, 2),
+            "used_gb":   round(usage.used  / 1e9, 2),
+            "free_gb":   round(usage.free  / 1e9, 2),
+        }
+    except Exception:
+        disk_info = {}
+
+    return jsonify({
+        "ok":            True,
+        "freed_mb":      round(freed_bytes / 1e6, 2),
+        "deleted_files": deleted_files,
+        "vacuum":        vacuum_ok,
+        "disk":          disk_info,
+        "errors":        errors,
+    })
+
+
+@app.get("/api/admin/disk-usage")
+def admin_disk_usage() -> Any:
+    """Quick check of volume disk usage."""
+    import shutil
+    from creative_intelligence import config
+
+    result: dict = {}
+    try:
+        usage = shutil.disk_usage("/app")
+        result["disk"] = {
+            "total_gb": round(usage.total / 1e9, 2),
+            "used_gb":  round(usage.used  / 1e9, 2),
+            "free_gb":  round(usage.free  / 1e9, 2),
+            "pct_used": round(usage.used / usage.total * 100, 1),
+        }
+    except Exception as e:
+        result["disk_error"] = str(e)
+
+    for label, dir_path in [
+        ("clips",   config.CI_CLIP_OUTPUT_DIR),
+        ("renders", config.CI_RENDER_OUTPUT_DIR),
+    ]:
+        try:
+            p = Path(dir_path)
+            if p.exists():
+                files = list(p.rglob("*"))
+                sz = sum(f.stat().st_size for f in files if f.is_file())
+                result[label] = {"files": len([f for f in files if f.is_file()]),
+                                  "mb": round(sz / 1e6, 2)}
+            else:
+                result[label] = {"files": 0, "mb": 0}
+        except Exception as e:
+            result[label] = {"error": str(e)}
+
+    return jsonify(result)
+
+
 if __name__ == "__main__":
     _startup_cleanup()
     # Railway injects PORT; CI_WEB_PORT used locally.
