@@ -169,9 +169,11 @@ CI_CLIP_OUTPUT_DIR: str = os.getenv(
     str(Path(__file__).parent.parent / "creative_intelligence_data" / "clip_outputs"),
 )
 
-# Replicate model for text-to-video clip generation
-# runwayml/gen-4.5: text prompt + duration → MP4 clip
-CI_CLIP_MODEL: str = os.getenv("CI_CLIP_MODEL", "runwayml/gen-4.5")
+# Replicate model for text-to-video / image-to-video clip generation.
+# minimax/video-01-live: supports first_frame_image for true image-to-video
+#   — recommended when a product image is available (consistent product appearance).
+# runwayml/gen-4.5: text-to-video only (no reliable image conditioning via Replicate).
+CI_CLIP_MODEL: str = os.getenv("CI_CLIP_MODEL", "minimax/video-01-live")
 
 # Runway direct API key (scaffold — future use when not proxied through Replicate)
 CI_RUNWAY_API_KEY: str = os.getenv("CI_RUNWAY_API_KEY", "")

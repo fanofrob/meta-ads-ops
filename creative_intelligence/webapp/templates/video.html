@@ -572,9 +572,15 @@ function renderStoryboard(sb, detail) {
             onclick="generateFrames(${sb.id || detail.storyboard_id})">
             🖼 Generate All Frames
           </button>
+          <select id="clipModelSelect" title="Video generation model"
+            style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:11px;max-width:160px">
+            <option value="minimax/video-01-live">Minimax (image-to-video ✓)</option>
+            <option value="runwayml/gen-4.5">Runway Gen-4.5</option>
+            <option value="runwayml/gen-4-turbo">Runway Gen-4 Turbo</option>
+          </select>
           <button class="assemble-btn" id="genClipsBtn"
             onclick="generateClips(${sb.id || detail.storyboard_id}, false)"
-            title="Generate one real MP4 clip per scene via Runway/Replicate (~30-60s each). Assemble with 'Use Clips' after.">
+            title="Generate one real MP4 clip per scene. Minimax uses your product image as first frame for consistent appearance.">
             🎞 Generate Clips
           </button>
           <button class="assemble-btn" id="retryClipsBtn" style="background:#3b3b2a;font-size:11px;padding:6px 12px"
@@ -921,9 +927,11 @@ async function generateClips(sbId, retryFailed=false) {
   if (btnRetry) { btnRetry.disabled = true; }
 
   try {
+    const clipModel = document.getElementById('clipModelSelect')?.value || null;
     const result = await api(`/api/video/storyboard/${sbId}/generate-clips`, {
       aspect_ratio: document.getElementById('aspectRatio')?.value || '9:16',
       skip_existing: !retryFailed,
+      ...(clipModel ? { clip_model: clipModel } : {}),
     });
 
     if (result.error) {
