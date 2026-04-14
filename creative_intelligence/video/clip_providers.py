@@ -92,6 +92,97 @@ class ReplicateSceneClipProvider(SceneClipProvider):
         self._api_key = api_key or config.CI_REPLICATE_API_KEY
         self._model = model or config.CI_CLIP_MODEL
 
+    def _get_client(self):
+        try:
+            import replicate
+            return replicate.Client(api_token=self._api_key)
+        except ImportError:
+            return None
+
+    def _extract_url(self, output: Any, scene_id: int) -> str | None:
+        """Extract a video URL from varied Replicate output shapes."""
+        if isinstance(output, str) and output.startswith("http"):
+            return output
+        if hasattr(output, "url"):
+            try:
+                return str(output.url())
+            except TypeError:
+                return str(output.url)
+        if isinstance(output, (list, tuple)) and output:
+            item = output[0]
+            if isinstance(item, str) and item.startswith("http"):
+                return item
+            if hasattr(item, "url"):
+                try:
+                    return str(item.url())
+                except TypeError:
+                    return str(item.url)
+        try:
+            first = next(iter(output))  # type: ignore[arg-type]
+            if isinstance(first, str) and first.startswith("http"):
+                return first
+            if hasattr(first, "url"):
+                try:
+                    return str(first.url())
+                except TypeError:
+                    return str(first.url)
+        except (StopIteration, TypeError):
+            pass
+        candidate = str(output) if output is not None else ""
+        if candidate.startswith("http"):
+            return candidate
+        log.error("Replicate returned no usable URL for scene %s. type=%s repr=%r",
+                  scene_id, type(output).__name__, output)
+        return None
+
+    def create_prediction(self, prompt: str, duration: float = 5.0) -> str | None:
+        """
+        Create an async Replicate prediction. Returns prediction_id immediately (~1s).
+        Use poll_prediction(prediction_id) to get the result URL when ready.
+        """
+        if not self._api_key:
+            return None
+        client = self._get_client()
+        if not client:
+            return None
+        duration_sec = 10 if duration >= 8 else 5
+        try:
+            prediction = client.predictions.create(
+                model=self._model,
+                input={"prompt": prompt, "duration": duration_sec},
+            )
+            log.info("Created Replicate prediction %s for model %s", prediction.id, self._model)
+            return prediction.id
+        except Exception as exc:
+            log.error("Failed to create Replicate prediction: %s", exc, exc_info=True)
+            return None
+
+    def poll_prediction(self, prediction_id: str) -> tuple[str, str | None]:
+        """
+        Poll a Replicate prediction by ID.
+        Returns (status, url) where status is 'pending'|'processing'|'succeeded'|'failed'
+        and url is the video URL if succeeded.
+        """
+        if not self._api_key:
+            return ("failed", None)
+        client = self._get_client()
+        if not client:
+            return ("failed", None)
+        try:
+            prediction = client.predictions.get(prediction_id)
+            status = prediction.status  # starting|processing|succeeded|failed|canceled
+            if status == "succeeded":
+                url = self._extract_url(prediction.output, 0)
+                return ("succeeded", url)
+            if status in ("failed", "canceled"):
+                err = getattr(prediction, "error", None) or status
+                log.error("Replicate prediction %s %s: %s", prediction_id, status, err)
+                return ("failed", None)
+            return ("pending", None)  # starting or processing
+        except Exception as exc:
+            log.error("Failed to poll Replicate prediction %s: %s", prediction_id, exc, exc_info=True)
+            return ("failed", None)
+
     def generate(
         self,
         prompt: str,
@@ -101,19 +192,14 @@ class ReplicateSceneClipProvider(SceneClipProvider):
         output_dir: Path | None = None,
         **kwargs: Any,
     ) -> str | None:
+        """Synchronous generate (blocks until done). Used for single-clip generation."""
         if not self._api_key:
             return None
-
-        try:
-            import replicate
-        except ImportError:
+        client = self._get_client()
+        if not client:
             return None
-
-        # Clamp to model-supported durations (gen-4.5 supports 5 or 10s)
         duration_sec = 10 if duration >= 8 else 5
-
         try:
-            client = replicate.Client(api_token=self._api_key)
             output = client.run(
                 self._model,
                 input={"prompt": prompt, "duration": duration_sec},
@@ -121,65 +207,7 @@ class ReplicateSceneClipProvider(SceneClipProvider):
         except Exception as exc:
             log.error("Replicate call failed for scene %s: %s", scene_id, exc, exc_info=True)
             return None
-
-        log.debug("Replicate raw output type=%s value=%r", type(output).__name__, output)
-
-        # Extract URL from varied output shapes replicate SDK can return
-        video_url: str | None = None
-
-        # 1. Plain string URL
-        if isinstance(output, str) and output.startswith("http"):
-            video_url = output
-
-        # 2. Object with .url attribute/method (FileOutput, etc.)
-        elif hasattr(output, "url"):
-            try:
-                video_url = str(output.url())
-            except TypeError:
-                video_url = str(output.url)
-
-        # 3. List / tuple of items
-        elif isinstance(output, (list, tuple)) and output:
-            item = output[0]
-            if isinstance(item, str) and item.startswith("http"):
-                video_url = item
-            elif hasattr(item, "url"):
-                try:
-                    video_url = str(item.url())
-                except TypeError:
-                    video_url = str(item.url)
-
-        # 4. Generator / iterator — consume first item
-        else:
-            try:
-                first = next(iter(output))  # type: ignore[arg-type]
-                if isinstance(first, str) and first.startswith("http"):
-                    video_url = first
-                elif hasattr(first, "url"):
-                    try:
-                        video_url = str(first.url())
-                    except TypeError:
-                        video_url = str(first.url)
-            except (StopIteration, TypeError):
-                pass
-
-        # 5. Last resort: cast the whole output to str and see if it looks like a URL
-        if not video_url:
-            candidate = str(output) if output is not None else ""
-            if candidate.startswith("http"):
-                video_url = candidate
-
-        if not video_url:
-            log.error(
-                "Replicate returned no usable URL for scene %s. "
-                "output type=%s repr=%r",
-                scene_id, type(output).__name__, output,
-            )
-            return None
-
-        # Return URL directly — avoids downloading large files to ephemeral disk.
-        # The assembler downloads on demand to a temp file at assembly time.
-        return video_url
+        return self._extract_url(output, scene_id)
 
 
 # ─────────────────────────────────────────────

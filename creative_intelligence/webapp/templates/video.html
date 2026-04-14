@@ -847,19 +847,23 @@ async function generateClips(sbId, retryFailed=false) {
     if (_clipPollInterval) clearInterval(_clipPollInterval);
     _clipPollInterval = setInterval(async () => {
       try {
-        const clips = await api(`/api/video/storyboard/${sbId}/clips`);
+        // sync-clips polls Replicate for pending predictions AND returns all clips
+        const sync = await api(`/api/video/storyboard/${sbId}/sync-clips`);
+        const clips = sync.clips || [];
         await _applyClipBadges(clips);
-        const done  = clips.filter(c => c.status === 'ok' && (c.clip_local_path || c.clip_url)).length;
-        const total = result.scene_count;
+        const done    = clips.filter(c => c.status === 'ok' && (c.clip_local_path || c.clip_url)).length;
+        const pending = clips.filter(c => c.status === 'pending').length;
+        const total   = result.scene_count;
         if (btn) btn.textContent = `⏳ ${done}/${total} clips…`;
-        if (statusEl) statusEl.textContent = `${done}/${total} clips ready…`;
-        if (total > 0 && done >= total) {
+        if (statusEl) statusEl.textContent = `${done}/${total} ready, ${pending} generating…`;
+        if (total > 0 && pending === 0 && (done + clips.filter(c=>c.status==='error').length) >= total) {
           clearInterval(_clipPollInterval);
           _clipPollInterval = null;
           if (btn)      { btn.disabled = false; btn.innerHTML = '🎞 Generate Clips'; }
           if (btnRetry) { btnRetry.disabled = false; }
-          toast(`✓ All ${total} clips ready — click Use Clips to assemble`);
-          if (statusEl) statusEl.textContent = `${total} clips ready`;
+          if (done > 0) toast(`✓ ${done}/${total} clips ready — click Use Clips to assemble`);
+          else          toast(`All clips failed — check Replicate credits`, true);
+          if (statusEl) statusEl.textContent = `${done}/${total} clips ready`;
         }
       } catch(e) { /* ignore poll errors */ }
     }, 8000);  // poll every 8s

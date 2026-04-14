@@ -2474,7 +2474,6 @@ def video_generate_clips(storyboard_id: int) -> Any:
       skip_existing   bool — skip scenes with an existing ok clip (default true)
       dry_run         bool — prompt only, no API calls or DB writes (default false)
     """
-    import threading
     from creative_intelligence.video.clip_generator import generate_storyboard_clips
     try:
         body = request.get_json(force=True, silent=True) or {}
@@ -2534,32 +2533,24 @@ def video_generate_clips(storyboard_id: int) -> Any:
         ).fetchone()["n"]
         conn.close()
 
-        # Run generation in background thread — each Replicate call is 30-60s
-        def _bg():
-            from creative_intelligence.db import get_connection
-            bg_conn = get_connection()
-            try:
-                generate_storyboard_clips(
-                    storyboard_id=storyboard_id,
-                    conn=bg_conn,
-                    provider_name=provider_name,
-                    aspect_ratio=aspect_ratio,
-                    skip_existing=skip_existing,
-                    max_workers=1,   # serial — avoids Replicate rate limits
-                    dry_run=dry_run,
-                )
-            except Exception:
-                app.logger.exception("bg clip generation failed")
-            finally:
-                bg_conn.close()
-
-        threading.Thread(target=_bg, daemon=True).start()
+        # Create all Replicate predictions synchronously — each takes ~1s, not 30-90s.
+        # Predictions run on Replicate's infrastructure and survive container restarts.
+        # UI polls /sync-clips to pick up results as they complete.
+        result = generate_storyboard_clips(
+            storyboard_id=storyboard_id,
+            conn=conn,
+            provider_name=provider_name,
+            aspect_ratio=aspect_ratio,
+            skip_existing=skip_existing,
+            dry_run=dry_run,
+        )
 
         return jsonify({
             "status": "started",
             "storyboard_id": storyboard_id,
             "scene_count": scene_count,
-            "message": f"Generating {scene_count} clips in background (~30-60s each). Poll /api/video/storyboard/{storyboard_id}/clips for progress.",
+            "pending": result.get("pending", 0),
+            "message": f"Created {result.get('pending', 0)} predictions. Poll /sync-clips for results.",
         })
     except Exception as exc:
         app.logger.exception("video/generate-clips failed")
@@ -2583,6 +2574,22 @@ def video_scene_clips_list(storyboard_id: int) -> Any:
         conn.close()
         return jsonify(clips)
     except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/video/storyboard/<int:storyboard_id>/sync-clips")
+def video_sync_clips(storyboard_id: int) -> Any:
+    """Poll Replicate for pending predictions and update clip statuses.
+    Called by the UI every 8s while clips are generating."""
+    try:
+        from creative_intelligence.video.clip_generator import poll_storyboard_clips, get_scene_clips
+        conn = _db()
+        poll_result = poll_storyboard_clips(storyboard_id, conn)
+        clips = get_scene_clips(storyboard_id, conn)
+        conn.close()
+        return jsonify({**poll_result, "clips": clips})
+    except Exception as exc:
+        app.logger.exception("sync-clips failed")
         return jsonify({"error": str(exc)}), 500
 
 

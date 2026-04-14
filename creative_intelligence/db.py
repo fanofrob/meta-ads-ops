@@ -130,6 +130,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
            ON video_scene_clips(storyboard_id)""",
         """CREATE INDEX IF NOT EXISTS idx_video_scene_clips_scene
            ON video_scene_clips(scene_id)""",
+        # Add prediction_id for async Replicate predictions (survives container restarts)
+        "ALTER TABLE video_scene_clips ADD COLUMN prediction_id TEXT",
     ]
     for stmt in migrations:
         try:
