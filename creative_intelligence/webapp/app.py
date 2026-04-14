@@ -2531,7 +2531,6 @@ def video_generate_clips(storyboard_id: int) -> Any:
             "SELECT COUNT(*) as n FROM video_scenes WHERE storyboard_id = ?",
             (storyboard_id,),
         ).fetchone()["n"]
-        conn.close()
 
         # Create all Replicate predictions synchronously — each takes ~1s, not 30-90s.
         # Predictions run on Replicate's infrastructure and survive container restarts.
@@ -2544,6 +2543,7 @@ def video_generate_clips(storyboard_id: int) -> Any:
             skip_existing=skip_existing,
             dry_run=dry_run,
         )
+        conn.close()
 
         return jsonify({
             "status": "started",
