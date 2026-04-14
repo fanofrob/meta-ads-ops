@@ -463,6 +463,14 @@ def map_shopify_product(
     raw_tags = raw.get("tags") or ""
     tags = ", ".join(raw_tags) if isinstance(raw_tags, list) else raw_tags
 
+    # First product image URL — used as visual reference for video clip generation
+    images = raw.get("images") or []
+    image_url: str | None = None
+    if images:
+        first_img = images[0]
+        # Admin API uses 'src'; storefront normalised to 'src' too
+        image_url = first_img.get("src") or first_img.get("url") or None
+
     product = {
         "id":                  db_id,
         "name":                raw.get("title", ""),
@@ -476,6 +484,7 @@ def map_shopify_product(
         "shopify_product_id":  str(shopify_id),
         "active":              1,
         "tags":                tags,
+        "image_url":           image_url,
     }
 
     benefits = _parse_claims_from_html(body_html)
@@ -627,8 +636,9 @@ def sync_shopify_to_db(
             db.execute(
                 """INSERT INTO products
                      (id, name, category, price, description, short_description,
-                      positioning, target_persona, tags, source, shopify_product_id, active)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                      positioning, target_persona, tags, source, shopify_product_id,
+                      active, image_url)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(id) DO UPDATE SET
                      name              = excluded.name,
                      category          = excluded.category,
@@ -639,6 +649,7 @@ def sync_shopify_to_db(
                      source            = excluded.source,
                      shopify_product_id= excluded.shopify_product_id,
                      active            = excluded.active,
+                     image_url         = COALESCE(excluded.image_url, products.image_url),
                      updated_at        = datetime('now')
                 """,
                 (
@@ -647,6 +658,7 @@ def sync_shopify_to_db(
                     p.get("positioning"), p.get("target_persona"),
                     p.get("tags"),
                     p["source"], p["shopify_product_id"], p["active"],
+                    p.get("image_url"),
                 ),
             )
 
