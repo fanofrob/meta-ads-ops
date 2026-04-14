@@ -53,6 +53,7 @@ def save_asset(
     source: str,
     conn: sqlite3.Connection,
     metadata: dict[str, Any] | None = None,
+    asset_type: str = "image_variant",
 ) -> int:
     """
     Persist an asset reference to render_assets.
@@ -72,6 +73,7 @@ def save_asset(
     source           : URL (https://…), file:// URI, or mock path (mock://…)
     conn             : open sqlite3 connection
     metadata         : optional dict serialised as JSON
+    asset_type       : "image_variant" | "background" | "final_ad" (default "image_variant")
 
     Returns
     -------
@@ -126,8 +128,8 @@ def save_asset(
         cur = conn.execute(
             """INSERT INTO render_assets
                  (render_output_id, asset_type, variant_label, asset_path_or_url, metadata_json)
-               VALUES (?, 'image_variant', ?, ?, ?)""",
-            (render_output_id, variant_label, asset_path, meta_str),
+               VALUES (?, ?, ?, ?, ?)""",
+            (render_output_id, asset_type, variant_label, asset_path, meta_str),
         )
     return cur.lastrowid
 
@@ -136,18 +138,18 @@ def list_render_assets(
     render_output_id: int,
     conn: sqlite3.Connection,
 ) -> list[dict[str, Any]]:
-    """Return the latest render_assets row per variant_label for a render_output_id.
+    """Return the latest render_assets row per (variant_label, asset_type).
 
-    When a variant has been regenerated multiple times only the most recent
-    asset (highest id) is returned — keeps the response small regardless of
-    how many regeneration runs have accumulated.
+    Groups by both variant_label AND asset_type so that for each variant the
+    caller receives both the background asset and the final_ad composite
+    (where present), rather than just the single most-recent row.
     """
     rows = conn.execute(
         """SELECT * FROM render_assets
            WHERE id IN (
                SELECT MAX(id) FROM render_assets
                WHERE render_output_id = ?
-               GROUP BY variant_label
+               GROUP BY variant_label, asset_type
            )
            ORDER BY id ASC""",
         (render_output_id,),

@@ -1148,6 +1148,7 @@ def render_generate() -> Any:
       generate_images      : bool?  — override CI_IMAGE_GENERATION_ENABLED
       model                : str?   — Replicate model slug override (e.g. "black-forest-labs/flux-1.1-pro")
       dry_run              : bool?  — default False
+      background_only      : bool?  — skip PIL compositing, return raw images only (default: False)
     }
     """
     from creative_intelligence.rendering.static_renderer import render_static_brief
@@ -1159,11 +1160,12 @@ def render_generate() -> Any:
         if not pid:
             return jsonify({"error": "production_output_id required"}), 400
 
-        aspect        = body.get("aspect_ratio", "9:16")
-        variants_req  = body.get("variants") or list(VARIANT_STRATEGIES)
-        gen_images    = body.get("generate_images")   # None = use config
-        model         = body.get("model") or None
-        dry_run       = bool(body.get("dry_run", False))
+        aspect          = body.get("aspect_ratio", "9:16")
+        variants_req    = body.get("variants") or list(VARIANT_STRATEGIES)
+        gen_images      = body.get("generate_images")   # None = use config
+        model           = body.get("model") or None
+        dry_run         = bool(body.get("dry_run", False))
+        background_only = bool(body.get("background_only", False))
 
         conn   = _db()
         result = render_static_brief(
@@ -1174,6 +1176,7 @@ def render_generate() -> Any:
             generate_images=gen_images,
             model=model,
             dry_run=dry_run,
+            background_only=background_only,
         )
         conn.close()
         return jsonify(result)
@@ -1573,7 +1576,8 @@ def render_asset_regenerate(asset_id: int) -> Any:
             conn.close()
             return jsonify({"error": "provider returned no output"}), 500
 
-        new_asset_id = save_asset(
+        # Save background asset
+        bg_asset_id = save_asset(
             render_output_id=render_output_id,
             variant_label=variant_label,
             source=paths[0],
@@ -1584,8 +1588,51 @@ def render_asset_regenerate(asset_id: int) -> Any:
                 "edited_prompt":    True,
                 "custom_notes":     extra_notes,
                 "base_asset_id":    asset_id,
+                "asset_role":       "background",
             },
+            asset_type="background",
         )
+
+        # Composite final ad (non-fatal if it fails)
+        final_asset_id = bg_asset_id  # fallback: show background if composite fails
+        try:
+            from creative_intelligence.rendering.compositor import composite_ad
+            from creative_intelligence.rendering.asset_store import get_render_output_dir
+
+            bg_row = conn.execute(
+                "SELECT asset_path_or_url FROM render_assets WHERE id = ?", (bg_asset_id,)
+            ).fetchone()
+            bg_source = paths[0]
+            if bg_row:
+                candidate = bg_row["asset_path_or_url"]
+                if candidate and not candidate.startswith(("https://", "http://", "mock://")):
+                    bg_source = candidate
+
+            out_dir = get_render_output_dir() / str(render_output_id)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            import time as _time
+            final_out = str(out_dir / f"{variant_label}_final_{int(_time.time())}.png")
+            final_path = composite_ad(bg_source, spec, output_path=final_out)
+            if not final_path.endswith("_mock.png"):
+                final_asset_id = save_asset(
+                    render_output_id=render_output_id,
+                    variant_label=variant_label,
+                    source=final_path,
+                    conn=conn,
+                    metadata={
+                        "concept_title":       spec.get("concept_title", ""),
+                        "aspect_ratio":        aspect_ratio,
+                        "background_asset_id": bg_asset_id,
+                        "edited_prompt":       True,
+                        "custom_notes":        extra_notes,
+                        "asset_role":          "final_ad",
+                    },
+                    asset_type="final_ad",
+                )
+        except Exception as _ce:
+            app.logger.warning("Compositing failed during regenerate: %s", _ce)
+
+        new_asset_id = final_asset_id
 
         # Transfer collection flags (favorite / ready / approved) from the old
         # asset to the new one, then clear them on the old asset.

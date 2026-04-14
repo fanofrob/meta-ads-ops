@@ -127,6 +127,9 @@ header .subtitle { font-size: 12px; color: var(--muted); }
 .card-image { width: 100%; display: block; object-fit: contain; max-height: 380px; }
 .card-image-placeholder { padding: 32px 16px; text-align: center; color: var(--muted); font-size: 11px; font-family: monospace; word-break: break-all; }
 .ready-badge-corner { position: absolute; top: 8px; right: 8px; background: #071828; border: 1px solid #1e3a5f; color: var(--blue); font-size: 10px; padding: 3px 7px; border-radius: 6px; }
+.bg-toggle-btn { position: absolute; bottom: 8px; right: 8px; background: rgba(13,13,20,.8); border: 1px solid var(--border); color: var(--text2); font-size: 10px; padding: 3px 8px; border-radius: 6px; cursor: pointer; backdrop-filter: blur(4px); transition: all .12s; z-index: 2; }
+.bg-toggle-btn:hover { border-color: var(--accent2); color: var(--text); }
+.asset-type-badge { position: absolute; bottom: 8px; right: 8px; background: rgba(13,13,20,.75); border: 1px solid #1e3a5f; color: var(--blue); font-size: 10px; padding: 3px 7px; border-radius: 6px; pointer-events: none; }
 
 /* Overlay copy */
 .card-copy { padding: 10px 12px; border-bottom: 1px solid var(--border); }
@@ -472,20 +475,30 @@ function renderDetail(data) {
   const assets = data.assets || [];
   const title  = data.concept_text ? data.concept_text.slice(0,60) : `Render #${data.id}`;
 
-  // Build asset state cache and map by variant_label (keep only latest per variant)
-  const assetMap = {};
+  // Build asset state cache and separate maps by asset_type
+  const finalMap = {};   // variant_label → latest 'final_ad' asset
+  const bgMap    = {};   // variant_label → latest 'background' or 'image_variant' asset
   assets.forEach(a => {
     assetState[a.id] = {
-      review_status:   a.review_status   || 'pending',
-      is_favorite:     a.is_favorite     || 0,
+      review_status:    a.review_status    || 'pending',
+      is_favorite:      a.is_favorite      || 0,
       is_ready_to_test: a.is_ready_to_test || 0,
     };
-    // Keep only the most recent asset per variant (highest id)
-    if (!assetMap[a.variant_label] || a.id > assetMap[a.variant_label].id) {
-      assetMap[a.variant_label] = a;
+    const atype = a.asset_type || 'image_variant';
+    if (atype === 'final_ad') {
+      if (!finalMap[a.variant_label] || a.id > finalMap[a.variant_label].id)
+        finalMap[a.variant_label] = a;
+    } else {
+      if (!bgMap[a.variant_label] || a.id > bgMap[a.variant_label].id)
+        bgMap[a.variant_label] = a;
     }
   });
-  // Track only the deduplicated asset IDs (one per variant) for accurate counts
+  // Primary asset for review actions: final_ad > background/image_variant
+  const assetMap = {};
+  Object.keys({...finalMap, ...bgMap}).forEach(v => {
+    assetMap[v] = finalMap[v] || bgMap[v];
+  });
+  // Track only the primary (one per variant) for counts
   currentDisplayedAssetIds = new Set(Object.values(assetMap).map(a => a.id));
 
   // Compute initial summary counts
@@ -519,11 +532,12 @@ function renderDetail(data) {
     </div>
   `;
 
-  // Render all cards — one card per spec variant (most recent asset if any)
+  // Render all cards — one card per spec variant
   const gridEl = document.getElementById('cardsGrid');
   specs.forEach(spec => {
-    const asset = assetMap[spec.variant_label] || null;
-    const cardEl = buildCard(spec, asset);
+    const finalAsset = finalMap[spec.variant_label] || null;
+    const bgAsset    = bgMap[spec.variant_label]    || null;
+    const cardEl = buildCard(spec, finalAsset, bgAsset);
     gridEl.appendChild(cardEl);
   });
 
@@ -531,7 +545,9 @@ function renderDetail(data) {
 }
 
 /* ─── Build a variant card DOM element ─── */
-function buildCard(spec, asset) {
+function buildCard(spec, finalAsset, bgAsset) {
+  // Primary asset for review actions: final_ad > background/image_variant
+  const asset = finalAsset || bgAsset || null;
   const variantLabel = spec.variant_label || '';
   const badgeClass = {
     minimal:         'badge-minimal',
@@ -551,18 +567,24 @@ function buildCard(spec, asset) {
     card.addEventListener('focus',      () => { currentFocusedAssetId = asset.id; });
   }
 
-  // Image
+  // Image — default to final_ad; toggle shows background
   let imgHtml = '';
-  if (asset) {
-    const p = asset.asset_path_or_url || '';
-    let imgSrc = null;
+  const displayAsset = finalAsset || bgAsset;
+  if (displayAsset) {
+    const p = displayAsset.asset_path_or_url || '';
     if (p && !p.startsWith('mock://')) {
-      // Always route through the API endpoint — handles local files and CDN redirects
-      imgSrc = `/api/render/asset/${asset.id}/image`;
-    }
-    if (imgSrc) {
-      imgHtml = `<img class="card-image" src="${imgSrc}" alt="${esc(variantLabel)}" loading="lazy"
-                      onerror="this.closest('.card-image-wrap').innerHTML='<div class=card-image-placeholder>Image unavailable</div>'">`;
+      const imgSrc = `/api/render/asset/${displayAsset.id}/image`;
+      const toggleBtn = (finalAsset && bgAsset)
+        ? `<button class="bg-toggle-btn" title="Toggle background / final ad"
+                   onclick="toggleBgFinal(this, ${finalAsset.id}, ${bgAsset.id})">📷 BG</button>`
+        : (finalAsset
+            ? `<span class="asset-type-badge">🎨 Final Ad</span>`
+            : ``);
+      imgHtml = `
+        <img class="card-image" src="${imgSrc}" data-mode="final"
+             alt="${esc(variantLabel)}" loading="lazy"
+             onerror="this.closest('.card-image-wrap').innerHTML='<div class=card-image-placeholder>Image unavailable</div>'">
+        ${toggleBtn}`;
     } else if (p) {
       imgHtml = `<div class="card-image-placeholder">${esc(p)}</div>`;
     } else {
@@ -578,10 +600,10 @@ function buildCard(spec, asset) {
   const readyBadge = (st && st.is_ready_to_test)
     ? `<span class="ready-badge-corner">🧪 Ready to Test</span>` : '';
 
-  // Download link — always route through API endpoint
+  // Download link — always route through API endpoint (downloads final_ad if available)
   let downloadHtml = '';
-  if (asset && asset.asset_path_or_url && !asset.asset_path_or_url.startsWith('mock://')) {
-    downloadHtml = `<a class="download-link" href="/api/render/asset/${assetId}/image" download>↓ Download</a>`;
+  if (displayAsset && displayAsset.asset_path_or_url && !displayAsset.asset_path_or_url.startsWith('mock://')) {
+    downloadHtml = `<a class="download-link" href="/api/render/asset/${displayAsset.id}/image" download>↓ Download</a>`;
   }
 
   // Spec detail ID — must be declared before actionsHtml uses it
@@ -739,6 +761,25 @@ function updateSummaryUI() {
     readySec.innerHTML = `<div class="ready-section"><div class="ready-section-title">Selected for Testing</div><div style="display:flex;gap:6px;flex-wrap:wrap">${list}</div></div>`;
   } else {
     readySec.innerHTML = '';
+  }
+}
+
+/* ─── Background / Final-Ad toggle ─────── */
+function toggleBgFinal(btn, finalId, bgId) {
+  const wrap = btn.closest('.card-image-wrap');
+  const img  = wrap && wrap.querySelector('.card-image');
+  if (!img) return;
+  const showingFinal = img.dataset.mode !== 'bg';
+  if (showingFinal) {
+    img.src = `/api/render/asset/${bgId}/image`;
+    img.dataset.mode = 'bg';
+    btn.textContent = '🎨 Final';
+    btn.title = 'Show final composited ad';
+  } else {
+    img.src = `/api/render/asset/${finalId}/image`;
+    img.dataset.mode = 'final';
+    btn.textContent = '📷 BG';
+    btn.title = 'Show raw background image';
   }
 }
 
