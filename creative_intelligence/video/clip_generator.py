@@ -335,8 +335,8 @@ def generate_storyboard_clips(
     product_name: str | None = None
     if sb_row and sb_row["product_id"]:
         prod_row = conn.execute(
-            "SELECT name FROM products WHERE id = ? OR shopify_id = ? LIMIT 1",
-            (sb_row["product_id"], sb_row["product_id"]),
+            "SELECT name FROM products WHERE id = ? LIMIT 1",
+            (sb_row["product_id"],),
         ).fetchone()
         if prod_row:
             product_name = prod_row["name"]
