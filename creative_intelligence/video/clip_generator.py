@@ -158,6 +158,28 @@ def generate_scene_clip(
 
     is_mock = clip_path and clip_path.startswith("mock://")
     is_url  = clip_path and clip_path.startswith(("http://", "https://"))
+
+    # Download URL clips to persistent volume immediately — CDN URLs expire in ~24h
+    clip_local_path: str | None = None
+    clip_url: str | None = clip_path if is_url else None
+    if is_url and clip_path:
+        clip_dir.mkdir(parents=True, exist_ok=True)
+        local_dest = clip_dir / f"scene_{scene_id}.mp4"
+        try:
+            import urllib.request
+            urllib.request.urlretrieve(clip_path, str(local_dest))
+            if local_dest.exists() and local_dest.stat().st_size > 0:
+                clip_local_path = str(local_dest)
+            else:
+                local_dest.unlink(missing_ok=True)
+        except Exception as dl_exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Could not download clip URL for scene %s: %s", scene_id, dl_exc
+            )
+    elif not is_mock and clip_path:
+        clip_local_path = clip_path
+
     status = "ok" if clip_path else "error"
 
     if not dry_run:
@@ -169,8 +191,8 @@ def generate_scene_clip(
             provider=provider.name,
             model=getattr(provider, "_model", provider.name),
             prompt=prompt,
-            clip_local_path=None if (is_mock or is_url) else clip_path,
-            clip_url=clip_path if is_url else None,
+            clip_local_path=clip_local_path,
+            clip_url=clip_url,
             duration_seconds=duration,
             aspect_ratio=aspect_ratio,
             status=status,
@@ -181,8 +203,8 @@ def generate_scene_clip(
         "scene_id": scene_id,
         "scene_index": scene_index,
         "status": status,
-        "clip_path": clip_path,
-        "clip_url": None,
+        "clip_path": clip_local_path or clip_url,
+        "clip_url": clip_url,
         "prompt": prompt,
         "error": error_msg,
     }
@@ -310,12 +332,37 @@ def generate_storyboard_clips(
         if clip_path_w is None and error_msg_w is None:
             error_msg_w = "Provider returned no clip"
 
-        clip_path = clip_path_w
-        status    = "ok" if clip_path else "error"
+        is_url_w = clip_path_w and clip_path_w.startswith(("http://", "https://"))
+        is_mock_w = clip_path_w and clip_path_w.startswith("mock://")
+
+        # Download URL clips to persistent volume immediately — CDN URLs expire ~24h
+        clip_local_w: str | None = None
+        if is_url_w and clip_path_w:
+            clip_dir.mkdir(parents=True, exist_ok=True)
+            local_dest = clip_dir / f"scene_{scene_id}.mp4"
+            try:
+                import urllib.request as _ur
+                _ur.urlretrieve(clip_path_w, str(local_dest))
+                if local_dest.exists() and local_dest.stat().st_size > 0:
+                    clip_local_w = str(local_dest)
+                else:
+                    local_dest.unlink(missing_ok=True)
+            except Exception as dl_exc:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Could not download clip URL for scene %s: %s", scene_id, dl_exc
+                )
+        elif not is_mock_w and clip_path_w:
+            clip_local_w = clip_path_w
+
+        status    = "ok" if clip_path_w else "error"
         error_msg = error_msg_w
         return {
             "scene_id": scene_id, "scene_index": scene_index,
-            "status": status, "clip_path": clip_path, "clip_url": None,
+            "status": status,
+            "clip_path": clip_local_w or clip_path_w,
+            "clip_url": clip_path_w if is_url_w else None,
+            "clip_local_path": clip_local_w,
             "prompt": prompt, "error": error_msg,
             "_scene": scene, "_duration": duration,
         }
@@ -338,9 +385,6 @@ def generate_storyboard_clips(
     if not dry_run:
         for r in results:
             if r.get("status") in ("ok", "error") and r.get("_scene"):
-                clip_path = r["clip_path"]
-                is_mock   = clip_path and clip_path.startswith("mock://")
-                is_url    = clip_path and clip_path.startswith(("http://", "https://"))
                 _upsert_scene_clip(
                     conn=conn,
                     storyboard_id=storyboard_id,
@@ -349,8 +393,8 @@ def generate_storyboard_clips(
                     provider=provider.name,
                     model=getattr(provider, "_model", provider.name),
                     prompt=r["prompt"] or "",
-                    clip_local_path=None if (is_mock or is_url) else clip_path,
-                    clip_url=clip_path if is_url else None,
+                    clip_local_path=r.get("clip_local_path"),
+                    clip_url=r.get("clip_url"),
                     duration_seconds=r.get("_duration", 5.0),
                     aspect_ratio=aspect_ratio,
                     status=r["status"],

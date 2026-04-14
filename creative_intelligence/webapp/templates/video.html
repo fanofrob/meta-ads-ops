@@ -491,9 +491,14 @@ function renderStoryboard(sb, detail) {
             🖼 Generate All Frames
           </button>
           <button class="assemble-btn" id="genClipsBtn"
-            onclick="generateClips(${sb.id || detail.storyboard_id})"
+            onclick="generateClips(${sb.id || detail.storyboard_id}, false)"
             title="Generate one real MP4 clip per scene via Runway/Replicate (~30-60s each). Assemble with 'Use Clips' after.">
             🎞 Generate Clips
+          </button>
+          <button class="assemble-btn" id="retryClipsBtn" style="background:#3b3b2a;font-size:11px;padding:6px 12px"
+            onclick="generateClips(${sb.id || detail.storyboard_id}, true)"
+            title="Retry only scenes with failed or missing clips">
+            🔄 Retry Failed
           </button>
           <button class="assemble-btn" id="assembleBtnClip"
             onclick="assembleVideo(${sb.id || detail.storyboard_id}, '${vtype}', 'clip')"
@@ -816,15 +821,17 @@ async function submitRegenFrame(sceneIdx) {
 /* ── Generate per-scene clips via Runway/Replicate (async) ── */
 let _clipPollInterval = null;
 
-async function generateClips(sbId) {
+async function generateClips(sbId, retryFailed=false) {
   const btn      = document.getElementById('genClipsBtn');
+  const btnRetry = document.getElementById('retryClipsBtn');
   const statusEl = document.getElementById('videoOutputStatus');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Starting…'; }
+  if (btn)      { btn.disabled = true; btn.textContent = '⏳ Starting…'; }
+  if (btnRetry) { btnRetry.disabled = true; }
 
   try {
     const result = await api(`/api/video/storyboard/${sbId}/generate-clips`, {
       aspect_ratio: document.getElementById('aspectRatio')?.value || '9:16',
-      skip_existing: true,
+      skip_existing: !retryFailed,
     });
 
     if (result.error) {
@@ -849,7 +856,8 @@ async function generateClips(sbId) {
         if (total > 0 && done >= total) {
           clearInterval(_clipPollInterval);
           _clipPollInterval = null;
-          if (btn) { btn.disabled = false; btn.innerHTML = '🎞 Generate Clips'; }
+          if (btn)      { btn.disabled = false; btn.innerHTML = '🎞 Generate Clips'; }
+          if (btnRetry) { btnRetry.disabled = false; }
           toast(`✓ All ${total} clips ready — click Use Clips to assemble`);
           if (statusEl) statusEl.textContent = `${total} clips ready`;
         }
@@ -858,7 +866,8 @@ async function generateClips(sbId) {
 
   } catch(e) {
     toast('Failed to start clip generation: ' + e.message, true);
-    if (btn) { btn.disabled = false; btn.innerHTML = '🎞 Generate Clips'; }
+    if (btn)      { btn.disabled = false; btn.innerHTML = '🎞 Generate Clips'; }
+    if (btnRetry) { btnRetry.disabled = false; }
   }
 }
 
@@ -870,7 +879,10 @@ function _applyClipBadges(clips) {
     if (!badge) return;
     badge.style.display = 'inline-block';
 
-    const videoUrl = clip.clip_url || (clip.clip_local_path ? `/api/video/clip-file/${clip.id}` : null);
+    // Prefer local file endpoint (never expires); fall back to CDN URL
+    const videoUrl = clip.clip_local_path
+      ? `/api/video/clip-file/${clip.id}`
+      : (clip.clip_url || null);
 
     if (clip.status === 'ok') {
       const isMock = !clip.clip_local_path && !clip.clip_url;
