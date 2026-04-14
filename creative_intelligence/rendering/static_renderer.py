@@ -44,6 +44,7 @@ def render_static_brief(
     provider_name: str | None = None,
     model: str | None = None,
     dry_run: bool = False,
+    background_only: bool = False,
 ) -> dict[str, Any]:
     """
     Build render specs for a stored StaticAdBrief and optionally generate images.
@@ -57,6 +58,7 @@ def render_static_brief(
     generate_images      : True/False override; None reads CI_IMAGE_GENERATION_ENABLED
     provider_name        : Provider override; None reads CI_IMAGE_PROVIDER
     dry_run              : If True, build specs but skip all DB writes
+    background_only      : If True, skip PIL compositing and return raw generated images
 
     Returns
     -------
@@ -134,8 +136,13 @@ def render_static_brief(
     status = "spec_only"
     provider = get_provider(provider_name)
 
-    # ── 5. Optional image generation ────────────────────────────────────
+    # ── 5. Optional image generation + compositing ──────────────────────────
     if generate_images and not dry_run:
+        from creative_intelligence.rendering.compositor import composite_ad
+        from creative_intelligence.rendering.asset_store import get_render_output_dir
+        import logging as _logging
+        _log = _logging.getLogger(__name__)
+
         try:
             for spec in specs:
                 generate_kwargs: dict[str, Any] = {}
@@ -147,22 +154,86 @@ def render_static_brief(
                     aspect_ratio=spec["aspect_ratio"],
                     **generate_kwargs,
                 )
-                for path in paths:
-                    asset_id = save_asset(
+                for bg_path in paths:
+                    # ── 5a. Save background asset ──────────────────────────
+                    bg_asset_id = save_asset(
                         render_output_id=render_output_id,
                         variant_label=spec["variant_label"],
-                        source=path,
+                        source=bg_path,
                         conn=conn,
                         metadata={
                             "concept_title": spec.get("concept_title", ""),
                             "aspect_ratio":  spec["aspect_ratio"],
+                            "asset_role":    "background",
                         },
+                        asset_type="background",
                     )
                     assets.append({
                         "variant_label": spec["variant_label"],
-                        "path":          path,
-                        "asset_id":      asset_id,
+                        "path":          bg_path,
+                        "asset_id":      bg_asset_id,
+                        "asset_type":    "background",
                     })
+
+                    # ── 5b. Composite final ad ─────────────────────────────
+                    if background_only:
+                        continue  # skip compositing when caller opts out
+
+                    # Use local file if save_asset already downloaded it
+                    bg_for_composite = bg_path
+                    try:
+                        saved_row = conn.execute(
+                            "SELECT asset_path_or_url FROM render_assets WHERE id = ?",
+                            (bg_asset_id,),
+                        ).fetchone()
+                        if saved_row:
+                            candidate = saved_row["asset_path_or_url"]
+                            if candidate and not candidate.startswith(
+                                ("https://", "http://", "mock://")
+                            ):
+                                bg_for_composite = candidate
+                    except Exception:
+                        pass
+
+                    out_dir = get_render_output_dir() / str(render_output_id)
+                    out_dir.mkdir(parents=True, exist_ok=True)
+                    final_output_path = str(out_dir / f"{spec['variant_label']}_final.png")
+
+                    try:
+                        final_path = composite_ad(
+                            background_source=bg_for_composite,
+                            spec=spec,
+                            output_path=final_output_path,
+                        )
+                        # Guard: skip stub paths emitted for mock backgrounds
+                        if final_path.endswith("_mock.png"):
+                            continue
+
+                        final_asset_id = save_asset(
+                            render_output_id=render_output_id,
+                            variant_label=spec["variant_label"],
+                            source=final_path,
+                            conn=conn,
+                            metadata={
+                                "concept_title":       spec.get("concept_title", ""),
+                                "aspect_ratio":        spec["aspect_ratio"],
+                                "background_asset_id": bg_asset_id,
+                                "asset_role":          "final_ad",
+                            },
+                            asset_type="final_ad",
+                        )
+                        assets.append({
+                            "variant_label": spec["variant_label"],
+                            "path":          final_path,
+                            "asset_id":      final_asset_id,
+                            "asset_type":    "final_ad",
+                        })
+                    except Exception as comp_exc:
+                        # Compositing failure is non-fatal — background already saved
+                        _log.warning(
+                            "Compositing failed for variant=%s render_output_id=%s: %s",
+                            spec["variant_label"], render_output_id, comp_exc,
+                        )
 
             # Update status to reflect images were generated
             with conn:
