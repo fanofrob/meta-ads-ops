@@ -51,11 +51,33 @@ _VARIANT_MODIFIERS: dict[str, str] = {
 
 # Negative prompt additions per variant (appended to base)
 _VARIANT_NEGATIVES: dict[str, str] = {
-    "minimal":         "complex backgrounds, busy patterns, excessive props",
-    "premium":         "cheap materials, plastic surfaces, harsh lighting, cluttered scenes",
-    "direct_response": "unclear focal point, weak contrast, illegible text areas",
-    "reveal":          "confusing layout, single-subject only, no comparison element",
-    "product_hero":    "environment-dominated scene, tiny product, background-forward",
+    # minimal: no text at all — reinforce strongly in negative
+    "minimal": (
+        "complex backgrounds, busy patterns, excessive props, "
+        "text overlays, typography, headlines, body copy, CTA buttons, "
+        "words, letters, captions, watermarks"
+    ),
+    # premium: no button, no body paragraph
+    "premium": (
+        "cheap materials, plastic surfaces, harsh lighting, cluttered scenes, "
+        "CTA buttons, body copy paragraph, multiple text blocks, bold sans-serif fonts"
+    ),
+    # direct_response: needs clear legible text — reject illegibility
+    "direct_response": (
+        "unclear focal point, weak contrast, illegible text, "
+        "overlapping text and product, hard-to-read typography"
+    ),
+    # reveal: needs the comparison structure
+    "reveal": (
+        "confusing layout, single-subject only, no comparison element, "
+        "excessive body copy, paragraph text"
+    ),
+    # product_hero: absolutely no text
+    "product_hero": (
+        "environment-dominated scene, tiny product, background-forward, "
+        "text overlays, typography, headlines, body copy, CTA buttons, "
+        "words, letters, captions, watermarks, any text whatsoever"
+    ),
 }
 
 # Base negative prompt applied to all variants
@@ -126,22 +148,108 @@ def _build_visual_prompt(
     body: str = "",
     cta: str = "",
 ) -> str:
-    """Build the full image-generation prompt including ad copy so the AI
-    bakes the text directly into the image as styled ad typography."""
-    parts = [
+    """Build the full image-generation prompt with variant-specific text treatment.
+
+    Each variant has a distinct visual structure and text density:
+      minimal        → product-only, NO text overlay
+      premium        → single elegant tagline, NO body, NO button
+      direct_response→ full headline + body paragraph + prominent CTA button
+      reveal         → bold headline + short comparison subtext + CTA
+      product_hero   → NO text at all — pure product photography
+    """
+    base_parts = [
         brief.get("visual_direction", "").strip(),
         brief.get("product_visibility", "").strip(),
         brief.get("composition_notes", "").strip(),
         _VARIANT_MODIFIERS[variant],
     ]
-    # Inject ad copy — the model will render these as styled text in the image
-    if headline:
-        parts.append(f'large bold headline text reading "{headline.upper()}"')
-    if body:
-        parts.append(f'subtitle copy "{body}"')
-    if cta:
-        parts.append(f'prominent call-to-action button with text "{cta.upper()}"')
+
+    text_parts = _build_text_treatment(variant, headline, body, cta)
+    parts = base_parts + text_parts
     return ". ".join(p for p in parts if p)
+
+
+def _build_text_treatment(
+    variant: str,
+    headline: str,
+    body: str,
+    cta: str,
+) -> list[str]:
+    """Return text-injection prompt fragments tailored per variant strategy.
+
+    Returns an empty list for variants that should be text-free.
+    """
+    if variant == "minimal":
+        # Clean product shot — no text, no distractions
+        return [
+            "no text overlays, no typography, no copy, purely visual product image",
+        ]
+
+    if variant == "premium":
+        # One short elegant tagline only — top or bottom, no button
+        if headline:
+            short = headline[:50]  # trim to punchy tagline length
+            return [
+                f'single elegant tagline in refined serif typography: "{short}"',
+                "no body copy, no CTA button, minimal text, luxury editorial style",
+                "text placed in lower third with generous breathing room",
+            ]
+        return ["minimal text, editorial style, no CTA button"]
+
+    if variant == "direct_response":
+        # Text-heavy conversion ad — full headline + body + big CTA button
+        parts = []
+        if headline:
+            parts.append(
+                f'large bold headline text in upper portion: "{headline.upper()}"'
+            )
+        if body:
+            parts.append(
+                f'smaller body copy paragraph below headline: "{body}"'
+            )
+        if cta:
+            parts.append(
+                f'large high-contrast CTA button at bottom center with text "{cta.upper()}"'
+            )
+        parts.append(
+            "strong visual hierarchy, conversion-optimised layout, "
+            "text dominates lower two-thirds of the frame"
+        )
+        return parts
+
+    if variant == "reveal":
+        # Bold headline + very short punchy subline, CTA at bottom
+        parts = []
+        if headline:
+            parts.append(
+                f'bold centred headline: "{headline.upper()}"'
+            )
+        if body:
+            # Use only the first sentence / first 60 chars as a punchy sub-line
+            subline = body.split(".")[0].strip()[:60]
+            if subline:
+                parts.append(f'short punchy subline below headline: "{subline}"')
+        if cta:
+            parts.append(
+                f'small CTA text at very bottom: "{cta}"'
+            )
+        parts.append(
+            "dramatic split composition, text overlaid on high-contrast areas, "
+            "headline is the dominant visual element"
+        )
+        return parts
+
+    if variant == "product_hero":
+        # Pure product photography — absolutely no text
+        return [
+            "no text, no copy, no typography, no overlays, "
+            "pure product hero photography only",
+        ]
+
+    # Fallback for unknown variants — minimal text treatment
+    if headline:
+        return [f'headline text: "{headline}"']
+    return []
 
 
 def _build_negative_prompt(variant: str) -> str:
