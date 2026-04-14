@@ -340,11 +340,16 @@ def _image_to_data_uri(path_or_url: str) -> str | None:
 
 def _download_video_clip(url: str, dest: Path) -> bool:
     """Download a video URL to dest path. Returns True on success."""
+    import logging
     import urllib.request
     try:
         urllib.request.urlretrieve(url, str(dest))
-        return dest.exists() and dest.stat().st_size > 0
-    except Exception:
+        ok = dest.exists() and dest.stat().st_size > 0
+        if not ok:
+            logging.getLogger(__name__).warning("Downloaded clip is empty: %s", url)
+        return ok
+    except Exception as exc:
+        logging.getLogger(__name__).warning("Failed to download clip %s: %s", url, exc)
         return False
 
 
@@ -731,18 +736,27 @@ def assemble_video(
             used_clip = False
 
             if clip_record:
-                clip_path_str = clip_record.get("clip_local_path") or clip_record.get("clip_url") or ""
+                import logging as _log
+                local_stored = clip_record.get("clip_local_path") or ""
+                remote_url   = clip_record.get("clip_url") or ""
+                clip_path_str = local_stored or remote_url
+
+                local_path: str | None = None
                 if clip_path_str and not clip_path_str.startswith("mock://"):
-                    # For http paths, download first
-                    if clip_path_str.startswith(("http://", "https://")):
-                        import tempfile as _tf
-                        tmp_clip = Path(_tf.mktemp(suffix=".mp4"))
-                        if _download_video_clip(clip_path_str, tmp_clip):
-                            local_path = str(tmp_clip)
-                        else:
-                            local_path = None
-                    else:
+                    # Prefer local file (always use if it exists)
+                    if local_stored and Path(local_stored).exists():
+                        local_path = local_stored
+                    elif remote_url and remote_url.startswith(("http://", "https://")):
+                        # Try passing URL directly to ffmpeg/moviepy first (no disk needed)
+                        local_path = remote_url  # moviepy/ffmpeg can open http:// URLs
+                    elif clip_path_str and not clip_path_str.startswith("http"):
                         local_path = clip_path_str if Path(clip_path_str).exists() else None
+
+                    if local_path:
+                        _log.getLogger(__name__).info(
+                            "Assembling scene %s from: %s", scene_id,
+                            "local" if local_path == local_stored else "url"
+                        )
 
                     if local_path:
                         try:

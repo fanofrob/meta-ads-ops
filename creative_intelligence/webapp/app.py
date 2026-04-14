@@ -2583,6 +2583,27 @@ def video_scene_clips_list(storyboard_id: int) -> Any:
         return jsonify({"error": str(exc)}), 500
 
 
+@app.get("/api/video/clip-file/<int:clip_id>")
+def video_clip_file(clip_id: int) -> Any:
+    """Serve a locally stored clip MP4 by clip row ID."""
+    import os
+    from flask import send_file
+    try:
+        conn = _db()
+        row = conn.execute(
+            "SELECT clip_local_path FROM video_scene_clips WHERE id = ?", (clip_id,)
+        ).fetchone()
+        conn.close()
+        if not row or not row["clip_local_path"]:
+            return jsonify({"error": "clip file not found"}), 404
+        path = row["clip_local_path"]
+        if not os.path.exists(path):
+            return jsonify({"error": "clip file missing from disk"}), 404
+        return send_file(path, mimetype="video/mp4", conditional=True)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 # ─────────────────────────────────────────────
 # Storage / maintenance
 # ─────────────────────────────────────────────
