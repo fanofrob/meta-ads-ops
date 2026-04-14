@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, render_template, request, send_file, abort
+from flask import Flask, jsonify, make_response, render_template, request, send_file, abort
 
 # ─────────────────────────────────────────────
 # App setup
@@ -1774,7 +1774,10 @@ def collection_api() -> Any:
 
 @app.get("/video")
 def video_page() -> Any:
-    return render_template("video.html")
+    resp = make_response(render_template("video.html"))
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
 
 
 @app.get("/api/video/packages")
