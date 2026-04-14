@@ -560,7 +560,7 @@ function renderScene(s, sbId) {
 
   return `
     <div class="scene-card" id="scene-card-${s.id}">
-      <div class="scene-frame">
+      <div class="scene-frame" id="scene-frame-${s.id}">
         ${imgHtml}
         <span class="scene-badge ${purposeClass(purpose)}">${purpose}</span>
       </div>
@@ -869,11 +869,26 @@ function _applyClipBadges(clips) {
     const badge = document.getElementById(`clip-badge-${sceneId}`);
     if (!badge) return;
     badge.style.display = 'inline-block';
+
+    const videoUrl = clip.clip_url || (clip.clip_local_path ? `/api/video/clip-file/${clip.id}` : null);
+
     if (clip.status === 'ok') {
       const isMock = !clip.clip_local_path && !clip.clip_url;
       badge.innerHTML = isMock
         ? '<span style="background:#2a2a2a;color:#666;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px" title="Mock clip — set CI_CLIP_PROVIDER=replicate to generate real clips">🎞 Mock (no file)</span>'
         : '<span style="background:#1a1a3a;color:#a78bfa;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px">🎞 Clip ready</span>';
+
+      // Inject video preview into the scene frame
+      if (videoUrl) {
+        const frame = document.getElementById(`scene-frame-${sceneId}`);
+        if (frame && !frame.querySelector('video')) {
+          frame.innerHTML = `
+            <video src="${videoUrl}" controls muted loop playsinline
+              style="width:100%;height:100%;object-fit:cover;border-radius:8px;background:#000;display:block"
+              onerror="this.style.display='none'">
+            </video>`;
+        }
+      }
     } else if (clip.status === 'error') {
       badge.innerHTML = `<span style="background:#2a1a1a;color:#ef4444;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px" title="${esc(clip.error_message||'')}">✗ Clip failed</span>`;
     } else {
@@ -882,28 +897,11 @@ function _applyClipBadges(clips) {
   });
 }
 
-/* ── Load per-scene clip status badges ── */
+/* ── Load per-scene clip status badges + previews ── */
 async function loadSceneClips(sbId) {
   try {
     const clips = await api(`/api/video/storyboard/${sbId}/clips`);
-    const bySceneId = {};
-    (clips || []).forEach(c => { bySceneId[c.scene_id] = c; });
-    // Update each scene card badge
-    Object.entries(bySceneId).forEach(([sceneId, clip]) => {
-      const badge = document.getElementById(`clip-badge-${sceneId}`);
-      if (!badge) return;
-      badge.style.display = 'inline-block';
-      if (clip.status === 'ok') {
-        const isMock = !clip.clip_local_path && !clip.clip_url;
-        badge.innerHTML = isMock
-          ? '<span style="background:#2a2a2a;color:#666;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px" title="Mock clip — set CI_CLIP_PROVIDER=replicate to generate real clips">🎞 Mock (no file)</span>'
-          : '<span style="background:#1a1a3a;color:#a78bfa;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px">🎞 Clip ready</span>';
-      } else if (clip.status === 'error') {
-        badge.innerHTML = `<span style="background:#2a1a1a;color:#ef4444;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px" title="${esc(clip.error_message||'')}">✗ Clip failed</span>`;
-      } else {
-        badge.innerHTML = '<span style="background:#2a2a1a;color:#f59e0b;font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px">⏳ Clip pending</span>';
-      }
-    });
+    _applyClipBadges(clips);
   } catch(e) {
     console.warn('loadSceneClips failed', e);
   }
