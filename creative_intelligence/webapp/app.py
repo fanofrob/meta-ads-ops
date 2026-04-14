@@ -132,7 +132,9 @@ def api_products() -> Any:
                       COALESCE(category, name) as label,
                       category,
                       MIN(name) as raw_name,
-                      AVG(price) as price
+                      AVG(price) as price,
+                      MIN(image_url) as image_url,
+                      MIN(short_description) as short_description
                FROM products
                WHERE active = 1
                GROUP BY COALESCE(category, name)
@@ -145,6 +147,45 @@ def api_products() -> Any:
             d["display_name"] = _clean_product_display_name(d["raw_name"], d.get("category"))
             results.append(d)
         return jsonify(results)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/products/<product_id>", methods=["GET"])
+def api_product_detail(product_id: str) -> Any:
+    """Return full detail for a single product."""
+    try:
+        conn = _db()
+        row = conn.execute(
+            "SELECT * FROM products WHERE id = ? LIMIT 1", (product_id,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Product not found"}), 404
+        return jsonify(dict(row))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/products/<product_id>", methods=["PATCH"])
+def api_product_update(product_id: str) -> Any:
+    """Update editable product fields. Currently supports: image_url, short_description."""
+    try:
+        data = request.get_json(force=True) or {}
+        allowed = {"image_url", "short_description", "description", "positioning"}
+        updates = {k: v for k, v in data.items() if k in allowed}
+        if not updates:
+            return jsonify({"error": "No updatable fields provided"}), 400
+        conn = _db()
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [product_id]
+        with conn:
+            conn.execute(
+                f"UPDATE products SET {set_clause}, updated_at = datetime('now') WHERE id = ?",
+                values,
+            )
+        conn.close()
+        return jsonify({"ok": True, "updated": list(updates.keys())})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -2579,6 +2620,18 @@ def video_generate_clips(storyboard_id: int) -> Any:
             (storyboard_id,),
         ).fetchone()["n"]
 
+        # When retrying (skip_existing=False), reset expired/failed clips so they
+        # are treated as new and get fresh Replicate predictions.
+        if not skip_existing:
+            with conn:
+                conn.execute(
+                    """UPDATE video_scene_clips
+                       SET status = 'pending', clip_path = NULL, clip_url = NULL,
+                           prediction_id = NULL, error_message = NULL
+                       WHERE storyboard_id = ? AND status IN ('expired', 'failed')""",
+                    (storyboard_id,),
+                )
+
         # Create all Replicate predictions synchronously — each takes ~1s, not 30-90s.
         # Predictions run on Replicate's infrastructure and survive container restarts.
         # UI polls /sync-clips to pick up results as they complete.
@@ -3005,8 +3058,66 @@ def admin_disk_usage() -> Any:
     return jsonify(result)
 
 
+def _startup_backfill_product_images() -> None:
+    """On startup, fetch Shopify product images for any products missing image_url.
+
+    Runs in a background thread so it never delays app startup.
+    Only fires if CI_SHOPIFY_ENABLED=1 and there are products without image_url.
+    """
+    import threading
+
+    def _run() -> None:
+        try:
+            from creative_intelligence import config
+            if not config.CI_SHOPIFY_ENABLED:
+                return
+            from creative_intelligence.db import get_connection, init_db
+            init_db()
+            conn = get_connection()
+            # Check how many products are missing image_url
+            missing = conn.execute(
+                """SELECT COUNT(*) as n FROM products
+                   WHERE active=1 AND (image_url IS NULL OR image_url='')
+                     AND shopify_product_id IS NOT NULL"""
+            ).fetchone()["n"]
+            if missing == 0:
+                conn.close()
+                return
+            import logging
+            _log = logging.getLogger(__name__)
+            _log.info("Backfilling image_url for %d products from Shopify…", missing)
+            from creative_intelligence.product_knowledge.shopify_adapter import (
+                fetch_shopify_products, map_shopify_product
+            )
+            raw_products = fetch_shopify_products()
+            updated = 0
+            with conn:
+                for raw in raw_products:
+                    img_list = raw.get("images") or []
+                    if not img_list:
+                        continue
+                    first = img_list[0]
+                    img_url = first.get("src") or first.get("url") or None
+                    if not img_url:
+                        continue
+                    db_id = f"shopify-{raw['id']}"
+                    conn.execute(
+                        "UPDATE products SET image_url=? WHERE id=? AND (image_url IS NULL OR image_url='')",
+                        (img_url, db_id),
+                    )
+                    updated += 1
+            conn.close()
+            _log.info("Backfilled image_url for %d products.", updated)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("Product image backfill failed: %s", exc)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 if __name__ == "__main__":
     _startup_cleanup()
+    _startup_backfill_product_images()
     # Railway injects PORT; CI_WEB_PORT used locally.
     port = int(os.getenv("PORT", os.getenv("CI_WEB_PORT", "5555")))
     # Bind to 0.0.0.0 so Railway (and other hosts) can reach the app.

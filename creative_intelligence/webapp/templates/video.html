@@ -263,9 +263,25 @@
       <textarea id="conceptInput" placeholder="Paste a winning hook or concept here…"></textarea>
 
       <label style="margin-top:10px">Product</label>
-      <select id="productSelect">
+      <select id="productSelect" onchange="onProductChange()">
         <option value="">— No product context —</option>
       </select>
+
+      <!-- Product image URL — shown when a product is selected -->
+      <div id="productImagePanel" style="display:none;margin-top:8px">
+        <label style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px;display:block">
+          Product Image URL
+          <span style="color:var(--accent);margin-left:4px;cursor:help" title="Used as first-frame reference for video generation. The model animates FROM this image, keeping the product visually consistent across all clips.">ⓘ</span>
+        </label>
+        <input type="url" id="productImageUrl" placeholder="https://example.com/product.jpg"
+          style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 9px;font-size:12px"
+          oninput="debounceSaveProductImage()">
+        <div id="productImagePreview" style="margin-top:6px;display:none">
+          <img id="productImageThumb" src="" alt="product"
+            style="width:100%;border-radius:6px;border:1px solid var(--border);max-height:120px;object-fit:cover">
+        </div>
+        <div id="productImageSaveStatus" style="font-size:11px;color:var(--text2);margin-top:4px;height:14px"></div>
+      </div>
 
       <label style="margin-top:10px">Video Type</label>
       <select id="videoType">
@@ -357,6 +373,9 @@ function cleanLabel(raw) {
   return `${prefix} ${name}`;
 }
 
+// Store product data keyed by product id for image URL lookup
+window._productMap = {};
+
 async function loadProducts() {
   const sel = document.getElementById('productSelect');
   try {
@@ -364,19 +383,82 @@ async function loadProducts() {
     const products = await r.json();
     if (!Array.isArray(products)) throw new Error('bad response');
     products.forEach(p => {
+      window._productMap[p.id] = p;
       const opt = document.createElement('option');
       opt.value = p.id;
       opt.textContent = p.display_name || cleanLabel(p.label || p.name);
       sel.appendChild(opt);
     });
   } catch(e) {
-    // Show a visible error option so user knows products didn't load
     const opt = document.createElement('option');
     opt.value = '';
     opt.textContent = '⚠ Could not load products';
     opt.disabled = true;
     sel.appendChild(opt);
     console.warn('Could not load products', e);
+  }
+}
+
+function onProductChange() {
+  const sel = document.getElementById('productSelect');
+  const panel = document.getElementById('productImagePanel');
+  const urlInput = document.getElementById('productImageUrl');
+  const preview = document.getElementById('productImagePreview');
+  const thumb = document.getElementById('productImageThumb');
+  const productId = sel.value;
+  if (!productId) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = 'block';
+  const product = window._productMap[productId] || {};
+  const savedUrl = product.image_url || '';
+  urlInput.value = savedUrl;
+  if (savedUrl) {
+    thumb.src = savedUrl;
+    preview.style.display = 'block';
+  } else {
+    preview.style.display = 'none';
+  }
+}
+
+// Debounce image URL saves — waits 1.2s after user stops typing
+let _imgSaveTimer = null;
+function debounceSaveProductImage() {
+  clearTimeout(_imgSaveTimer);
+  _imgSaveTimer = setTimeout(saveProductImageUrl, 1200);
+}
+
+async function saveProductImageUrl() {
+  const sel = document.getElementById('productSelect');
+  const urlInput = document.getElementById('productImageUrl');
+  const status = document.getElementById('productImageSaveStatus');
+  const preview = document.getElementById('productImagePreview');
+  const thumb = document.getElementById('productImageThumb');
+  const productId = sel.value;
+  const imageUrl = urlInput.value.trim();
+  if (!productId) return;
+  status.textContent = 'Saving…';
+  try {
+    const r = await fetch(`/api/products/${encodeURIComponent(productId)}`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({image_url: imageUrl}),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Save failed');
+    // Update local cache
+    if (window._productMap[productId]) window._productMap[productId].image_url = imageUrl;
+    status.textContent = '✓ Saved';
+    if (imageUrl) {
+      thumb.src = imageUrl;
+      preview.style.display = 'block';
+    } else {
+      preview.style.display = 'none';
+    }
+    setTimeout(() => { status.textContent = ''; }, 2000);
+  } catch(e) {
+    status.textContent = '⚠ ' + e.message;
   }
 }
 
