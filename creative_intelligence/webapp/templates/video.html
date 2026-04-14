@@ -949,9 +949,17 @@ async function assembleVideo(sbId, videoType, motionMode) {
       motion_mode:       motionMode,
     });
 
+    if (result.status === 'clips_expired') {
+      const msg = '⚠️ Clip files expired — add Replicate credits then click 🔄 Retry Failed';
+      toast(msg, true);
+      if (statusEl) statusEl.textContent = msg;
+      // Reload badges so expired clips now show as failed
+      await loadSceneClips(sbId);
+      return;
+    }
     if (result.status === 'no_frames') {
       const msg = isClip
-        ? 'No clips assembled — run Generate Clips first, then Use Clips'
+        ? 'No clips yet — click 🎞 Generate Clips first'
         : 'Generate scene frames first, then assemble';
       toast(msg, true);
       if (statusEl) statusEl.textContent = msg;
