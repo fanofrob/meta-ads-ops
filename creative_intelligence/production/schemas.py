@@ -38,7 +38,8 @@ class StaticAdBrief:
     Fields
     ------
     hook                : The approved concept/hook (verbatim input).
-    headline_options    : 3 headline variants, each ≤8 words.
+    headline_options    : 3 general headline variants, each ≤8 words.
+    variant_headlines   : Dict of 8 variant-specific headlines keyed by variant name.
     body_options        : 3 primary text variants, each 1-2 punchy sentences.
     visual_direction    : 1-2 sentences describing the overall visual concept.
     composition_notes   : Layout, framing, and white-space guidance.
@@ -50,6 +51,7 @@ class StaticAdBrief:
     FIELDS = (
         "hook",
         "headline_options",
+        # variant_headlines is optional — generated for new briefs but absent on older ones
         "body_options",
         "visual_direction",
         "composition_notes",
@@ -62,6 +64,16 @@ class StaticAdBrief:
     SCHEMA_HINT = """{
   "hook": "verbatim input concept",
   "headline_options": ["Headline A (≤8 words)", "Headline B", "Headline C"],
+  "variant_headlines": {
+    "minimal": "Clean understated headline ≤6 words",
+    "bold_type": "1–3 WORD PUNCHY STATEMENT",
+    "benefit_stack": "Specific benefit-led headline ≤8 words",
+    "social_proof": "Quote-style or proof-led headline ≤8 words",
+    "origin_story": "Provenance or origin headline ≤8 words",
+    "lifestyle_tagline": "Emotional brand statement ≤7 words",
+    "direct_response": "Urgency/action headline ≤8 words",
+    "premium": "Elegant aspirational headline ≤6 words"
+  },
   "body_options": ["Primary text A (1-2 sentences)", "Primary text B", "Primary text C"],
   "visual_direction": "1-2 sentences on the overall visual concept",
   "composition_notes": "Layout, framing, and white-space guidance",
@@ -229,6 +241,7 @@ def empty_static_brief() -> dict[str, Any]:
     return {
         "hook": "",
         "headline_options": [],
+        "variant_headlines": {},
         "body_options": [],
         "visual_direction": "",
         "composition_notes": "",

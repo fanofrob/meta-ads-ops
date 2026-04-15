@@ -289,6 +289,14 @@ header .subtitle { font-size: 12px; color: var(--muted); }
 .prod-section p { color: var(--text); }
 .prod-section ul { padding-left: 16px; color: var(--text2); margin: 0; }
 .prod-section ul li { margin-bottom: 3px; }
+.variant-headlines-grid { display: flex; flex-direction: column; gap: 5px; }
+.vh-row { display: flex; align-items: baseline; gap: 8px; }
+.vh-badge {
+  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px;
+  padding: 1px 6px; border-radius: 4px; border: 1px solid; white-space: nowrap;
+  flex-shrink: 0;
+}
+.vh-text { font-size: 12px; color: var(--text); line-height: 1.4; }
 .prod-approve-btn { font-size: 11px; padding: 3px 8px; border-radius: 5px; cursor: pointer;
   border: 1px solid var(--border); background: transparent; color: var(--muted);
   transition: all .12s; }
@@ -1163,10 +1171,31 @@ function prodList(items) {
   if (!Array.isArray(items) || !items.length) return '<p>—</p>';
   return '<ul>' + items.map(i => `<li>${esc(String(i))}</li>`).join('') + '</ul>';
 }
+function prodVariantHeadlines(vh) {
+  if (!vh || typeof vh !== 'object' || !Object.keys(vh).length) return '<p>—</p>';
+  const variantLabels = {
+    minimal: 'Minimal', bold_type: 'Bold Type', benefit_stack: 'Benefit Stack',
+    social_proof: 'Social Proof', origin_story: 'Origin Story',
+    lifestyle_tagline: 'Lifestyle Tagline', direct_response: 'Direct Response', premium: 'Premium'
+  };
+  const variantColors = {
+    minimal: '#60a5fa', bold_type: '#c084fc', benefit_stack: '#fb923c',
+    social_proof: '#4ade80', origin_story: '#a3e635', lifestyle_tagline: '#fbbf24',
+    direct_response: '#f87171', premium: '#fcd34d'
+  };
+  return '<div class="variant-headlines-grid">' +
+    Object.entries(vh).map(([k, v]) => {
+      const label = variantLabels[k] || k;
+      const color = variantColors[k] || '#888';
+      return `<div class="vh-row"><span class="vh-badge" style="border-color:${color};color:${color}">${esc(label)}</span><span class="vh-text">${esc(String(v))}</span></div>`;
+    }).join('') +
+    '</div>';
+}
 function buildStaticBriefBody(d) {
   return `
     ${prodSection('Hook', `<p>${esc(d.hook || '')}</p>`)}
     ${prodSection('Headlines', prodList(d.headline_options))}
+    ${d.variant_headlines && Object.keys(d.variant_headlines).length ? prodSection('Variant Headlines', prodVariantHeadlines(d.variant_headlines)) : ''}
     ${prodSection('Body / Primary Text', prodList(d.body_options))}
     ${prodSection('Visual Direction', `<p>${esc(d.visual_direction || '')}</p>`)}
     ${prodSection('Composition Notes', `<p>${esc(d.composition_notes || '')}</p>`)}
