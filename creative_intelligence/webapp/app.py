@@ -1617,8 +1617,9 @@ def render_asset_regenerate(asset_id: int) -> Any:
             conn.close()
             return jsonify({"error": "provider returned no output"}), 500
 
-        # Save background asset
-        bg_asset_id = save_asset(
+        # AI image IS the final ad — save directly as final_ad, skip PIL compositor.
+        # The compositor added mechanical duplicate text on top of AI-baked copy.
+        new_asset_id = save_asset(
             render_output_id=render_output_id,
             variant_label=variant_label,
             source=paths[0],
@@ -1629,51 +1630,10 @@ def render_asset_regenerate(asset_id: int) -> Any:
                 "edited_prompt":    True,
                 "custom_notes":     extra_notes,
                 "base_asset_id":    asset_id,
-                "asset_role":       "background",
+                "asset_role":       "final_ad",
             },
-            asset_type="background",
+            asset_type="final_ad",
         )
-
-        # Composite final ad (non-fatal if it fails)
-        final_asset_id = bg_asset_id  # fallback: show background if composite fails
-        try:
-            from creative_intelligence.rendering.compositor import composite_ad
-            from creative_intelligence.rendering.asset_store import get_render_output_dir
-
-            bg_row = conn.execute(
-                "SELECT asset_path_or_url FROM render_assets WHERE id = ?", (bg_asset_id,)
-            ).fetchone()
-            bg_source = paths[0]
-            if bg_row:
-                candidate = bg_row["asset_path_or_url"]
-                if candidate and not candidate.startswith(("https://", "http://", "mock://")):
-                    bg_source = candidate
-
-            out_dir = get_render_output_dir() / str(render_output_id)
-            out_dir.mkdir(parents=True, exist_ok=True)
-            import time as _time
-            final_out = str(out_dir / f"{variant_label}_final_{int(_time.time())}.png")
-            final_path = composite_ad(bg_source, spec, output_path=final_out)
-            if not final_path.endswith("_mock.png"):
-                final_asset_id = save_asset(
-                    render_output_id=render_output_id,
-                    variant_label=variant_label,
-                    source=final_path,
-                    conn=conn,
-                    metadata={
-                        "concept_title":       spec.get("concept_title", ""),
-                        "aspect_ratio":        aspect_ratio,
-                        "background_asset_id": bg_asset_id,
-                        "edited_prompt":       True,
-                        "custom_notes":        extra_notes,
-                        "asset_role":          "final_ad",
-                    },
-                    asset_type="final_ad",
-                )
-        except Exception as _ce:
-            app.logger.warning("Compositing failed during regenerate: %s", _ce)
-
-        new_asset_id = final_asset_id
 
         # Transfer collection flags (favorite / ready / approved) from the old
         # asset to the new one, then clear them on the old asset.
