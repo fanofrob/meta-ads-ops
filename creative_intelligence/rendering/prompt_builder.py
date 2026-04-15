@@ -123,8 +123,9 @@ _VARIANT_NEGATIVES: dict[str, str] = {
         "overlapping text and product, shield badges, decorative icons"
     ),
     "premium": (
-        "coloured background, lifestyle scene, props, multiple products, "
-        "text overlays except product name label, busy composition, dark tones"
+        "white background, plain background, flat lighting, studio catalogue look, "
+        "busy props, multiple unrelated elements, cheerful bright colours, "
+        "small text label in a box, badges, CTA button, price tags, clip art"
     ),
 }
 
@@ -177,9 +178,40 @@ def _background_style(visual_direction: str) -> str:
 
 
 def _truncate(text: str, max_chars: int) -> str:
+    """Truncate at max_chars, preferring a sentence boundary over a raw word cut."""
     if len(text) <= max_chars:
         return text
-    return text[:max_chars].rsplit(" ", 1)[0].rstrip(" ,;:")
+    # First try to cut at a sentence boundary (., !, ?) within the limit
+    window = text[:max_chars]
+    for ch in (".", "!", "?"):
+        idx = window.rfind(ch)
+        if idx > max_chars // 2:          # sentence is at least half the limit — keep it
+            return window[:idx + 1].strip()
+    # Fall back to word boundary, but strip trailing function words that read as incomplete
+    clipped = window.rsplit(" ", 1)[0].rstrip(" ,;:")
+    # Drop trailing prepositions / conjunctions / articles that would leave dangling text
+    _DANGLERS = re.compile(
+        r"\s+(of|with|in|on|at|by|to|a|an|the|and|or|but|for|nor|so|yet|from|"
+        r"into|onto|upon|that|which|who|whose|about|than|as|if|whether|"
+        r"via|per|vs|plus|minus|x|times)$",
+        re.IGNORECASE,
+    )
+    clipped = _DANGLERS.sub("", clipped).rstrip(" ,;:")
+    return clipped
+
+
+def _clean_body_for_overlay(body: str, max_chars: int = 90) -> str:
+    """Extract the first complete sentence from body copy, suitable for image overlay text.
+
+    Image generators render text literally — incomplete clauses look broken on the ad.
+    Takes the first sentence (split on .!?) and truncates if needed.
+    """
+    if not body:
+        return ""
+    # Take first complete sentence
+    first_sentence = re.split(r"(?<=[.!?])\s+", body.strip())[0].strip()
+    # If the sentence itself is too long, truncate it cleanly
+    return _truncate(first_sentence, max_chars)
 
 
 # ─────────────────────────────────────────────
@@ -236,13 +268,13 @@ def _prompt_benefit_stack(
     """Clean stacked benefit lines on solid colour background. No badges or plus signs.
     CTA stands out as a clearly distinct bottom element."""
 
-    # Extract 2 short benefit lines from headline + body
-    benefit1 = _truncate(headline, 40).upper() if headline else product.upper()
+    # Extract 2 complete, self-contained benefit lines
+    benefit1 = _truncate(headline, 45).upper() if headline else product.upper()
     benefit2 = ""
     if body:
-        first = body.split(".")[0].strip()
+        first = _clean_body_for_overlay(body, max_chars=50)
         if first:
-            benefit2 = _truncate(first, 40).upper()
+            benefit2 = first.upper()
 
     cta_text = _truncate(cta, 28).upper() if cta else "ORDER NOW"
 
@@ -368,16 +400,17 @@ def _prompt_direct_response(
     """Full conversion layout: bold headline + benefit body + prominent CTA button."""
     headline_upper = (headline or "Order Now").upper()
     cta_upper = (cta or "Shop Now").upper()
-    body_short = _truncate(body or "", 75)
 
     bg = _style(style_seed + 2, _BG_PALETTES)
     typo = _style(style_seed + 2, _TYPO_MOODS)
+
+    body_clean = _clean_body_for_overlay(body or "", max_chars=90)
 
     return (
         f"Conversion-focused Meta ad. {bg}. "
         f"{product} product photography. "
         f'{typo}. Large bold headline: "{headline_upper}". '
-        + (f'Benefit copy below: "{body_short}". ' if body_short else "")
+        + (f'Benefit copy below headline — complete sentence: "{body_clean}". ' if body_clean else "")
         + f'Prominent high-contrast CTA button at bottom: "{cta_upper}". '
         "Strong visual hierarchy — headline → product → CTA. "
         "Bold typography, high contrast, legible at small sizes. No badges or icons."
@@ -387,23 +420,52 @@ def _prompt_direct_response(
 def _prompt_premium(
     brief: dict, product: str, headline: str, style_seed: int
 ) -> str:
-    """Pure white background, product centered, single elegant label."""
-    label = _truncate(headline or f"Premium Quality {product}", 50)
+    """Luxury food editorial — dark atmospheric surface, dramatic lighting, large elegant type."""
+    label = _truncate(headline or product, 50)
 
-    premium_styles = [
-        "pure white background, professional studio lighting with soft shadow",
-        "pure white background, single directional light, crisp shadow",
-        "near-white warm background, floating product with clean shadow",
-        "clean white background, backlit glow effect, minimalist",
+    # Dark, rich, textured surfaces — the opposite of plain white
+    premium_surfaces = [
+        "deep black slate surface, single dramatic spotlight from above-left, "
+        "rich dark atmosphere, fine dining aesthetic",
+        "dark polished marble surface, cool ambient studio light, "
+        "deep grey tones, luxury editorial feel",
+        "weathered dark oak table, warm side-lit candle-like glow, "
+        "rich shadows, artisan food photography",
+        "charcoal linen background, directional natural window light, "
+        "moody shadows, high-end lifestyle magazine look",
+        "deep forest green velvet surface, warm spotlight, "
+        "jewel-tone richness, premium gifting aesthetic",
     ]
-    style = premium_styles[style_seed % len(premium_styles)]
+    surface = premium_surfaces[style_seed % len(premium_surfaces)]
+
+    # Styling elements that signal premium produce
+    styling_options = [
+        "product cross-section reveals interior, small whole fruit beside it, "
+        "single leaf or stem as accent, clean negative space",
+        "product arranged on a small ceramic plate or shallow bowl, "
+        "minimal styling, one accent element, editorial spacing",
+        "hero close-up of product texture and colour, "
+        "shallow depth of field, background falls to darkness",
+        "two or three specimens arranged with intention, "
+        "chef-styled plating, geometric composition",
+    ]
+    styling = styling_options[style_seed % len(styling_options)]
+
+    typo_options = [
+        "large refined serif typeface, elegant tracking",
+        "tall editorial sans-serif, generous letter-spacing, light weight",
+        "mixed scale typography: large brand name, smaller descriptor below",
+        "single word in oversized serif, elegant and minimal",
+    ]
+    typo = typo_options[style_seed % len(typo_options)]
 
     return (
-        f"Premium catalog Meta ad. {style}. "
-        f"{product} perfectly centered, professional studio lighting, pristine appearance. "
-        f'Small elegant label in refined typography: "{label}". '
-        "Generous white space, no busy elements. "
-        "Luxury catalog aesthetic — high-end specialty food brand. Single product, single label."
+        f"Premium editorial Meta ad for a luxury DTC produce brand. {surface}. "
+        f"{product}. {styling}. "
+        f"Dramatic chiaroscuro lighting — product glows against dark background. "
+        f'{typo}. Headline text: "{label}" in light colour against the dark bg. '
+        "Ultra-high production value. Reminiscent of a Condé Nast food spread. "
+        "No badges, no CTA button, no busy elements. Cinematic atmosphere."
     )
 
 
