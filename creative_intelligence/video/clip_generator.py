@@ -94,68 +94,108 @@ def build_clip_prompt(
     video_type: str = "ugc",
     product_name: str | None = None,
     product_description: str | None = None,
+    image_to_video: bool = False,
 ) -> str:
     """
-    Build a detailed, consistent text-to-video prompt for a storyboard scene.
+    Build a text-to-video or image-to-video prompt for a storyboard scene.
 
-    Uses a style anchor (consistent across all scenes) + scene-specific subject/motion.
-    product_name and product_description are inserted so the model renders the right product.
-    product_description should include specific visual attributes (colour, texture, shape)
-    so the model generates the actual product rather than a generic approximation.
+    image_to_video=True (used with minimax/video-01-live first_frame_image):
+        The first frame IS the product image, so the prompt must only describe
+        WHAT HAPPENS / HOW THE CAMERA MOVES — NOT the subject or scene setup.
+        Describing a full scene fights the first frame and causes the model to
+        introduce random elements.
+
+    image_to_video=False (plain text-to-video):
+        Full scene description including style anchor, subject, lighting, product.
     """
-    # 1. Style anchor — locks in consistent look across all scenes
-    style_anchor = _TYPE_STYLE_ANCHOR.get(video_type, "Cinematic commercial footage.")
-
-    # 2. Purpose-based subject/motion guidance
-    purpose = (scene.get("purpose") or "demo").lower().strip()
-    purpose_guide = _PURPOSE_GUIDANCE.get(purpose, _DEFAULT_PURPOSE)
-
-    # 3. Scene visual description (from storyboard LLM)
-    visual = (scene.get("visual_description") or "").strip()
-
-    # 4. Camera motion from shot metadata
+    # Camera motion — used in both modes
     cam_type = (scene.get("camera_type") or "").lower().strip()
     movement = (scene.get("movement") or "none").lower().strip()
-    cam_key = f"{cam_type}_{movement}" if cam_type else None
-    cam_motion = _CAMERA_MOTION.get(cam_key or "", "")
+    cam_key  = f"{cam_type}_{movement}" if cam_type else None
+    cam_motion = _CAMERA_MOTION.get(cam_key or "", "slow smooth camera drift")
 
-    # 5. Product — name + visual description for consistent appearance across clips.
-    # The description anchors the model to the real product's visual characteristics
-    # (colour, texture, shape, cut appearance) rather than a generic approximation.
+    purpose = (scene.get("purpose") or "demo").lower().strip()
+
+    if image_to_video:
+        # ── Image-to-video mode ──────────────────────────────────────────────
+        # The product appearance is already locked in the first frame.
+        # Only describe motion, action, and framing — nothing about what
+        # the subject looks like (that would override the reference image).
+        return _build_i2v_prompt(scene, purpose, cam_motion)
+
+    # ── Text-to-video mode ──────────────────────────────────────────────────
+    style_anchor  = _TYPE_STYLE_ANCHOR.get(video_type, "Cinematic commercial footage.")
+    purpose_guide = _PURPOSE_GUIDANCE.get(purpose, _DEFAULT_PURPOSE)
+    visual        = (scene.get("visual_description") or "").strip()
+    lighting      = (scene.get("lighting_style") or "").strip()
+    product_focus = (scene.get("product_focus") or "").strip()
+
     product_parts: list[str] = []
     if product_name:
         product_parts.append(f"Product: {product_name}.")
     if product_description:
-        # Trim to first 200 chars — enough for visual anchoring, not overwhelming
         desc = product_description.strip()[:200]
         product_parts.append(f"Visual reference: {desc}.")
     product_str = " ".join(product_parts)
 
-    # 6. Lighting
-    lighting = (scene.get("lighting_style") or "").strip()
-
-    # 7. Product focus detail
-    product_focus = (scene.get("product_focus") or "").strip()
-
-    # Assemble prompt — order matters: style → subject → motion → product → details → quality
-    parts: list[str] = [style_anchor]
-    parts.append(purpose_guide)
-    if visual:
-        parts.append(visual)
-    if cam_motion:
-        parts.append(f"Camera: {cam_motion}.")
-    if product_str:
-        parts.append(product_str)
-    if product_focus:
-        parts.append(product_focus)
-    if lighting:
-        parts.append(f"Lighting: {lighting}.")
+    parts: list[str] = [style_anchor, purpose_guide]
+    if visual:        parts.append(visual)
+    if cam_motion:    parts.append(f"Camera: {cam_motion}.")
+    if product_str:   parts.append(product_str)
+    if product_focus: parts.append(product_focus)
+    if lighting:      parts.append(f"Lighting: {lighting}.")
     parts.append(
         "Photorealistic. No text overlays. No watermarks. No logos. "
         "Smooth natural motion. Professional commercial advertisement quality."
     )
-
     return " ".join(p.rstrip(".").strip() + "." for p in parts if p.strip())
+
+
+# Motion-only prompt directives per scene purpose (for image-to-video mode).
+# These describe what HAPPENS in the shot — not what the subject looks like.
+_I2V_PURPOSE_MOTION: dict[str, str] = {
+    "hook":         "camera pushes in slowly, energy builds, subject fills frame",
+    "establishing": "slow pull back revealing the full subject, steady drift",
+    "quality":      "extreme slow macro drift across surface texture, tiny camera movement",
+    "harvest":      "hand enters frame gently from below, picks up subject, slow lift",
+    "hero":         "slow graceful orbit around subject, gentle 360 drift",
+    "process":      "hands enter frame, perform careful deliberate action on subject",
+    "demo":         "hands gently interact with subject, reveal detail through touch",
+    "lifestyle":    "subject rests naturally, very gentle ambient drift, warm atmosphere",
+    "cta":          "camera pushes in confidently toward subject, decisive zoom",
+    "reveal":       "slow pull away or tilt up to reveal full subject",
+    "proof":        "steady locked-off shot, subject stable and prominent",
+    "origin":       "gentle slow pan across subject from left to right",
+    "problem":      "slight handheld shake, camera circles subject slowly",
+    "solution":     "smooth confident push toward subject, satisfying arrival",
+}
+
+_I2V_DEFAULT_MOTION = "gentle slow camera drift, subject stable and prominent"
+
+
+def _build_i2v_prompt(scene: dict, purpose: str, cam_motion: str) -> str:
+    """Build a motion-only prompt for image-to-video generation.
+
+    Keeps the prompt tightly focused on camera movement and action so the
+    model animates FROM the reference image rather than replacing it.
+    """
+    motion_directive = _I2V_PURPOSE_MOTION.get(purpose, _I2V_DEFAULT_MOTION)
+    framing = (scene.get("framing") or "").strip()
+    product_focus = (scene.get("product_focus") or "").strip()
+
+    parts = [motion_directive]
+    if cam_motion and cam_motion != _I2V_DEFAULT_MOTION:
+        parts.append(cam_motion)
+    if framing:
+        parts.append(f"{framing} shot")
+    if product_focus:
+        # Keep product_focus as it describes what specifically to animate
+        parts.append(product_focus)
+    parts.append(
+        "smooth cinematic motion, photorealistic, no new objects added, "
+        "no text overlays, natural lighting"
+    )
+    return ". ".join(p.rstrip(".").strip() for p in parts if p.strip()) + "."
 
 
 # ─────────────────────────────────────────────
@@ -396,6 +436,13 @@ def generate_storyboard_clips(
     if isinstance(provider, ReplicateSceneClipProvider) and not dry_run:
         import logging as _log
         _logger = _log.getLogger(__name__)
+        # Use image-to-video mode when: a product image exists AND the model
+        # supports first-frame conditioning (field name known in _IMAGE_FIELD).
+        # In i2v mode the prompt describes only motion — the image handles appearance.
+        use_i2v = bool(
+            product_image_url and provider._image_field_for_model() is not None
+        )
+
         for scene in scenes_to_generate:
             scene_id    = scene.get("id", 0)
             scene_index = scene.get("scene_index", 0)
@@ -404,6 +451,7 @@ def generate_storyboard_clips(
                 scene, video_type,
                 product_name=product_name,
                 product_description=product_description,
+                image_to_video=use_i2v,
             )
             pred_id = provider.create_prediction(
                 prompt, duration, image_url=product_image_url
