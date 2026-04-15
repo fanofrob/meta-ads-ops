@@ -58,16 +58,38 @@ _ALL_ACTIONS = _HOOK_ACTIONS | _RICH_ACTIONS
 
 _HOOK_SYSTEM = """\
 You are an expert direct-response ad copywriter specialising in Meta/Facebook/Instagram ads.
-You write concise, scroll-stopping hooks and copy for premium specialty food e-commerce.
+You write scroll-stopping hooks that make people stop, feel seen, and CLICK TO BUY.
 
-Rules that ALWAYS apply:
+## The Framework: Every Hook = Desire + Conflict + Partial Solution (D+C+PS)
+
+A hook is a PARADOX. It must create tension by naming what someone wants (D),
+revealing why they can't have it yet or what's in the way (C), then teasing
+that a solution exists without giving it away (PS).
+
+The loop must NEVER be completed inside the hook. Completion kills the click.
+
+## CONVERSION RULES — these are paid Meta ads, not organic content
+- The Partial Solution must tease a PURCHASE or product experience, not a content series.
+  ("It ships at peak ripeness" not "here's my tracking method")
+- Every hook must make someone want to click to BUY, not just watch more.
+- The desire must be to TASTE, OWN, or EXPERIENCE — not just to KNOW.
+- Urgency, scarcity, and specificity of the product experience are your tools.
+- Sensory language (creamy, sweet-tart, custard-like) beats educational language every time.
+
+## Rules that ALWAYS apply
 - Use specific product claims from the context (origin, variety, flavour, texture, harvest method).
 - Use the product name AT MOST ONCE per hook. After that, use "it", "them", "our", or a descriptor.
-- NEVER write a hook that could apply to any fruit/food — every hook must be ownable to THIS product.
+- NEVER write a hook that could apply to any other product — every hook must be ownable to THIS product.
 - NEVER use placeholder brackets like [product], [benefit], or [name].
-- Keep hooks 20–120 characters unless told otherwise.
 - Write in plain English — no emojis unless the brief specifically asks.
 - Output ONLY valid JSON — no markdown, no explanation outside the JSON.
+
+## Guardrails — these will be rejected
+✗ Rage-bait ("This will make you angry", "You won't believe")
+✗ Easy-steps language ("5 simple steps", "here's the trick")
+✗ Vague curiosity bait ("This changed everything", "Nobody talks about this")
+✗ Generic hooks (could apply to any product in the category)
+✗ Completed loops (hook that answers its own question)
 """
 
 
@@ -127,16 +149,29 @@ def _hook_transform_prompt(
 
     instruction = instructions.get(action_type, "Rewrite this concept.")
 
+    archetype_ref = (
+        "Archetypes (label each hook with one):\n"
+        "A1 Classic D→C→PS | A2 C→D→PS | A3 PS→C→D (pattern interrupt)\n"
+        "A4 'I thought X until Y' (paradox reveal) | A5 'I spent X on Y so you don't have to' (authority)\n"
+        "A6 'I struggled for X until I discovered' (journey) | A7 'Most people think X, but actually Y' (flipped belief)\n"
+        "A8 'X doesn't have to mean Y — here's how to have both' (false tradeoff)\n"
+        "A9 Question → Paradox | A10 Peer-level discovery ('figuring this out too')"
+    )
+
     user = (
         f"{instruction}{audience_note}{tone_note}{ctx_block}\n\n"
         f"Original concept:\n{concept}\n\n"
-        f"For each hook, also identify which Hook University formula or structure was applied.\n"
-        f"Formulas: AF1 (I spent X to figure out Y), AF2 (I thought X until Y), "
-        f"AF3 (I struggled X until Z), AF4 (discovering together), "
-        f"AF5 (everyone says X but data shows Y), AF6 (X doesn't have to mean Y).\n"
-        f"Structures: S1 (bold claim), S2 (sensory-first), S3 (contrast), S4 (discovery/reveal), "
-        f"S5 (question), S6 (origin/provenance), S7 (invitation).\n"
-        f"Output JSON: {{\"hooks\": [{count} objects, each: {{\"text\": \"...\", \"hu_tag\": \"AF2 | S5\"}}]}}"
+        f"{archetype_ref}\n\n"
+        f"For each hook, identify the D (Desire), C (Conflict), and PS (Partial Solution — must tease a PURCHASE, not content).\n"
+        f"Output JSON with this exact shape:\n"
+        f'{{\"hooks\": [{count} objects, each: {{'
+        f'\"text\": \"full hook text\", '
+        f'\"archetype\": \"A4 — I thought X until Y\", '
+        f'\"d\": \"what the buyer wants\", '
+        f'\"c\": \"the specific obstacle\", '
+        f'\"ps\": \"what purchase/experience is teased without completing the loop\", '
+        f'\"clarity\": \"one sentence on why a first-time buyer instantly gets this\"'
+        f'}}]}}'
     )
     return _HOOK_SYSTEM, user
 
@@ -326,25 +361,26 @@ def run_action(
         elif isinstance(raw, list):
             raw_hooks = raw
 
-        # Support both old format (list of strings) and new format (list of {text, hu_tag})
+        # Support both plain strings and rich {text, archetype, d, c, ps, clarity} objects
         hooks: list[str] = []
-        hu_tags: list[str] = []
+        hooks_rich: list[dict] = []
         for h in raw_hooks:
             if isinstance(h, dict):
                 text = str(h.get("text", "")).strip()
-                tag  = str(h.get("hu_tag", "")).strip()
             else:
                 text = str(h).strip()
-                tag  = ""
             if text:
                 hooks.append(text)
-                hu_tags.append(tag)
+                if isinstance(h, dict):
+                    hooks_rich.append(h)
+                else:
+                    hooks_rich.append({"text": text})
 
         return {
-            "results":    hooks,
-            "hu_tags":    hu_tags,   # parallel list — same index as results
+            "results":     hooks,
+            "hooks_rich":  hooks_rich,  # parallel list with archetype + D/C/PS breakdown
             "action_type": action_type,
-            "metadata":   {"count": len(hooks), "tone": params.get("tone", "")},
+            "metadata":    {"count": len(hooks), "tone": params.get("tone", "")},
         }
 
     # ── Rich format actions ──────────────────────────────────

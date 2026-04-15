@@ -576,7 +576,7 @@ def copilot_action() -> Any:
         )
 
         results     = action_result["results"]
-        hu_tags     = action_result.get("hu_tags", [])   # parallel list of HU formula tags
+        hooks_rich  = action_result.get("hooks_rich", [])  # parallel list with archetype + D/C/PS
         is_rich     = action_type in ("ugc_concepts", "static_concepts", "script", "creator_brief")
         iterations: list[dict[str, Any]] = []
 
@@ -590,10 +590,18 @@ def copilot_action() -> Any:
                     hook_text = item if isinstance(item, str) else str(item)
                     sc = score_concept(hook_text, conn)
                     predicted = sc["overall"]
-                    # Attach Hook University tag if present
-                    hu_tag = hu_tags[idx] if idx < len(hu_tags) else ""
-                    if hu_tag:
-                        sc["hu_tag"] = hu_tag
+                    # Attach D+C+PS archetype data if present
+                    rich_obj = hooks_rich[idx] if idx < len(hooks_rich) else {}
+                    if rich_obj.get("archetype"):
+                        sc["archetype"] = rich_obj["archetype"]
+                    if rich_obj.get("d"):
+                        sc["dcp_d"] = rich_obj["d"]
+                    if rich_obj.get("c"):
+                        sc["dcp_c"] = rich_obj["c"]
+                    if rich_obj.get("ps"):
+                        sc["dcp_ps"] = rich_obj["ps"]
+                    if rich_obj.get("clarity"):
+                        sc["dcp_clarity"] = rich_obj["clarity"]
                     meta = json.dumps(sc)
                     concept_text = hook_text
                 else:

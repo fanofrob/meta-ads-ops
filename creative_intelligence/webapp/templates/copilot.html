@@ -174,6 +174,16 @@ header .subtitle { font-size: 12px; color: var(--muted); }
 
 .card-footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .card-tag { font-size: 10px; color: var(--muted); background: var(--surface2); padding: 2px 7px; border-radius: 10px; border: 1px solid var(--border); }
+/* D+C+PS breakdown block */
+.dcp-breakdown { margin: 8px 0 6px; padding: 8px 10px; background: rgba(99,102,241,.06); border-left: 2px solid #6366f1; border-radius: 0 6px 6px 0; font-size: 11px; }
+.dcp-archetype { color: #a78bfa; font-weight: 600; margin-bottom: 6px; letter-spacing: .02em; }
+.dcp-row { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 3px; }
+.dcp-label { flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; }
+.dcp-d  { background: rgba(52,211,153,.15); color: #34d399; border: 1px solid rgba(52,211,153,.3); }
+.dcp-c  { background: rgba(251,113,133,.15); color: #fb7185; border: 1px solid rgba(251,113,133,.3); }
+.dcp-ps { background: rgba(251,191,36,.15); color: #fbbf24; border: 1px solid rgba(251,191,36,.3); }
+.dcp-text { color: var(--text2); line-height: 1.4; flex: 1; }
+.dcp-clarity { margin-top: 5px; color: var(--muted); font-style: italic; font-size: 10px; }
 .card-actions { margin-left: auto; display: flex; gap: 6px; }
 .card-btn {
   font-size: 11px; padding: 4px 9px; border-radius: 5px; cursor: pointer;
@@ -709,18 +719,28 @@ function appendCard(it) {
     // Plain hook card
     const pillCls = score >= 60 ? 'pill-high' : score >= 35 ? 'pill-mid' : 'pill-low';
     const pillTxt = score != null ? `${score}` : '—';
+    // D+C+PS breakdown block (shown when archetype data is available)
+    const hasDcp = meta.archetype || meta.dcp_d || meta.dcp_c || meta.dcp_ps;
+    const dcpBlock = hasDcp ? `
+      <div class="dcp-breakdown">
+        ${meta.archetype ? `<div class="dcp-archetype">${esc(meta.archetype)}</div>` : ''}
+        ${meta.dcp_d  ? `<div class="dcp-row"><span class="dcp-label dcp-d">D</span><span class="dcp-text">${esc(meta.dcp_d)}</span></div>` : ''}
+        ${meta.dcp_c  ? `<div class="dcp-row"><span class="dcp-label dcp-c">C</span><span class="dcp-text">${esc(meta.dcp_c)}</span></div>` : ''}
+        ${meta.dcp_ps ? `<div class="dcp-row"><span class="dcp-label dcp-ps">PS</span><span class="dcp-text">${esc(meta.dcp_ps)}</span></div>` : ''}
+        ${meta.dcp_clarity ? `<div class="dcp-clarity">${esc(meta.dcp_clarity)}</div>` : ''}
+      </div>` : '';
     inner = `
       <div class="card-header">
         <div class="card-text">${esc(it.concept_text)}</div>
         ${score != null ? `<span class="card-score-pill ${pillCls}">${pillTxt}</span>` : ''}
       </div>
+      ${dcpBlock}
       <div class="card-footer">
         <span class="card-tag">${esc(it.action_type.replace(/_/g,' '))}</span>
         ${(meta.hook_type && meta.hook_type !== 'unknown') || (meta.angle && meta.angle !== 'unknown')
           ? `<span class="card-tag">${[meta.hook_type, meta.angle].filter(t => t && t !== 'unknown').join(' × ')}</span>`
           : (meta.pattern_name ? `<span class="card-tag">${esc(meta.pattern_name)}</span>` : '')
         }
-        ${meta.hu_tag ? `<span class="card-tag" style="color:#a78bfa;border-color:#4c1d95;background:#1e0a40" title="Hook University: ${esc(meta.hu_tag)}">${esc(formatHuTag(meta.hu_tag))}</span>` : ''}
         <div class="card-actions">
           <button class="card-btn star${it.is_favorite ? ' active' : ''}" onclick="toggleFavorite(${it.id}, this)" title="Save as favourite">★</button>
           <button class="card-btn use-btn" data-text="${esc(it.concept_text)}" data-iter="${it.id}">Use this ↑</button>
@@ -856,32 +876,6 @@ async function api(url, body) {
   const json = await r.json();
   if (!r.ok) throw new Error(json.error || r.statusText);
   return json;
-}
-
-/* ── Hook University formula lookup ──────────────────── */
-const _HU_AF = {
-  AF1: "Did X so you don't have to",
-  AF2: "I thought X until Y",
-  AF3: "Struggled until I discovered",
-  AF4: "Discovering together",
-  AF5: "Everyone says X but…",
-  AF6: "X doesn't have to mean Y",
-};
-const _HU_S = {
-  S1: "Bold claim",
-  S2: "Sensory-first",
-  S3: "Contrast",
-  S4: "Discovery reveal",
-  S5: "Question",
-  S6: "Origin story",
-  S7: "Invitation",
-};
-function formatHuTag(tag) {
-  if (!tag) return '';
-  return tag.split('|').map(p => {
-    const k = p.trim();
-    return _HU_AF[k] || _HU_S[k] || k;
-  }).join(' · ');
 }
 
 /* ── Utilities ───────────────────────────────────────── */

@@ -25,36 +25,88 @@ from creative_intelligence.generation.hook_qa import filter_hooks, QAConfig, sum
 from creative_intelligence.analysis.patterns import get_patterns
 from creative_intelligence.product_knowledge.enricher import build_prompt_context_block
 
-_SYSTEM_PROMPT = """You are an expert direct-response ad copywriter specialising in Meta/Facebook ads.
-You write hooks that stop the scroll and drive clicks.
+_SYSTEM_PROMPT = """You are an expert direct-response ad copywriter specialising in Meta/Facebook/Instagram ads.
+You write scroll-stopping hooks that make people stop, feel seen, and click to buy.
 Follow the brief exactly. Return ONLY the JSON object requested.
 
-## Hook University — Core Principles (apply to every hook you write)
-1. Hook = Paradox = Desire + Conflict + Partial Solution. Never give full resolution — leave tension.
-2. Order is flexible. Start with desire, conflict, or solution — all orderings work.
-3. 4-Year-Old Test: zero ambiguity. Anyone must know exactly what you mean within 1 second.
-4. One archetype. Every hook speaks to one specific person — never a vague "everyone".
-5. Hook writing is mechanical. Think opposite. Think solution. Reframe the obvious.
-6. Specific beats generic. A vivid, concrete detail outperforms a broad claim every time.
-7. Long hooks work. Specificity = authority. Don't fear 25–40 word hooks when the idea demands it.
+## The Framework: Every Hook = Desire + Conflict + Partial Solution (D+C+PS)
 
-## Authority Hook Formulas (use where they fit the brief angle)
-AF1  "I spent X doing/buying Y to figure out Z — so you don't have to"
-     → You did the hard work. Instant authority.
-AF2  "I thought X until Y"
-     → Paradox reveal. Challenges a belief then resolves it. Extremely strong.
-AF3  "I [struggled with X] for Y until I [discovered/changed Z]"
-     → Journey authority. Share the path, not just the destination.
-AF4  "I'm discovering this too — here's what I've learned so far"
-     → Works without established authority. Invites viewers on the journey with you.
-AF5  "Everyone says X, but [study/expert/data] shows Y"
-     → Third-party hook. Removes salesy tone — you're reporting, not selling.
-AF6  "X doesn't have to mean Y — here's how to have both"
-     → Resolves a perceived trade-off. Creates immediate intrigue."""
+A hook is a PARADOX. It must create tension by naming what someone wants (D),
+revealing why they can't have it yet or what's in the way (C), then teasing
+that a solution exists — without giving it away (PS).
 
-_HOOK_PROMPT_TEMPLATE = """Write {request_count} scroll-stopping ad hooks based on the following brief.
+Order is flexible. D→C→PS, C→D→PS, PS→C→D all work.
+The loop must NEVER be completed inside the hook. Completion kills the click.
 
-## Creative Pattern (what's working)
+## The 12 Hook Archetypes (one per hook — never mix)
+
+A1  Classic D+C+PS
+    Desire first, then the specific conflict, then a teased solution.
+    "You want X. Here's the problem. There's a way."
+
+A2  Conflict → Desire → PS
+    Open with the pain point directly. Name the desire it's blocking. Tease the fix.
+
+A3  PS → Conflict → Desire
+    Start with the partial solution (creates false confidence), then flip with the conflict.
+    The most powerful pattern interrupt.
+
+A4  "I thought X until Y" — Paradox Reveal
+    Challenges a belief the reader holds, then reveals a contradiction without resolving it.
+    NEVER complete the revelation in the hook.
+
+A5  "I spent X on Y so you don't have to" — Authority
+    Sacrifice + research = instant credibility. The viewer gets the benefit without the cost.
+
+A6  "I [struggled] for X until I [discovered]" — Journey Authority
+    Share the path and the turning point. Stop before the destination.
+
+A7  "Most people think X, but actually Y" — Flipped Belief
+    Directly confronts and corrects a widespread wrong assumption.
+
+A8  "X doesn't have to mean Y — here's how to have both" — False Tradeoff
+    Names the sacrifice the avatar has accepted, then removes it.
+
+A9  Question → Paradox
+    A single sharp question that names the exact symptom the avatar is living.
+    The question IS the conflict. Answer is withheld.
+
+A10 "I'm figuring this out too — here's what changed" — No Authority Needed
+    Peer-level discovery frame. Removes the guru barrier. Invites the scroll.
+
+A11 Carousel Slide 1 — Full Paradox (35–60 words)
+    Exhaust every wrong diagnosis the avatar has tried, then name the real specific conflict.
+    End with "here's exactly what I do / here's what changed" — never complete the answer.
+
+A12 Carousel Re-Hook — Different Angle (slide 2–3)
+    Deepens the same paradox from a different angle (sensory, timing, visual signal, cost).
+    Ends with an explicit scroll command at maximum tension.
+
+## AD-SPECIFIC RULES (these are paid Meta ads, not organic content)
+- The Partial Solution must tease a PURCHASE or product experience — not a content series.
+  ("It ships at peak ripeness" not "here's my tracking method")
+- Every hook must make someone want to click to BUY, not just watch more.
+- Urgency, scarcity, and specificity of the product experience are your tools.
+- The desire must be the desire to TASTE, OWN, or EXPERIENCE — not just to KNOW.
+- Sensory language (creamy, sweet-tart, custard-like) beats educational language every time.
+
+## Guardrails — these will be rejected
+✗ Rage-bait ("This will make you angry", "You won't believe")
+✗ Easy-steps language ("5 simple steps", "here's the trick", "it's this easy")
+✗ Vague curiosity bait ("This changed everything", "Nobody talks about this")
+✗ Generic hooks (could apply to any product in the category)
+✗ Completed loops (hook that answers its own question)
+✗ Placeholder brackets [like this]
+
+## Specificity rules
+- Numbers anchor credibility: "3 days", "6-hour window", "$12 a fruit", "3 years"
+- Name the specific variety, origin, or sensory detail — not just the category
+- The avatar's language should appear verbatim where possible"""
+
+
+_HOOK_PROMPT_TEMPLATE = """Write {request_count} scroll-stopping Meta ad hooks using the D+C+PS framework.
+
+## Creative Pattern (what's working in this account)
 Hook type: {hook_type}
 Angle: {angle}
 Archetype: {archetype}
@@ -67,12 +119,15 @@ Target audience: {audience}
 ## Product Context
 {product_context}
 
+## Avatar — Core Desires & Conflicts
+Use this to identify the specific D, C, and PS for each hook.
+{avatar_context}
+
 ## Visual Context (if available)
 {visual_context}
 
 ## Winning hooks from YOUR account history (same pattern)
-These are real hooks that performed on this product/audience. Study the angle,
-specificity, and tone — then write better versions, not copies.
+Study the angle, specificity, and emotional register. Write better versions — never copies.
 {example_hooks}
 
 ## HARD RULES (violations will be rejected)
@@ -81,30 +136,38 @@ specificity, and tone — then write better versions, not copies.
 2. NO COPYING — do not reuse the opening words of any example hook.
    Forbidden openings (do not start with these):
 {forbidden_openings}
-3. CHARACTER LIMIT — each hook must be 20–125 characters.
-4. NO BRACKETS — no [placeholder] text of any kind.
+3. NO BRACKETS — no [placeholder] text of any kind.
+4. ONE ARCHETYPE PER HOOK — label each hook with its archetype (A1–A12).
+5. LOOP NEVER COMPLETED — the hook must not answer its own question.
+6. AD-FIRST — the PS must tease a product purchase/experience, not content consumption.
 
-## STRUCTURAL VARIETY — use EACH of these 7 structures at least once
-S1  Bold quality claim:   "These are the [superlative] [product] you will ever taste."
-S2  Sensory-first:        Lead with a taste/texture description before naming product.
-S3  Contrast:             Contrast what grocery stores offer vs. what you deliver.
-S4  Discovery/reveal:     "You've never tasted [product] like this." or similar reveal frame.
-S5  Question:             A single sharp question that ends with "?".
-S6  Origin/provenance:    Lead with WHERE or HOW the product is grown/sourced.
-S7  Invitation to try:    A direct, warm invitation to experience the product.
+## ARCHETYPE DISTRIBUTION
+Spread your {request_count} hooks across AT LEAST 6 different archetypes (A1–A12).
+Use A11 or A12 (Carousel) for at least one hook if count ≥ 8.
+Never use the same archetype twice with the same opening structure.
 
-Additionally, weave in Authority Hook formulas from the system prompt (AF1–AF6)
-where they strengthen the angle. These are proven paradox/conflict structures
-that layer naturally on top of the 7 formats above.
+## Output format — return a JSON object with a "hooks" array
+Each hook object must have ALL of these fields:
+{{
+  "text":      "The full hook text (no character limit — use as many words as the idea needs)",
+  "archetype": "A3 — PS → Conflict → Desire",
+  "d":         "Desire: one sentence describing what the avatar wants",
+  "c":         "Conflict: one sentence naming the specific obstacle",
+  "ps":        "Partial Solution: one sentence on what is teased without completing the loop",
+  "clarity":   "One sentence explaining why a 4-year-old would instantly understand this hook"
+}}
 
-Distribute your {request_count} hooks across the structures. If {request_count} > 7,
-revisit structures with fresh wording — never reuse the same opening phrase.
-Always ground each hook in what worked in your account history above:
-same emotional trigger, same specificity level, same audience voice.
-
-## Output format
-Return a JSON object with a single key "hooks" containing an array of strings.
-Example: {{"hooks": ["hook text one", "hook text two", ...]}}
+Example output shape:
+{{"hooks": [
+  {{
+    "text": "...",
+    "archetype": "A4 — I thought X until Y",
+    "d": "To taste a cherimoya at perfect ripeness",
+    "c": "The grower has been picking it 5–7 days early without knowing",
+    "ps": "The timing mistake is identified but the fix is withheld",
+    "clarity": "Anyone who has eaten chalky fruit recognises the problem immediately"
+  }}
+]}}
 
 Generate exactly {request_count} hooks now."""
 
@@ -204,8 +267,42 @@ def _create_run(
     return cursor.lastrowid
 
 
+def _build_avatar_context(product_id: str | None, db: sqlite3.Connection) -> str:
+    """Build a short avatar desires/conflicts block from product_benefits."""
+    if not product_id:
+        return ""
+    rows = db.execute(
+        """SELECT benefit_type, content FROM product_benefits
+           WHERE product_id = ? ORDER BY priority DESC LIMIT 12""",
+        (product_id,),
+    ).fetchall()
+    if not rows:
+        return ""
+    desires, pain_points, outcomes = [], [], []
+    for r in rows:
+        btype = r["benefit_type"] or ""
+        content = r["content"] or ""
+        if not content:
+            continue
+        if btype == "pain_point":
+            pain_points.append(content)
+        elif btype == "desired_outcome":
+            outcomes.append(content)
+        else:
+            desires.append(content)
+
+    lines = []
+    if desires:
+        lines.append("Desires / wants:\n" + "\n".join(f"  - {d}" for d in desires[:4]))
+    if pain_points:
+        lines.append("Conflicts / pain points:\n" + "\n".join(f"  - {p}" for p in pain_points[:3]))
+    if outcomes:
+        lines.append("Desired outcomes:\n" + "\n".join(f"  - {o}" for o in outcomes[:3]))
+    return "\n\n".join(lines)
+
+
 def _save_hooks(
-    hooks: list[str],
+    hooks: list[dict],
     run_id: int,
     hook_type: str,
     angle: str,
@@ -216,13 +313,27 @@ def _save_hooks(
 ) -> list[int]:
     ids = []
     for hook in hooks:
+        if isinstance(hook, dict):
+            hook_text    = hook.get("text", "").strip()
+            archetype    = hook.get("archetype", "")
+            dcp_d        = hook.get("d", "")
+            dcp_c        = hook.get("c", "")
+            dcp_ps       = hook.get("ps", "")
+            dcp_clarity  = hook.get("clarity", "")
+        else:
+            hook_text   = str(hook).strip()
+            archetype   = dcp_d = dcp_c = dcp_ps = dcp_clarity = ""
+        if not hook_text:
+            continue
         cursor = db.execute(
             """INSERT INTO generated_hooks
                (run_id, hook_text, hook_type, angle,
-                based_on_creative_ids, based_on_pattern_id, product_id)
-               VALUES (?,?,?,?,?,?,?)""",
-            (run_id, hook, hook_type, angle,
-             json.dumps(creative_ids), pattern_id, product_id),
+                based_on_creative_ids, based_on_pattern_id, product_id,
+                archetype, dcp_d, dcp_c, dcp_ps, dcp_clarity)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (run_id, hook_text, hook_type, angle,
+             json.dumps(creative_ids), pattern_id, product_id,
+             archetype, dcp_d, dcp_c, dcp_ps, dcp_clarity),
         )
         ids.append(cursor.lastrowid)
     db.commit()
@@ -261,6 +372,7 @@ def generate_hooks_from_pattern(
     example_hooks = _get_example_hooks(example_ids, db)
     visual_ctx = _get_visual_context(example_ids, db)
     product_ctx = build_prompt_context_block(product_id, db) if product_id else ""
+    avatar_ctx = _build_avatar_context(product_id, db)
 
     product_name = _product_name_from_context(product_ctx, pattern)
     forbidden = _forbidden_openings(example_hooks)
@@ -279,6 +391,7 @@ def generate_hooks_from_pattern(
         goal              = goal or "conversions",
         audience          = audience or "general consumers",
         product_context   = product_ctx or "No product context provided.",
+        avatar_context    = avatar_ctx or "No avatar data available — use product context to infer desires and conflicts.",
         visual_context    = visual_ctx,
         example_hooks     = "\n".join(f"- {h}" for h in example_hooks[:5]) or "None available.",
         product_name      = product_name,
@@ -288,8 +401,16 @@ def generate_hooks_from_pattern(
     run_id = _create_run("hooks", example_ids, [pattern_id], product_id, dry_run, db, llm.model)
 
     raw = llm.complete_json(_SYSTEM_PROMPT, prompt, temperature=0.85)
-    raw_hooks: list[str] = raw.get("hooks", raw.get("items", [])) if isinstance(raw, dict) else raw
-    raw_hooks = [str(h).strip() for h in raw_hooks if h]
+    # The LLM returns a list of rich objects: {text, archetype, d, c, ps, clarity}
+    raw_hook_objects: list = raw.get("hooks", raw.get("items", [])) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
+
+    # Extract plain text for QA filtering; keep objects aligned.
+    raw_hook_texts: list[str] = []
+    for h in raw_hook_objects:
+        if isinstance(h, dict):
+            raw_hook_texts.append(str(h.get("text", "")).strip())
+        else:
+            raw_hook_texts.append(str(h).strip())
 
     # QA filter — source_hooks = example_hooks so we don't re-surface winning copy verbatim.
     qa_cfg = QAConfig(
@@ -297,18 +418,39 @@ def generate_hooks_from_pattern(
         diversity=diversity,
     )
     qa_results = filter_hooks(
-        raw_hooks,
+        raw_hook_texts,
         source_hooks=example_hooks,
         config=qa_cfg,
         required_terms=required_terms,
     )
     qa_summary = summarise_qa(qa_results)
-    hooks = [r.hook for r in qa_results if r.passed][:count]
+
+    # Rebuild passed hooks as rich dicts (re-attach original object data where available).
+    text_to_obj: dict[str, dict] = {}
+    for h in raw_hook_objects:
+        if isinstance(h, dict):
+            t = h.get("text", "").strip()
+            if t:
+                text_to_obj[t] = h
+
+    hooks_rich: list[dict] = []
+    for r in qa_results:
+        if r.passed:
+            obj = text_to_obj.get(r.hook, {"text": r.hook})
+            if not isinstance(obj, dict):
+                obj = {"text": r.hook}
+            if "text" not in obj:
+                obj["text"] = r.hook
+            hooks_rich.append(obj)
+    hooks_rich = hooks_rich[:count]
+
+    # Plain text list for backwards-compat return value
+    hooks = [h["text"] for h in hooks_rich]
 
     hook_ids = []
     if not dry_run:
         hook_ids = _save_hooks(
-            hooks, run_id,
+            hooks_rich, run_id,
             pattern.get("hook_type", "unknown"),
             pattern.get("angle", "unknown"),
             example_ids, pattern_id, product_id, db,
@@ -321,7 +463,8 @@ def generate_hooks_from_pattern(
 
     return {
         "run_id":      run_id,
-        "hooks":       hooks,
+        "hooks":       hooks,         # plain text list (backwards compat)
+        "hooks_rich":  hooks_rich,    # list of {text, archetype, d, c, ps, clarity}
         "hook_ids":    hook_ids,
         "dry_run":     dry_run,
         "qa_summary":  qa_summary,
@@ -377,4 +520,5 @@ def generate_hook_bank(
         })
 
     total = sum(len(r["hooks"]) for r in results)
-    return {"patterns_used": len(patterns), "total_hooks": total, "results": results}
+    total_rich = sum(len(r.get("hooks_rich", [])) for r in results)
+    return {"patterns_used": len(patterns), "total_hooks": total, "total_hooks_rich": total_rich, "results": results}

@@ -134,6 +134,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "ALTER TABLE video_scene_clips ADD COLUMN prediction_id TEXT",
         # Add product image URL — used as first-frame reference for image-to-video clip generation
         "ALTER TABLE products ADD COLUMN image_url TEXT",
+        # ── Hook D+C+PS framework (v1.6) ─────────────────────────────────
+        # Store archetype label + D/C/PS breakdown + clarity note per generated hook
+        "ALTER TABLE generated_hooks ADD COLUMN archetype TEXT",
+        "ALTER TABLE generated_hooks ADD COLUMN dcp_d TEXT",
+        "ALTER TABLE generated_hooks ADD COLUMN dcp_c TEXT",
+        "ALTER TABLE generated_hooks ADD COLUMN dcp_ps TEXT",
+        "ALTER TABLE generated_hooks ADD COLUMN dcp_clarity TEXT",
     ]
     for stmt in migrations:
         try:
