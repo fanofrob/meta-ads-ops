@@ -8,6 +8,10 @@ Each variant has a structurally distinct layout template so the image
 generator produces genuinely different ad formats — not the same photo
 with different captions.
 
+Style rotation: production_output_id seeds a deterministic but varied
+selection of background colours, typography moods, and layout energy
+so the same product never gets identical-looking variants across runs.
+
 Public API
 ----------
 build_render_specs(brief, production_output_id, variants, aspect_ratio)
@@ -27,20 +31,67 @@ from creative_intelligence.rendering.schemas import (
 
 
 # ─────────────────────────────────────────────
-# Per-variant structural layout templates
+# Style rotation pools
 #
-# These define the LAYOUT of the ad — background, text placement,
-# typographic treatment — independently of the brief's visual_direction.
-# The brief's product description is injected via {product}.
+# Each pool is cycled via (production_output_id + variant_index) % len(pool)
+# so different products and different generations get different looks.
 # ─────────────────────────────────────────────
 
-# Base negative prompt (quality/artifact guardrails only — no style overrides)
+_BG_PALETTES = [
+    # (label, hex-ish description for the prompt)
+    ("cream",       "warm cream (#F5F0E8), off-white background"),
+    ("terracotta",  "warm terracotta (#C4602C), earthy burnt-orange background"),
+    ("forest",      "deep forest green (#1B3A2D), rich dark green background"),
+    ("navy",        "deep navy (#0D1B2A), dark midnight-blue background"),
+    ("honey",       "warm golden honey (#D4922A), amber-yellow background"),
+    ("blush",       "dusty blush (#C8856A), muted rose-terracotta background"),
+    ("sage",        "muted sage green (#7A9E7E), soft earthy-green background"),
+    ("charcoal",    "dark charcoal (#1C1C1C), near-black background"),
+    ("rust",        "deep rust red (#8B2E0D), rich burgundy-red background"),
+    ("stone",       "warm stone grey (#8E8070), natural warm-grey background"),
+]
+
+_TYPO_MOODS = [
+    "massive condensed sans-serif, all caps, bold slab-style typography",
+    "clean geometric sans-serif, uppercase, modern Swiss style typography",
+    "heavy italic condensed font, dynamic angled energy",
+    "ultra-bold display font, strong weight contrast, editorial style",
+    "tall condensed grotesque, tight tracking, minimal kerning",
+    "bold block letters, thick strokes, punchy American diner style",
+    "large clean sans-serif, mixed caps and lower case, contemporary feel",
+    "strong condensed headline font, sharp edges, high legibility",
+]
+
+_LAYOUT_ENERGY = [
+    "product centred, text above and below in equal weight",
+    "product in upper half, all text stacked in lower half",
+    "product as large background element, text overlaid with contrast panel",
+    "product small and offset to right, text dominates left two-thirds",
+    "product fills left half, bold text column on right",
+    "product at bottom, large headline text fills top three-quarters",
+    "product centred large, single line of text at very top and very bottom",
+    "product partially cropped at edge, text on clean side",
+]
+
+
+def _style(seed: int, pool: list) -> str:
+    """Pick a style from a pool using a deterministic seed."""
+    return pool[seed % len(pool)][1] if isinstance(pool[0], tuple) else pool[seed % len(pool)]
+
+
+def _bg_label(seed: int) -> str:
+    return _BG_PALETTES[seed % len(_BG_PALETTES)][0]
+
+
+# ─────────────────────────────────────────────
+# Per-variant negative prompts
+# ─────────────────────────────────────────────
+
 _BASE_NEGATIVE = (
     "blurry, low quality, distorted, out of focus, pixelated, jpeg artifacts, "
     "oversaturated, fake-looking, watermarks, logos, busy clutter"
 )
 
-# Per-variant negatives — layered on top of base
 _VARIANT_NEGATIVES: dict[str, str] = {
     "minimal": (
         "text, typography, headline, body copy, CTA button, words, letters, "
@@ -48,11 +99,12 @@ _VARIANT_NEGATIVES: dict[str, str] = {
     ),
     "bold_type": (
         "small text, illegible font, weak contrast, body copy paragraphs, "
-        "cluttered layout, small product that competes with text"
+        "cluttered layout, badges, icons, shield symbols"
     ),
     "benefit_stack": (
-        "photographic background, dark background, lifestyle scene, "
-        "illegible small text, random decorative elements, gradient confusion"
+        "shield badges, checkmark icons, bullet points, plus symbols (+), "
+        "decorative icons, ornamental elements, photography background, "
+        "illegible small text, gradients that reduce contrast"
     ),
     "social_proof": (
         "empty review card, no star rating, fake-looking stars, "
@@ -64,11 +116,11 @@ _VARIANT_NEGATIVES: dict[str, str] = {
     ),
     "lifestyle_tagline": (
         "busy background, multiple text blocks, CTA button, price tags, "
-        "hard-sell language, cluttered design, dark moody tones"
+        "badges, icons, hard-sell language, cluttered design"
     ),
     "direct_response": (
-        "unclear CTA, illegible text, weak contrast, small button, "
-        "unreadable body copy, overlapping text and product"
+        "unclear CTA, illegible text, weak contrast, unreadable body copy, "
+        "overlapping text and product, shield badges, decorative icons"
     ),
     "premium": (
         "coloured background, lifestyle scene, props, multiple products, "
@@ -88,7 +140,6 @@ _SHOT_TYPE_PATTERNS: list[tuple[str, str]] = [
     (r"\bportr?ait\b", "portrait"),
 ]
 
-# Known visual style adjectives to extract as style_tags
 _STYLE_ADJECTIVES = frozenset({
     "minimal", "minimalist", "clean", "premium", "luxury", "warm", "cool",
     "bright", "dark", "moody", "airy", "editorial", "lifestyle", "organic",
@@ -110,7 +161,6 @@ def _detect_shot_type(composition_notes: str) -> str:
 
 
 def _extract_style_tags(visual_direction: str) -> list[str]:
-    """Tokenise visual_direction on commas/periods and extract style adjectives."""
     tokens = re.split(r"[,.\n]+", visual_direction.lower())
     tags: list[str] = []
     for token in tokens:
@@ -122,13 +172,11 @@ def _extract_style_tags(visual_direction: str) -> list[str]:
 
 
 def _background_style(visual_direction: str) -> str:
-    """First sentence of visual_direction describes the background/scene."""
     sentence = re.split(r"[.!?\n]", visual_direction.strip())[0]
     return sentence.strip()
 
 
 def _truncate(text: str, max_chars: int) -> str:
-    """Truncate text to max_chars, ending at a word boundary."""
     if len(text) <= max_chars:
         return text
     return text[:max_chars].rsplit(" ", 1)[0].rstrip(" ,;:")
@@ -136,156 +184,226 @@ def _truncate(text: str, max_chars: int) -> str:
 
 # ─────────────────────────────────────────────
 # Per-variant visual prompt builders
-# Each returns a self-contained prompt — the layout is dictated
-# by the variant, not the brief's visual_direction.
+# Each accepts a style_seed int to drive visual variety.
 # ─────────────────────────────────────────────
 
-def _prompt_minimal(brief: dict, product: str, visual: str) -> str:
+def _prompt_minimal(brief: dict, product: str, visual: str, style_seed: int) -> str:
     """Pure product photography — zero text, generous space."""
+    bg_options = [
+        "pure white background, professional studio lighting",
+        "soft cream background, warm natural light",
+        "pale grey background, diffused studio light, subtle shadow",
+        "muted sage background, soft directional light",
+        "warm off-white background, window light, gentle shadows",
+    ]
+    bg = bg_options[style_seed % len(bg_options)]
     return (
         f"Clean minimal product photography. {product}. "
-        f"{visual}. "
-        "Soft neutral background, natural lighting, generous white space. "
+        f"{bg}. Generous white space. "
         "Product is the sole subject. No text, no typography, no copy, no props. "
-        "Studio-quality still life. Minimal composition."
+        f"Studio-quality still life. {visual}."
     )
 
 
 def _prompt_bold_type(
-    brief: dict, product: str, headline: str, cta: str
+    brief: dict, product: str, headline: str, cta: str, style_seed: int
 ) -> str:
     """Text IS the hero. Massive condensed display font dominates the frame."""
     headline_upper = headline.upper() if headline else product.upper()
-    short = _truncate(headline_upper, 60)
+    short = _truncate(headline_upper, 55)
+
+    typo = _style(style_seed, _TYPO_MOODS)
+    bg = _style(style_seed + 1, _BG_PALETTES)
+
+    # Vary text colour based on background darkness
+    dark_bgs = {"forest", "navy", "charcoal", "rust"}
+    label = _bg_label(style_seed + 1)
+    text_colour = "white" if label in dark_bgs else "near-black"
+
     return (
-        f"Bold typographic Meta ad. "
-        f'Oversized condensed display font fills the upper 55% of the frame: "{short}". '
-        f"Text colour contrasts strongly against the background. "
+        f"Bold typographic Meta ad. {bg}. "
+        f"{typo}. "
+        f'{text_colour} text "{short}" fills the upper 55% of the frame. '
         f"{product} is positioned in the lower portion of the image. "
-        "The typography IS the primary visual element — product is secondary. "
-        "High contrast, strong black or brand-colour text on white or light background. "
-        "No body copy. No CTA button. Pure typographic impact."
+        "Typography IS the primary visual element — product is secondary. "
+        "No body copy, no badges, no icons. Pure typographic impact."
     )
 
 
 def _prompt_benefit_stack(
-    brief: dict, product: str, headline: str, body: str, cta: str
+    brief: dict, product: str, headline: str, body: str, cta: str, style_seed: int
 ) -> str:
-    """Solid colour-block background, stacked trust/benefit lines with + separators."""
-    # Pull 2–3 short benefit fragments to stack
-    benefits = []
-    if headline:
-        benefits.append(_truncate(headline, 40).upper())
-    if body:
-        first_clause = body.split(".")[0].strip()
-        if first_clause:
-            benefits.append(_truncate(first_clause, 40).upper())
-    if cta:
-        benefits.append(_truncate(cta, 30).upper())
-    if not benefits:
-        benefits = ["GROWER-DIRECT", "FREE SHIPPING", "100% GUARANTEE"]
+    """Clean stacked benefit lines on solid colour background. No badges or plus signs.
+    CTA stands out as a clearly distinct bottom element."""
 
-    stacked = " + ".join(benefits)
+    # Extract 2 short benefit lines from headline + body
+    benefit1 = _truncate(headline, 40).upper() if headline else product.upper()
+    benefit2 = ""
+    if body:
+        first = body.split(".")[0].strip()
+        if first:
+            benefit2 = _truncate(first, 40).upper()
+
+    cta_text = _truncate(cta, 28).upper() if cta else "ORDER NOW"
+
+    bg = _style(style_seed, _BG_PALETTES)
+    typo = _style(style_seed, _TYPO_MOODS)
+    dark_bgs = {"forest", "navy", "charcoal", "rust"}
+    label = _bg_label(style_seed)
+
+    # CTA treatment: white box on dark bg, dark box on light bg
+    cta_box = (
+        "white filled rectangle button" if label in dark_bgs
+        else "dark charcoal filled rectangle button"
+    )
+
     return (
-        "Direct response Meta ad with solid warm colour-block background "
-        "(bright orange, deep red, or warm terracotta). "
-        f"{product} centred in the frame. "
-        f'Stacked bold white benefit lines: "{stacked}". '
-        "Each benefit on its own line, separated by bold + symbols. "
-        "Trust badges and shield icons alongside the text. "
-        "Flat design, no photography background, solid colour only. "
-        "Large readable typography, high contrast."
+        f"Direct response Meta ad. {bg}. "
+        f"{product} in the upper portion of the frame. "
+        f"{typo}. "
+        f'Two clean lines of high-contrast text stacked centrally: '
+        f'"{benefit1}" on the first line, '
+        + (f'"{benefit2}" on the second line, ' if benefit2 else "")
+        + f'then a prominent {cta_box} at the very bottom reading "{cta_text}". '
+        "No badge icons. No shield symbols. No plus signs. No decorative elements. "
+        "Clean solid background, bold readable text, CTA box clearly separated from benefits."
     )
 
 
 def _prompt_social_proof(
-    brief: dict, product: str, headline: str, review: str
+    brief: dict, product: str, headline: str, review: str, style_seed: int
 ) -> str:
     """Review card overlay: stars + customer quote + name on product background."""
     product_name = headline or product
     quote = review or (
-        "Absolutely incredible — the best I've ever tasted. "
-        "Will be ordering again every season."
+        "Absolutely incredible — the best I've ever tasted. Will be ordering again every season."
     )
     short_quote = _truncate(quote, 120)
+
+    # Card colour varies
+    card_styles = [
+        "white card with subtle drop shadow",
+        "cream card (#F5F0E8) with rounded corners",
+        "very pale yellow card, minimal border",
+        "white card, left border accent stripe in brand colour",
+    ]
+    card = card_styles[style_seed % len(card_styles)]
+
     return (
         f"Social proof Meta ad. {product} as full-bleed background photography. "
-        "White rounded review card overlay covering the lower two-thirds of the image. "
-        f'Five gold stars (★★★★★) at the top of the card. '
+        f"{card} overlay covering the lower two-thirds of the image. "
+        f"Five gold stars (★★★★★) at the top of the card. "
         f'Bold product name "{product_name}" below the stars. '
-        f'Customer quote in smaller text: "{short_quote}". '
-        "Customer name below the quote. "
-        "Clean trust-building layout, soft drop shadow on card. "
-        "Professional, credible, review-focused design."
+        f'Customer quote: "{short_quote}". '
+        "Customer name below in smaller italic text. "
+        "Clean trust-building layout. No badges, no shield icons."
     )
 
 
 def _prompt_origin_story(
-    brief: dict, product: str, visual: str, headline: str
+    brief: dict, product: str, visual: str, headline: str, style_seed: int
 ) -> str:
     """Farm/orchard scenic background with provenance headline."""
     origin_headline = headline or f"FARM-FRESH {product.upper()}"
     short_headline = _truncate(origin_headline.upper(), 50)
+
+    scene_styles = [
+        "golden hour orchard rows, warm late-afternoon light, rows of trees receding into the distance",
+        "misty morning farm field, cool blue-green light, dew on the leaves",
+        "sun-drenched hillside grove, bright midday light, rich green foliage",
+        "illustrated painterly orchard, warm gouache style, nostalgic farm aesthetic",
+        "aerial view of farm rows, geometric patterns, lush green overhead shot",
+    ]
+    scene = scene_styles[style_seed % len(scene_styles)]
+
+    typo = _style(style_seed, _TYPO_MOODS)
+
     return (
-        "Provenance Meta ad. Scenic farm or orchard background — "
-        "rows of trees under warm golden light, or rolling fields at harvest. "
+        f"Provenance Meta ad. {scene}. "
         f"{product} in the foreground, freshly harvested. "
-        f'Bold headline "{short_headline}" prominently displayed. '
-        "Warm authentic farm atmosphere, golden hour lighting. "
-        "Origin story composition: background tells the story of where the product grows. "
-        "Photography or illustrated/painterly style. "
-        "Natural colours, earthy tones, genuine farm aesthetic."
+        f'{typo}. Bold headline "{short_headline}" prominently overlaid. '
+        "Origin story composition: the background tells where the product grows. "
+        "Warm authentic farm atmosphere. Natural colours, genuine farm aesthetic."
     )
 
 
 def _prompt_lifestyle_tagline(
-    brief: dict, product: str, headline: str
+    brief: dict, product: str, headline: str, style_seed: int
 ) -> str:
     """Emotional brand statement on clean background — no hard sell."""
     tagline = headline or "Self Care Tastes Good"
-    short = _truncate(tagline, 50)
+    short = _truncate(tagline, 55)
+
+    # Vary background and typography style
+    lifestyle_bgs = [
+        "clean white background, soft natural light",
+        "warm cream background (#F5EDD8), window light",
+        "soft blush background, minimal shadows",
+        "pale sage green background, airy natural feel",
+        "pale warm grey background, clean studio light",
+    ]
+    bg = lifestyle_bgs[style_seed % len(lifestyle_bgs)]
+
+    typo_styles = [
+        "large elegant serif typography",
+        "clean bold sans-serif, generous tracking",
+        "mixed scale: very large first word, smaller rest of phrase",
+        "two-line layout, first line large, second line thin and elegant",
+        "single large word per line, stacked vertically",
+    ]
+    typo = typo_styles[style_seed % len(typo_styles)]
+
     return (
-        f"Lifestyle brand Meta ad. Clean cream or soft white background. "
+        f"Lifestyle brand Meta ad. {bg}. "
         f"{product} artfully positioned — cross-section, bowl, or styled arrangement. "
-        f'Large elegant brand statement: "{short}". '
-        "Clean serif or bold sans-serif typography. "
-        "Warm minimal aesthetic, no CTA button, no body copy. "
-        "Emotional lifestyle appeal — beauty over conversion. "
-        "Single tagline only, generous white space, refined colour palette."
+        f'{typo}. Brand statement: "{short}". '
+        "No CTA button, no body copy, no badges. "
+        "Generous white space, refined and beautiful. Emotional over transactional."
     )
 
 
 def _prompt_direct_response(
-    brief: dict, product: str, headline: str, body: str, cta: str
+    brief: dict, product: str, headline: str, body: str, cta: str, style_seed: int
 ) -> str:
-    """Full conversion layout: bold headline + body + prominent CTA button."""
+    """Full conversion layout: bold headline + benefit body + prominent CTA button."""
     headline_upper = (headline or "Order Now").upper()
     cta_upper = (cta or "Shop Now").upper()
-    body_short = _truncate(body or "", 80)
+    body_short = _truncate(body or "", 75)
+
+    bg = _style(style_seed + 2, _BG_PALETTES)
+    typo = _style(style_seed + 2, _TYPO_MOODS)
+
     return (
-        f"Conversion-focused Meta ad. {product} product photography. "
-        f'Large bold headline at the top: "{headline_upper}". '
-        + (f'Benefit body copy below: "{body_short}". ' if body_short else "")
-        + f'Prominent high-contrast CTA button at bottom center: "{cta_upper}". '
+        f"Conversion-focused Meta ad. {bg}. "
+        f"{product} product photography. "
+        f'{typo}. Large bold headline: "{headline_upper}". '
+        + (f'Benefit copy below: "{body_short}". ' if body_short else "")
+        + f'Prominent high-contrast CTA button at bottom: "{cta_upper}". '
         "Strong visual hierarchy — headline → product → CTA. "
-        "Bold typography, high contrast between text and background. "
-        "Conversion-optimised layout, text is legible at small sizes."
+        "Bold typography, high contrast, legible at small sizes. No badges or icons."
     )
 
 
 def _prompt_premium(
-    brief: dict, product: str, headline: str
+    brief: dict, product: str, headline: str, style_seed: int
 ) -> str:
     """Pure white background, product centered, single elegant label."""
     label = _truncate(headline or f"Premium Quality {product}", 50)
+
+    premium_styles = [
+        "pure white background, professional studio lighting with soft shadow",
+        "pure white background, single directional light, crisp shadow",
+        "near-white warm background, floating product with clean shadow",
+        "clean white background, backlit glow effect, minimalist",
+    ]
+    style = premium_styles[style_seed % len(premium_styles)]
+
     return (
-        f"Premium catalog Meta ad. Pure white background. "
-        f"{product} perfectly centered, professional studio lighting, "
-        "pristine appearance, sharp focus. "
+        f"Premium catalog Meta ad. {style}. "
+        f"{product} perfectly centered, professional studio lighting, pristine appearance. "
         f'Small elegant label in refined typography: "{label}". '
         "Generous white space, no busy elements. "
-        "Luxury catalog aesthetic — like a high-end grocery or specialty food brand. "
-        "Minimal, elevated, sophisticated. Single product, single label."
+        "Luxury catalog aesthetic — high-end specialty food brand. Single product, single label."
     )
 
 
@@ -299,30 +417,31 @@ def _build_visual_prompt(
     headline: str = "",
     body: str = "",
     cta: str = "",
+    style_seed: int = 0,
 ) -> str:
     """Build a structurally distinct image-generation prompt for the given variant."""
     product = brief.get("product_visibility", "").strip()
     visual  = brief.get("visual_direction", "").strip()
 
     if variant == "minimal":
-        return _prompt_minimal(brief, product, visual)
+        return _prompt_minimal(brief, product, visual, style_seed)
     if variant == "bold_type":
-        return _prompt_bold_type(brief, product, headline, cta)
+        return _prompt_bold_type(brief, product, headline, cta, style_seed)
     if variant == "benefit_stack":
-        return _prompt_benefit_stack(brief, product, headline, body, cta)
+        return _prompt_benefit_stack(brief, product, headline, body, cta, style_seed)
     if variant == "social_proof":
         review = brief.get("social_proof_snippet", "") or ""
-        return _prompt_social_proof(brief, product, headline, review)
+        return _prompt_social_proof(brief, product, headline, review, style_seed)
     if variant == "origin_story":
-        return _prompt_origin_story(brief, product, visual, headline)
+        return _prompt_origin_story(brief, product, visual, headline, style_seed)
     if variant == "lifestyle_tagline":
-        return _prompt_lifestyle_tagline(brief, product, headline)
+        return _prompt_lifestyle_tagline(brief, product, headline, style_seed)
     if variant == "direct_response":
-        return _prompt_direct_response(brief, product, headline, body, cta)
+        return _prompt_direct_response(brief, product, headline, body, cta, style_seed)
     if variant == "premium":
-        return _prompt_premium(brief, product, headline)
+        return _prompt_premium(brief, product, headline, style_seed)
 
-    # Fallback for any unknown variant
+    # Fallback
     return f"{visual}. {product}. {headline}."
 
 
@@ -346,8 +465,8 @@ def build_render_specs(
     """
     Build one RenderSpec dict per variant strategy.
 
-    Each variant uses a structurally distinct layout template — background type,
-    typography treatment, and text density differ completely across variants.
+    Style seed: derived from production_output_id + variant index so
+    different products and different generations get different visual styles.
 
     Parameters
     ----------
@@ -368,6 +487,9 @@ def build_render_specs(
     background_style = _background_style(brief.get("visual_direction", ""))
     style_tags       = _extract_style_tags(brief.get("visual_direction", ""))
 
+    # Base style seed from production_output_id — different for every product/brief
+    base_seed = production_output_id if production_output_id else 0
+
     # Filter to only known variants
     selected = [v for v in variants if v in VARIANT_STRATEGIES]
 
@@ -384,6 +506,11 @@ def build_render_specs(
         else:
             body_overlay = ""
 
+        # Style seed: product-level variation (base_seed) + within-product variant offset
+        # This ensures: same product always gets same base palette cluster,
+        # but each variant within that product picks a different style index.
+        style_seed = base_seed + i * 3
+
         spec = empty_render_spec()
         spec.update({
             "production_output_id": production_output_id,
@@ -393,6 +520,7 @@ def build_render_specs(
                 headline=headline_overlay,
                 body=body_overlay,
                 cta=brief.get("cta", ""),
+                style_seed=style_seed,
             ),
             "negative_prompt":   _build_negative_prompt(variant),
             "headline_overlay":  headline_overlay,
