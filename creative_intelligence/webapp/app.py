@@ -496,39 +496,71 @@ def copilot_generate() -> Any:
                 "metadata": sc,
             })
         else:
-            # Generate from top pattern
+            # Generate from top pattern — fall back to direct generation if DB is empty
             patterns = get_patterns(min_winners=1, conn=conn)
-            if not patterns:
-                conn.close()
-                return jsonify({"error": "No patterns in DB. Run ingest → tag → extract-patterns first."}), 400
 
-            pattern = patterns[0]
-            result = generate_hooks_from_pattern(
-                pattern_id=pattern["id"],
-                count=count,
-                product_id=product_id,
-                dry_run=False,  # use real LLM; copilot stores in copilot_iterations not generated_hooks
-                conn=conn,
-                diversity="medium",
-                tone=tone,
-                goal=goal,
-                audience=audience,
-            )
+            if patterns:
+                # Pattern-guided generation (normal path)
+                pattern = patterns[0]
+                result = generate_hooks_from_pattern(
+                    pattern_id=pattern["id"],
+                    count=count,
+                    product_id=product_id,
+                    dry_run=True,  # copilot saves to copilot_iterations — skip double-write
+                    conn=conn,
+                    diversity="medium",
+                    tone=tone,
+                    goal=goal,
+                    audience=audience,
+                )
+                hooks_rich = result.get("hooks_rich", [])
+                pattern_name = pattern.get("pattern_name", "")
+            else:
+                # No patterns yet — generate directly from product context
+                from creative_intelligence.generation.copilot_actions import run_action as _run_action
+                from creative_intelligence.product_knowledge.enricher import build_prompt_context_block
+                product_ctx = build_prompt_context_block(product_id, conn) if product_id else ""
+                seed = (
+                    f"Generate {count} direct-response Meta ad hooks for this product."
+                    if not product_ctx else product_ctx.split("\n")[0]
+                )
+                action_result = _run_action(
+                    action_type="variants",
+                    concept=seed,
+                    product_id=product_id,
+                    params={"count": count, "tone": tone},
+                    conn=conn,
+                    dry_run=True,
+                )
+                hooks_rich = action_result.get("hooks_rich", [])
+                pattern_name = ""
+
             with conn:
-                for hook_text in result.get("hooks", []):
+                for rich in hooks_rich:
+                    hook_text = rich.get("text", "") if isinstance(rich, dict) else str(rich)
+                    if not hook_text:
+                        continue
                     sc = score_concept(hook_text, conn)
+                    # Attach D+C+PS metadata to the copilot iteration
+                    meta: dict[str, Any] = {**sc, "pattern_name": pattern_name}
+                    if isinstance(rich, dict):
+                        if rich.get("archetype"): meta["archetype"]   = rich["archetype"]
+                        if rich.get("d"):         meta["dcp_d"]       = rich["d"]
+                        if rich.get("c"):         meta["dcp_c"]       = rich["c"]
+                        if rich.get("ps"):        meta["dcp_ps"]      = rich["ps"]
+                        if rich.get("clarity"):   meta["dcp_clarity"] = rich["clarity"]
                     cur = conn.execute(
                         "INSERT INTO copilot_iterations"
                         " (session_id, product_id, action_type, concept_text, predicted_score, metadata)"
                         " VALUES (?,?,?,?,?,?)",
                         (session_id, product_id, "initial_generate", hook_text,
-                         sc["overall"], json.dumps({**sc, "pattern_name": pattern.get("pattern_name", "")})),
+                         sc["overall"], json.dumps(meta)),
                     )
                     iterations.append({
                         "id": cur.lastrowid, "session_id": session_id,
                         "action_type": "initial_generate", "concept_text": hook_text,
                         "predicted_score": sc["overall"], "is_favorite": 0,
-                        "metadata": {**sc, "pattern_name": pattern.get("pattern_name", "")},
+                        "metadata": meta,
                     })
 
         conn.close()
