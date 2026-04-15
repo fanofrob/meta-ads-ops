@@ -26,6 +26,12 @@ def _bullet_list(items: list[str], indent: str = "") -> str:
     return "\n".join(f"{indent}- {item}" for item in items)
 
 
+def _variant_headlines_md(vh: dict[str, str]) -> str:
+    if not vh:
+        return "—"
+    return "\n".join(f"- **{k}**: {v}" for k, v in vh.items())
+
+
 def _beat_table_md(beats: list[dict]) -> str:
     if not beats:
         return "—"
@@ -76,6 +82,9 @@ def _static_brief_md(data: dict) -> str:
         "### Headline Options",
         _bullet_list(data.get("headline_options") or []),
         "",
+        "### Variant Headlines",
+        _variant_headlines_md(data.get("variant_headlines") or {}),
+        "",
         "### Body / Primary Text Options",
         _bullet_list(data.get("body_options") or []),
         "",
@@ -112,6 +121,11 @@ def _static_brief_text(data: dict) -> str:
     ]
     for h in (data.get("headline_options") or []):
         lines.append(f"  • {h}")
+    vh = data.get("variant_headlines") or {}
+    if vh:
+        lines += ["", "VARIANT HEADLINES"]
+        for vname, vtxt in vh.items():
+            lines.append(f"  [{vname}] {vtxt}")
     lines += [
         "",
         "BODY / PRIMARY TEXT OPTIONS",

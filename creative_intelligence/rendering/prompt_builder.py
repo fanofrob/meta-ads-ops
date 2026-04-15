@@ -479,9 +479,10 @@ def build_render_specs(
     -------
     list of RenderSpec dicts — one per requested variant
     """
-    headline_options = brief.get("headline_options") or []
-    body_options     = brief.get("body_options") or []
-    hook             = brief.get("hook", "")
+    headline_options  = brief.get("headline_options") or []
+    variant_headlines = brief.get("variant_headlines") or {}
+    body_options      = brief.get("body_options") or []
+    hook              = brief.get("hook", "")
 
     shot_type        = _detect_shot_type(brief.get("composition_notes", ""))
     background_style = _background_style(brief.get("visual_direction", ""))
@@ -495,9 +496,11 @@ def build_render_specs(
 
     specs: list[dict[str, Any]] = []
     for i, variant in enumerate(selected):
-        # Rotate through available headline/body options so each variant
-        # tests a different copy combination (wraps if fewer options than variants)
-        if headline_options:
+        # Prefer a variant-specific headline written for this format;
+        # fall back to rotating through general headline_options, then the hook.
+        if variant_headlines.get(variant):
+            headline_overlay = variant_headlines[variant]
+        elif headline_options:
             headline_overlay = headline_options[i % len(headline_options)]
         else:
             headline_overlay = hook

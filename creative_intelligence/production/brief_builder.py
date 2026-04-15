@@ -62,7 +62,16 @@ def _static_brief_prompt(
         f"Approved concept / hook:\n{concept}\n\n"
         "Write a complete static ad brief for this concept. "
         "The hook field must be the concept verbatim. "
-        "Headline options should be 3 distinct angles, each ≤8 words. "
+        "Headline options should be 3 distinct general angles, each ≤8 words. "
+        "variant_headlines must include all 8 keys (minimal, bold_type, benefit_stack, social_proof, origin_story, lifestyle_tagline, direct_response, premium) — each a unique headline written specifically for that ad format:\n"
+        "  minimal: clean, understated, product-forward, ≤6 words\n"
+        "  bold_type: ultra-short, 1-3 words, all-caps energy, text IS the visual\n"
+        "  benefit_stack: specific, benefit-led, what the customer GETS, ≤8 words\n"
+        "  social_proof: quote-style or third-person proof framing, ≤8 words\n"
+        "  origin_story: provenance or origin angle (where it's grown/made), ≤8 words\n"
+        "  lifestyle_tagline: emotional brand statement, how it fits their life, ≤7 words\n"
+        "  direct_response: action + urgency, conversion-focused, ≤8 words\n"
+        "  premium: elegant, aspirational, quality-positioning, ≤6 words\n"
         "Body options should each be 1-2 punchy sentences that could stand alone as primary text. "
         "Visual direction and composition notes should be specific enough for a designer to brief a photographer or illustrator. "
         "Why it works should reference the emotional hook and why this angle resonates for this product category."
@@ -316,6 +325,9 @@ def build_static_brief(
     # Normalise
     data.setdefault("hook", concept)
     data = _ensure_lists(data, ("headline_options", "body_options"))
+    # variant_headlines should be a dict; if LLM returned a list, ignore it
+    if not isinstance(data.get("variant_headlines"), dict):
+        data["variant_headlines"] = {}
     for field, default in empty_static_brief().items():
         data.setdefault(field, default)
 
