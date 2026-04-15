@@ -113,11 +113,14 @@ header .subtitle { font-size: 12px; color: var(--muted); }
 /* Card header */
 .card-header { display: flex; align-items: center; gap: 8px; padding: 9px 12px; }
 .variant-badge { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 10px; text-transform: uppercase; letter-spacing: .5px; flex-shrink: 0; }
-.badge-minimal        { background: #0c2040; color: #5ba4e8; }
-.badge-premium        { background: #1a1a0c; color: #d4af37; }
-.badge-direct-response{ background: #2a0a0a; color: #f87171; }
-.badge-reveal         { background: #0a1a2a; color: #60a5fa; }
-.badge-product-hero   { background: #1a2a0c; color: #7ecb5b; }
+.badge-minimal           { background: #0c2040; color: #5ba4e8; }
+.badge-bold-type         { background: #1a0a2a; color: #c084fc; }
+.badge-benefit-stack     { background: #2a1200; color: #fb923c; }
+.badge-social-proof      { background: #0a2a1a; color: #4ade80; }
+.badge-origin-story      { background: #1a2a0a; color: #a3e635; }
+.badge-lifestyle-tagline { background: #2a1a0a; color: #fbbf24; }
+.badge-direct-response   { background: #2a0a0a; color: #f87171; }
+.badge-premium           { background: #1a1a0c; color: #d4af37; }
 .card-rationale { font-size: 11px; color: var(--muted); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .spec-toggle { font-size: 10px; color: var(--muted2); cursor: pointer; background: none; border: none; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
 .spec-toggle:hover { color: var(--text2); background: var(--surface2); }
@@ -250,27 +253,42 @@ header .subtitle { font-size: 12px; color: var(--muted); }
         <label class="variant-check-row">
           <input type="checkbox" value="minimal" checked>
           <span class="vc-badge badge-minimal">Minimal</span>
-          <span class="vc-label">Clean, product-forward</span>
+          <span class="vc-label">Pure product, zero text</span>
         </label>
         <label class="variant-check-row">
-          <input type="checkbox" value="premium" checked>
-          <span class="vc-badge badge-premium">Premium</span>
-          <span class="vc-label">Luxury, elevated context</span>
+          <input type="checkbox" value="bold_type" checked>
+          <span class="vc-badge badge-bold-type">Bold Type</span>
+          <span class="vc-label">Text is the hero, product secondary</span>
+        </label>
+        <label class="variant-check-row">
+          <input type="checkbox" value="benefit_stack" checked>
+          <span class="vc-badge badge-benefit-stack">Benefit Stack</span>
+          <span class="vc-label">Colour block + stacked trust lines</span>
+        </label>
+        <label class="variant-check-row">
+          <input type="checkbox" value="social_proof" checked>
+          <span class="vc-badge badge-social-proof">Social Proof</span>
+          <span class="vc-label">Review card with stars + quote</span>
+        </label>
+        <label class="variant-check-row">
+          <input type="checkbox" value="origin_story" checked>
+          <span class="vc-badge badge-origin-story">Origin Story</span>
+          <span class="vc-label">Farm/orchard background, provenance</span>
+        </label>
+        <label class="variant-check-row">
+          <input type="checkbox" value="lifestyle_tagline" checked>
+          <span class="vc-badge badge-lifestyle-tagline">Lifestyle Tagline</span>
+          <span class="vc-label">Emotional brand statement</span>
         </label>
         <label class="variant-check-row">
           <input type="checkbox" value="direct_response" checked>
           <span class="vc-badge badge-direct-response">Direct Response</span>
-          <span class="vc-label">CTA-heavy, conversion</span>
+          <span class="vc-label">Headline + body + CTA button</span>
         </label>
         <label class="variant-check-row">
-          <input type="checkbox" value="reveal" checked>
-          <span class="vc-badge badge-reveal">Reveal</span>
-          <span class="vc-label">Before/after, contrast</span>
-        </label>
-        <label class="variant-check-row">
-          <input type="checkbox" value="product_hero" checked>
-          <span class="vc-badge badge-product-hero">Product Hero</span>
-          <span class="vc-label">Full-frame product</span>
+          <input type="checkbox" value="premium" checked>
+          <span class="vc-badge badge-premium">Premium</span>
+          <span class="vc-label">White bg, elegant product label</span>
         </label>
       </div>
 
@@ -550,11 +568,14 @@ function buildCard(spec, finalAsset, bgAsset) {
   const asset = finalAsset || bgAsset || null;
   const variantLabel = spec.variant_label || '';
   const badgeClass = {
-    minimal:         'badge-minimal',
-    premium:         'badge-premium',
-    direct_response: 'badge-direct-response',
-    reveal:          'badge-reveal',
-    product_hero:    'badge-product-hero',
+    minimal:           'badge-minimal',
+    bold_type:         'badge-bold-type',
+    benefit_stack:     'badge-benefit-stack',
+    social_proof:      'badge-social-proof',
+    origin_story:      'badge-origin-story',
+    lifestyle_tagline: 'badge-lifestyle-tagline',
+    direct_response:   'badge-direct-response',
+    premium:           'badge-premium',
   }[variantLabel] || 'badge-minimal';
   const badgeLabel = variantLabel.replace(/_/g,' ');
 

@@ -13,33 +13,48 @@ from typing import Any
 # ─────────────────────────────────────────────
 
 VARIANT_STRATEGIES: tuple[str, ...] = (
-    "minimal",          # clean, uncluttered, product-forward
-    "premium",          # luxury aesthetic, elevated lifestyle
-    "direct_response",  # text-heavy, CTA prominent, conversion-oriented
-    "reveal",           # comparison or before/after angle
-    "product_hero",     # full-frame product, lifestyle secondary
+    "minimal",           # clean product photography, zero text
+    "bold_type",         # text IS the hero — massive display font, product secondary
+    "benefit_stack",     # stacked trust/benefit lines on a solid colour-block background
+    "social_proof",      # review card overlay: stars + customer quote + name
+    "origin_story",      # farm/orchard scene, provenance headline
+    "lifestyle_tagline", # single emotional brand statement, clean background
+    "direct_response",   # full conversion toolkit: headline + body + CTA button
+    "premium",           # pure white bg, product centered, small elegant label
 )
 
 VARIANT_RATIONALES: dict[str, str] = {
     "minimal": (
-        "Removes visual noise to let the product speak. "
-        "Works well for premium positioning and repeat exposure."
+        "Pure product photography with zero text. "
+        "Lets the product stop the scroll on its own — ideal for retargeting and repeat exposure."
     ),
-    "premium": (
-        "Elevates perceived value through environmental context and colour palette. "
-        "Targets quality-conscious buyers."
+    "bold_type": (
+        "The typography IS the visual. Oversized condensed display text grabs attention "
+        "before the product is even processed. Best for cold-audience pattern interrupts."
+    ),
+    "benefit_stack": (
+        "Solid colour block with stacked trust signals in large text. "
+        "Addresses purchase objections upfront — shipping, guarantee, sourcing in one frame."
+    ),
+    "social_proof": (
+        "Review card with stars and customer quote overlaid on the product. "
+        "Third-party validation at the moment of first impression reduces purchase hesitation."
+    ),
+    "origin_story": (
+        "Farm or orchard background grounds the product in a real place. "
+        "Provenance sells premium quality — this variant targets quality-conscious buyers."
+    ),
+    "lifestyle_tagline": (
+        "Emotional brand statement on a clean background. No hard sell — the tagline "
+        "creates identity resonance. Works for top-of-funnel awareness."
     ),
     "direct_response": (
-        "Maximises text density and CTA prominence for conversion campaigns. "
-        "Best for bottom-of-funnel traffic."
+        "Full conversion layout: bold headline, benefit body copy, and a prominent CTA button. "
+        "Maximises bottom-of-funnel click-to-purchase intent."
     ),
-    "reveal": (
-        "Uses contrast or comparison structure to drive curiosity and scroll-stop. "
-        "Effective for new-to-brand audiences."
-    ),
-    "product_hero": (
-        "Full-focus on the product itself — ideal for first-touch awareness "
-        "where the product needs to be the hero."
+    "premium": (
+        "Pure white studio shot with a single product and minimal label. "
+        "Elevates perceived quality — ideal for first-touch premium positioning."
     ),
 }
 
@@ -55,7 +70,7 @@ class RenderSpec:
     """
     Schema for a single static render variant.
 
-    One StaticAdBrief → up to 5 RenderSpecs (one per VARIANT_STRATEGIES entry).
+    One StaticAdBrief → up to 8 RenderSpecs (one per VARIANT_STRATEGIES entry).
 
     Fields
     ------
