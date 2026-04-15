@@ -89,7 +89,9 @@ def _bg_label(seed: int) -> str:
 
 _BASE_NEGATIVE = (
     "blurry, low quality, distorted, out of focus, pixelated, jpeg artifacts, "
-    "oversaturated, fake-looking, watermarks, logos, busy clutter"
+    "oversaturated, fake-looking, watermarks, logos, busy clutter, "
+    "illustration, digital painting, cartoon, anime, drawn, painted, "
+    "watercolor, gouache, vector art, clip art, CGI render, 3D render"
 )
 
 _VARIANT_NEGATIVES: dict[str, str] = {
@@ -112,7 +114,8 @@ _VARIANT_NEGATIVES: dict[str, str] = {
     ),
     "origin_story": (
         "indoor studio setting, white background, no farm or orchard, "
-        "generic background, city background, abstract pattern"
+        "generic background, city background, abstract pattern, "
+        "illustration, painting, cartoon, digital art, drawn style"
     ),
     "lifestyle_tagline": (
         "busy background, multiple text blocks, CTA button, price tags, "
@@ -123,9 +126,9 @@ _VARIANT_NEGATIVES: dict[str, str] = {
         "overlapping text and product, shield badges, decorative icons"
     ),
     "premium": (
-        "white background, plain background, flat lighting, studio catalogue look, "
-        "busy props, multiple unrelated elements, cheerful bright colours, "
-        "small text label in a box, badges, CTA button, price tags, clip art"
+        "busy background, lifestyle scene, colourful props, multiple products, "
+        "CTA button, price tags, badges, body copy paragraph, cluttered design, "
+        "low-end photography, harsh lighting, busy typography"
     ),
 }
 
@@ -335,16 +338,22 @@ def _prompt_social_proof(
 def _prompt_origin_story(
     brief: dict, product: str, visual: str, headline: str, style_seed: int
 ) -> str:
-    """Farm/orchard scenic background with provenance headline."""
+    """Real farm/orchard photo background with provenance headline overlay."""
     origin_headline = headline or f"FARM-FRESH {product.upper()}"
     short_headline = _truncate(origin_headline.upper(), 50)
 
+    # All photorealistic — no illustration options
     scene_styles = [
-        "golden hour orchard rows, warm late-afternoon light, rows of trees receding into the distance",
-        "misty morning farm field, cool blue-green light, dew on the leaves",
-        "sun-drenched hillside grove, bright midday light, rich green foliage",
-        "illustrated painterly orchard, warm gouache style, nostalgic farm aesthetic",
-        "aerial view of farm rows, geometric patterns, lush green overhead shot",
+        "real farm photography: golden hour orchard rows, warm late-afternoon sunlight, "
+        "rows of fruit trees receding into the distance, photorealistic",
+        "real farm photography: misty morning harvest field, cool blue-green early light, "
+        "dew on leaves, authentic farm workers or baskets in background",
+        "real farm photography: sun-drenched hillside grove, bright midday light, "
+        "rich green foliage, blue sky, genuine outdoor farming scene",
+        "real outdoor photography: farm stand or crate of fresh-picked fruit, "
+        "natural wood textures, golden outdoor light",
+        "real farm photography: aerial-style view of lush green crop rows, "
+        "geometric farm patterns, vibrant natural colours, genuine landscape",
     ]
     scene = scene_styles[style_seed % len(scene_styles)]
 
@@ -352,45 +361,55 @@ def _prompt_origin_story(
 
     return (
         f"Provenance Meta ad. {scene}. "
-        f"{product} in the foreground, freshly harvested. "
-        f'{typo}. Bold headline "{short_headline}" prominently overlaid. '
-        "Origin story composition: the background tells where the product grows. "
-        "Warm authentic farm atmosphere. Natural colours, genuine farm aesthetic."
+        f"Foreground: {product}, freshly harvested, photorealistic. "
+        f'{typo}. Bold white or light headline text overlaid: "{short_headline}". '
+        "The background scene tells the story of where the product is grown. "
+        "Warm, authentic, real-world farm atmosphere. No cartoon, no illustration."
     )
 
 
 def _prompt_lifestyle_tagline(
     brief: dict, product: str, headline: str, style_seed: int
 ) -> str:
-    """Emotional brand statement on clean background — no hard sell."""
+    """Emotional brand statement — large dominant text, product as supporting element."""
     tagline = headline or "Self Care Tastes Good"
     short = _truncate(tagline, 55)
 
-    # Vary background and typography style
+    # Varied but always clean, minimal backgrounds
     lifestyle_bgs = [
-        "clean white background, soft natural light",
-        "warm cream background (#F5EDD8), window light",
-        "soft blush background, minimal shadows",
-        "pale sage green background, airy natural feel",
-        "pale warm grey background, clean studio light",
+        "warm cream background (#F5EDD8), soft natural window light from the side",
+        "clean white background, diffused studio light, gentle product shadow",
+        "soft warm beige background, bright airy feel",
+        "pale sage green background (#E8EDE3), soft natural light",
+        "light warm grey background, clean minimal studio atmosphere",
     ]
     bg = lifestyle_bgs[style_seed % len(lifestyle_bgs)]
 
+    # Typography: the tagline should be the hero, large and dominant
     typo_styles = [
-        "large elegant serif typography",
-        "clean bold sans-serif, generous tracking",
-        "mixed scale: very large first word, smaller rest of phrase",
-        "two-line layout, first line large, second line thin and elegant",
-        "single large word per line, stacked vertically",
+        "oversized bold sans-serif, the tagline fills the top 60% of the frame",
+        "large condensed serif, two or three lines stacked, dominant text presence",
+        "massive clean sans-serif, first line very large, second line slightly smaller",
+        "bold editorial headline font, tagline split across two lines, left-aligned",
+        "tall bold condensed font, tagline stacked line by line, text-forward layout",
     ]
     typo = typo_styles[style_seed % len(typo_styles)]
 
+    # Product positioning: supporting, not competing with the text
+    product_pos = [
+        "product in the lower third, small and clean",
+        "product partially cropped at bottom edge, supporting the text above",
+        "product as a small styled accent in one corner",
+        "product centered below the tagline with generous white space",
+    ]
+    pos = product_pos[style_seed % len(product_pos)]
+
     return (
         f"Lifestyle brand Meta ad. {bg}. "
-        f"{product} artfully positioned — cross-section, bowl, or styled arrangement. "
-        f'{typo}. Brand statement: "{short}". '
-        "No CTA button, no body copy, no badges. "
-        "Generous white space, refined and beautiful. Emotional over transactional."
+        f"{typo}. The brand statement \"{short}\" is the primary visual element — bold and dominant. "
+        f"Photorealistic {product}, {pos}. "
+        "No CTA button, no body copy paragraph, no badges, no price. "
+        "Generous white space. Emotional, aspirational, brand-building."
     )
 
 
@@ -406,13 +425,23 @@ def _prompt_direct_response(
 
     body_clean = _clean_body_for_overlay(body or "", max_chars=90)
 
+    # Pick a high-contrast CTA button colour based on background
+    dark_bgs = {"forest", "navy", "charcoal", "rust"}
+    label = _bg_label(style_seed + 2)
+    cta_colour = (
+        "bright orange (#FF6B2B) filled rectangle" if label not in dark_bgs
+        else "white filled rectangle"
+    )
+
     return (
         f"Conversion-focused Meta ad. {bg}. "
-        f"{product} product photography. "
-        f'{typo}. Large bold headline: "{headline_upper}". '
-        + (f'Benefit copy below headline — complete sentence: "{body_clean}". ' if body_clean else "")
-        + f'Prominent high-contrast CTA button at bottom: "{cta_upper}". '
-        "Strong visual hierarchy — headline → product → CTA. "
+        f"Photorealistic {product} product photography in the centre of the frame. "
+        f'{typo}. Large bold headline at the top: "{headline_upper}". '
+        + (f'Body copy below the headline: "{body_clean}". ' if body_clean else "")
+        + f'At the very bottom of the image: a prominent {cta_colour} CTA button '
+        f'with bold text "{cta_upper}" — this button must be clearly visible and '
+        f'stand out from the rest of the image. '
+        "Strong visual hierarchy — headline at top, product in middle, CTA button at bottom. "
         "Bold typography, high contrast, legible at small sizes. No badges or icons."
     )
 
@@ -420,52 +449,43 @@ def _prompt_direct_response(
 def _prompt_premium(
     brief: dict, product: str, headline: str, style_seed: int
 ) -> str:
-    """Luxury food editorial — dark atmospheric surface, dramatic lighting, large elegant type."""
+    """White/cream background, product as hero, single elegant label — clean premium catalog."""
     label = _truncate(headline or product, 50)
 
-    # Dark, rich, textured surfaces — the opposite of plain white
-    premium_surfaces = [
-        "deep black slate surface, single dramatic spotlight from above-left, "
-        "rich dark atmosphere, fine dining aesthetic",
-        "dark polished marble surface, cool ambient studio light, "
-        "deep grey tones, luxury editorial feel",
-        "weathered dark oak table, warm side-lit candle-like glow, "
-        "rich shadows, artisan food photography",
-        "charcoal linen background, directional natural window light, "
-        "moody shadows, high-end lifestyle magazine look",
-        "deep forest green velvet surface, warm spotlight, "
-        "jewel-tone richness, premium gifting aesthetic",
+    # Clean, bright, airy backgrounds — white or near-white
+    bg_options = [
+        "pure white background, soft diffused studio lighting, clean product shadow beneath",
+        "warm cream background (#F5EDD8), gentle natural window light from the side",
+        "bright white background, single directional soft-box light, crisp minimal shadow",
+        "off-white background with subtle warm tone, soft ambient studio light",
     ]
-    surface = premium_surfaces[style_seed % len(premium_surfaces)]
+    bg = bg_options[style_seed % len(bg_options)]
 
-    # Styling elements that signal premium produce
-    styling_options = [
-        "product cross-section reveals interior, small whole fruit beside it, "
-        "single leaf or stem as accent, clean negative space",
-        "product arranged on a small ceramic plate or shallow bowl, "
-        "minimal styling, one accent element, editorial spacing",
-        "hero close-up of product texture and colour, "
-        "shallow depth of field, background falls to darkness",
-        "two or three specimens arranged with intention, "
-        "chef-styled plating, geometric composition",
+    # Product treatment — clean, intentional, lots of space
+    product_treatment = [
+        "product centered with generous white space on all sides",
+        "product in lower two-thirds, elegant label text above with breathing room",
+        "product slightly off-center right, text anchored to left with white space",
+        "product cross-section as hero, centered, small whole fruit beside it",
     ]
-    styling = styling_options[style_seed % len(styling_options)]
+    treatment = product_treatment[style_seed % len(product_treatment)]
 
+    # Typography: refined, light, small — a label not a headline
     typo_options = [
-        "large refined serif typeface, elegant tracking",
-        "tall editorial sans-serif, generous letter-spacing, light weight",
-        "mixed scale typography: large brand name, smaller descriptor below",
-        "single word in oversized serif, elegant and minimal",
+        "small refined serif label below the product, elegant letter-spacing",
+        "clean light-weight sans-serif label, uppercase, generous tracking",
+        "two lines: product name in medium serif above, short descriptor in small caps below",
+        "single centered label in tall elegant serif, understated and luxury",
     ]
     typo = typo_options[style_seed % len(typo_options)]
 
     return (
-        f"Premium editorial Meta ad for a luxury DTC produce brand. {surface}. "
-        f"{product}. {styling}. "
-        f"Dramatic chiaroscuro lighting — product glows against dark background. "
-        f'{typo}. Headline text: "{label}" in light colour against the dark bg. '
-        "Ultra-high production value. Reminiscent of a Condé Nast food spread. "
-        "No badges, no CTA button, no busy elements. Cinematic atmosphere."
+        f"Premium product catalog Meta ad. {bg}. "
+        f"Photorealistic {product}, {treatment}. "
+        f'{typo}. Label text: "{label}". '
+        "Generous white space throughout. High-end specialty food brand aesthetic. "
+        "Professional studio photography, pristine clean look. "
+        "No CTA button, no body copy paragraph, no badges, no busy elements."
     )
 
 
