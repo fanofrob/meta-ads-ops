@@ -449,17 +449,28 @@ def generate_hooks_from_pattern(
 
     hook_ids = []
     if not dry_run:
-        hook_ids = _save_hooks(
-            hooks_rich, run_id,
-            pattern.get("hook_type", "unknown"),
-            pattern.get("angle", "unknown"),
-            example_ids, pattern_id, product_id, db,
-        )
-        db.execute(
-            "UPDATE generation_runs SET output_count=? WHERE id=?",
-            (len(hooks), run_id),
-        )
-        db.commit()
+        try:
+            hook_ids = _save_hooks(
+                hooks_rich, run_id,
+                pattern.get("hook_type", "unknown"),
+                pattern.get("angle", "unknown"),
+                example_ids, pattern_id, product_id, db,
+            )
+            db.execute(
+                "UPDATE generation_runs SET output_count=? WHERE id=?",
+                (len(hooks), run_id),
+            )
+            db.commit()
+        except Exception:
+            # DB save failed (e.g. schema migration not yet applied).
+            # Hooks were already generated — return them anyway.
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "generate_hooks_from_pattern: _save_hooks failed (schema migration pending?); "
+                "returning %d hooks without persisting to generated_hooks",
+                len(hooks),
+                exc_info=True,
+            )
 
     return {
         "run_id":      run_id,

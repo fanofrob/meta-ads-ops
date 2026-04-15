@@ -58,8 +58,12 @@ def test_generate_hooks_dry_run(db):
     assert result["hook_ids"] == []
 
 
-def test_generate_hooks_persisted(db):
+def test_generate_hooks_persisted(db, monkeypatch):
     from creative_intelligence.generation.hook_generator import generate_hooks_from_pattern
+    from creative_intelligence.generation.llm_client import MockLLMClient
+    import creative_intelligence.generation.hook_generator as hg
+    # Always use mock client so tests don't hit live APIs even when keys are present.
+    monkeypatch.setattr(hg, "get_llm_client", lambda **kwargs: MockLLMClient())
 
     pattern = db.execute("SELECT id FROM creative_patterns LIMIT 1").fetchone()
     result = generate_hooks_from_pattern(

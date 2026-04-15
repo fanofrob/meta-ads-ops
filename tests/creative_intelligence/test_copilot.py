@@ -357,12 +357,14 @@ class TestCopilotGenerateEndpoint:
         assert r.status_code == 400
 
     def test_generate_without_concept_falls_through_to_pattern(self, flask_app):
-        """No concept + no patterns → 400 with useful message."""
+        """No concept + no patterns → falls back to direct generation, returns 200 with hooks."""
         sess = flask_app.post("/api/copilot/session", json={}).get_json()
         r = flask_app.post("/api/copilot/generate", json={"session_id": sess["session_id"]})
-        # DB has no patterns (empty test DB) → should return 400
-        assert r.status_code == 400
-        assert "pattern" in r.get_json().get("error", "").lower()
+        # No patterns in test DB → fallback to run_action direct generation (200 OK)
+        assert r.status_code == 200
+        data = r.get_json()
+        assert "iterations" in data
+        assert len(data["iterations"]) > 0
 
 
 class TestCopilotActionEndpoint:
