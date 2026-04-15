@@ -4,6 +4,10 @@ Prompt builder for the static rendering layer.
 Converts a StaticAdBrief dict into a list of RenderSpec dicts
 (one per variant strategy). No LLM call — pure string construction.
 
+Each variant has a structurally distinct layout template so the image
+generator produces genuinely different ad formats — not the same photo
+with different captions.
+
 Public API
 ----------
 build_render_specs(brief, production_output_id, variants, aspect_ratio)
@@ -23,72 +27,54 @@ from creative_intelligence.rendering.schemas import (
 
 
 # ─────────────────────────────────────────────
-# Variant modifiers — appended to visual_prompt
+# Per-variant structural layout templates
+#
+# These define the LAYOUT of the ad — background, text placement,
+# typographic treatment — independently of the brief's visual_direction.
+# The brief's product description is injected via {product}.
 # ─────────────────────────────────────────────
 
-_VARIANT_MODIFIERS: dict[str, str] = {
-    "minimal": (
-        "clean minimal composition, generous negative space, product-forward, "
-        "uncluttered background, intentional whitespace"
-    ),
-    "premium": (
-        "premium luxury aesthetic, warm ambient lighting, elevated lifestyle context, "
-        "refined colour palette, soft shadows"
-    ),
-    "direct_response": (
-        "bold typography emphasis, clear CTA placement, conversion-optimised layout, "
-        "high contrast text areas, strong visual hierarchy"
-    ),
-    "reveal": (
-        "split composition, comparison framing, before/after visual contrast, "
-        "dramatic reveal structure, curiosity-driving"
-    ),
-    "product_hero": (
-        "full-frame product focus, macro detail, hero shot, "
-        "no distracting background elements, product fills frame"
-    ),
-}
-
-# Negative prompt additions per variant (appended to base)
-_VARIANT_NEGATIVES: dict[str, str] = {
-    # minimal: no text at all — reinforce strongly in negative
-    "minimal": (
-        "complex backgrounds, busy patterns, excessive props, "
-        "text overlays, typography, headlines, body copy, CTA buttons, "
-        "words, letters, captions, watermarks"
-    ),
-    # premium: no button, no body paragraph
-    "premium": (
-        "cheap materials, plastic surfaces, harsh lighting, cluttered scenes, "
-        "CTA buttons, body copy paragraph, multiple text blocks, bold sans-serif fonts"
-    ),
-    # direct_response: needs clear legible text — reject illegibility
-    "direct_response": (
-        "unclear focal point, weak contrast, illegible text, "
-        "overlapping text and product, hard-to-read typography"
-    ),
-    # reveal: needs the comparison structure
-    "reveal": (
-        "confusing layout, single-subject only, no comparison element, "
-        "excessive body copy, paragraph text"
-    ),
-    # product_hero: absolutely no text
-    "product_hero": (
-        "environment-dominated scene, tiny product, background-forward, "
-        "text overlays, typography, headlines, body copy, CTA buttons, "
-        "words, letters, captions, watermarks, any text whatsoever"
-    ),
-}
-
-# Base negative prompt applied to all variants
-# NOTE: "text overlays" intentionally omitted — we want the AI to bake
-# the headline and CTA into the image as styled ad copy.
+# Base negative prompt (quality/artifact guardrails only — no style overrides)
 _BASE_NEGATIVE = (
-    "blurry, low quality, distorted, out of focus, "
-    "cluttered, generic stock photo, people looking at camera awkwardly, "
-    "fake-looking, oversaturated, pixelated, jpeg artifacts, "
-    "watermarks, logos, illegible text, random scribbles"
+    "blurry, low quality, distorted, out of focus, pixelated, jpeg artifacts, "
+    "oversaturated, fake-looking, watermarks, logos, busy clutter"
 )
+
+# Per-variant negatives — layered on top of base
+_VARIANT_NEGATIVES: dict[str, str] = {
+    "minimal": (
+        "text, typography, headline, body copy, CTA button, words, letters, "
+        "captions, watermarks, any text whatsoever, props, accessories, busy background"
+    ),
+    "bold_type": (
+        "small text, illegible font, weak contrast, body copy paragraphs, "
+        "cluttered layout, small product that competes with text"
+    ),
+    "benefit_stack": (
+        "photographic background, dark background, lifestyle scene, "
+        "illegible small text, random decorative elements, gradient confusion"
+    ),
+    "social_proof": (
+        "empty review card, no star rating, fake-looking stars, "
+        "illegible quote text, cluttered card design, ugly drop shadow"
+    ),
+    "origin_story": (
+        "indoor studio setting, white background, no farm or orchard, "
+        "generic background, city background, abstract pattern"
+    ),
+    "lifestyle_tagline": (
+        "busy background, multiple text blocks, CTA button, price tags, "
+        "hard-sell language, cluttered design, dark moody tones"
+    ),
+    "direct_response": (
+        "unclear CTA, illegible text, weak contrast, small button, "
+        "unreadable body copy, overlapping text and product"
+    ),
+    "premium": (
+        "coloured background, lifestyle scene, props, multiple products, "
+        "text overlays except product name label, busy composition, dark tones"
+    ),
+}
 
 # Known shot-type keywords to detect in composition notes
 _SHOT_TYPE_PATTERNS: list[tuple[str, str]] = [
@@ -132,7 +118,7 @@ def _extract_style_tags(visual_direction: str) -> list[str]:
         for word in words:
             if word in _STYLE_ADJECTIVES and word not in tags:
                 tags.append(word)
-    return tags[:8]  # cap at 8
+    return tags[:8]
 
 
 def _background_style(visual_direction: str) -> str:
@@ -141,6 +127,172 @@ def _background_style(visual_direction: str) -> str:
     return sentence.strip()
 
 
+def _truncate(text: str, max_chars: int) -> str:
+    """Truncate text to max_chars, ending at a word boundary."""
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rsplit(" ", 1)[0].rstrip(" ,;:")
+
+
+# ─────────────────────────────────────────────
+# Per-variant visual prompt builders
+# Each returns a self-contained prompt — the layout is dictated
+# by the variant, not the brief's visual_direction.
+# ─────────────────────────────────────────────
+
+def _prompt_minimal(brief: dict, product: str, visual: str) -> str:
+    """Pure product photography — zero text, generous space."""
+    return (
+        f"Clean minimal product photography. {product}. "
+        f"{visual}. "
+        "Soft neutral background, natural lighting, generous white space. "
+        "Product is the sole subject. No text, no typography, no copy, no props. "
+        "Studio-quality still life. Minimal composition."
+    )
+
+
+def _prompt_bold_type(
+    brief: dict, product: str, headline: str, cta: str
+) -> str:
+    """Text IS the hero. Massive condensed display font dominates the frame."""
+    headline_upper = headline.upper() if headline else product.upper()
+    short = _truncate(headline_upper, 60)
+    return (
+        f"Bold typographic Meta ad. "
+        f'Oversized condensed display font fills the upper 55% of the frame: "{short}". '
+        f"Text colour contrasts strongly against the background. "
+        f"{product} is positioned in the lower portion of the image. "
+        "The typography IS the primary visual element — product is secondary. "
+        "High contrast, strong black or brand-colour text on white or light background. "
+        "No body copy. No CTA button. Pure typographic impact."
+    )
+
+
+def _prompt_benefit_stack(
+    brief: dict, product: str, headline: str, body: str, cta: str
+) -> str:
+    """Solid colour-block background, stacked trust/benefit lines with + separators."""
+    # Pull 2–3 short benefit fragments to stack
+    benefits = []
+    if headline:
+        benefits.append(_truncate(headline, 40).upper())
+    if body:
+        first_clause = body.split(".")[0].strip()
+        if first_clause:
+            benefits.append(_truncate(first_clause, 40).upper())
+    if cta:
+        benefits.append(_truncate(cta, 30).upper())
+    if not benefits:
+        benefits = ["GROWER-DIRECT", "FREE SHIPPING", "100% GUARANTEE"]
+
+    stacked = " + ".join(benefits)
+    return (
+        "Direct response Meta ad with solid warm colour-block background "
+        "(bright orange, deep red, or warm terracotta). "
+        f"{product} centred in the frame. "
+        f'Stacked bold white benefit lines: "{stacked}". '
+        "Each benefit on its own line, separated by bold + symbols. "
+        "Trust badges and shield icons alongside the text. "
+        "Flat design, no photography background, solid colour only. "
+        "Large readable typography, high contrast."
+    )
+
+
+def _prompt_social_proof(
+    brief: dict, product: str, headline: str, review: str
+) -> str:
+    """Review card overlay: stars + customer quote + name on product background."""
+    product_name = headline or product
+    quote = review or (
+        "Absolutely incredible — the best I've ever tasted. "
+        "Will be ordering again every season."
+    )
+    short_quote = _truncate(quote, 120)
+    return (
+        f"Social proof Meta ad. {product} as full-bleed background photography. "
+        "White rounded review card overlay covering the lower two-thirds of the image. "
+        f'Five gold stars (★★★★★) at the top of the card. '
+        f'Bold product name "{product_name}" below the stars. '
+        f'Customer quote in smaller text: "{short_quote}". '
+        "Customer name below the quote. "
+        "Clean trust-building layout, soft drop shadow on card. "
+        "Professional, credible, review-focused design."
+    )
+
+
+def _prompt_origin_story(
+    brief: dict, product: str, visual: str, headline: str
+) -> str:
+    """Farm/orchard scenic background with provenance headline."""
+    origin_headline = headline or f"FARM-FRESH {product.upper()}"
+    short_headline = _truncate(origin_headline.upper(), 50)
+    return (
+        "Provenance Meta ad. Scenic farm or orchard background — "
+        "rows of trees under warm golden light, or rolling fields at harvest. "
+        f"{product} in the foreground, freshly harvested. "
+        f'Bold headline "{short_headline}" prominently displayed. '
+        "Warm authentic farm atmosphere, golden hour lighting. "
+        "Origin story composition: background tells the story of where the product grows. "
+        "Photography or illustrated/painterly style. "
+        "Natural colours, earthy tones, genuine farm aesthetic."
+    )
+
+
+def _prompt_lifestyle_tagline(
+    brief: dict, product: str, headline: str
+) -> str:
+    """Emotional brand statement on clean background — no hard sell."""
+    tagline = headline or "Self Care Tastes Good"
+    short = _truncate(tagline, 50)
+    return (
+        f"Lifestyle brand Meta ad. Clean cream or soft white background. "
+        f"{product} artfully positioned — cross-section, bowl, or styled arrangement. "
+        f'Large elegant brand statement: "{short}". '
+        "Clean serif or bold sans-serif typography. "
+        "Warm minimal aesthetic, no CTA button, no body copy. "
+        "Emotional lifestyle appeal — beauty over conversion. "
+        "Single tagline only, generous white space, refined colour palette."
+    )
+
+
+def _prompt_direct_response(
+    brief: dict, product: str, headline: str, body: str, cta: str
+) -> str:
+    """Full conversion layout: bold headline + body + prominent CTA button."""
+    headline_upper = (headline or "Order Now").upper()
+    cta_upper = (cta or "Shop Now").upper()
+    body_short = _truncate(body or "", 80)
+    return (
+        f"Conversion-focused Meta ad. {product} product photography. "
+        f'Large bold headline at the top: "{headline_upper}". '
+        + (f'Benefit body copy below: "{body_short}". ' if body_short else "")
+        + f'Prominent high-contrast CTA button at bottom center: "{cta_upper}". '
+        "Strong visual hierarchy — headline → product → CTA. "
+        "Bold typography, high contrast between text and background. "
+        "Conversion-optimised layout, text is legible at small sizes."
+    )
+
+
+def _prompt_premium(
+    brief: dict, product: str, headline: str
+) -> str:
+    """Pure white background, product centered, single elegant label."""
+    label = _truncate(headline or f"Premium Quality {product}", 50)
+    return (
+        f"Premium catalog Meta ad. Pure white background. "
+        f"{product} perfectly centered, professional studio lighting, "
+        "pristine appearance, sharp focus. "
+        f'Small elegant label in refined typography: "{label}". '
+        "Generous white space, no busy elements. "
+        "Luxury catalog aesthetic — like a high-end grocery or specialty food brand. "
+        "Minimal, elevated, sophisticated. Single product, single label."
+    )
+
+
+# ─────────────────────────────────────────────
+# Dispatcher
+# ─────────────────────────────────────────────
+
 def _build_visual_prompt(
     brief: dict[str, Any],
     variant: str,
@@ -148,108 +300,30 @@ def _build_visual_prompt(
     body: str = "",
     cta: str = "",
 ) -> str:
-    """Build the full image-generation prompt with variant-specific text treatment.
+    """Build a structurally distinct image-generation prompt for the given variant."""
+    product = brief.get("product_visibility", "").strip()
+    visual  = brief.get("visual_direction", "").strip()
 
-    Each variant has a distinct visual structure and text density:
-      minimal        → product-only, NO text overlay
-      premium        → single elegant tagline, NO body, NO button
-      direct_response→ full headline + body paragraph + prominent CTA button
-      reveal         → bold headline + short comparison subtext + CTA
-      product_hero   → NO text at all — pure product photography
-    """
-    base_parts = [
-        brief.get("visual_direction", "").strip(),
-        brief.get("product_visibility", "").strip(),
-        brief.get("composition_notes", "").strip(),
-        _VARIANT_MODIFIERS[variant],
-    ]
-
-    text_parts = _build_text_treatment(variant, headline, body, cta)
-    parts = base_parts + text_parts
-    return ". ".join(p for p in parts if p)
-
-
-def _build_text_treatment(
-    variant: str,
-    headline: str,
-    body: str,
-    cta: str,
-) -> list[str]:
-    """Return text-injection prompt fragments tailored per variant strategy.
-
-    Returns an empty list for variants that should be text-free.
-    """
     if variant == "minimal":
-        # Clean product shot — no text, no distractions
-        return [
-            "no text overlays, no typography, no copy, purely visual product image",
-        ]
-
-    if variant == "premium":
-        # One short elegant tagline only — top or bottom, no button
-        if headline:
-            short = headline[:50]  # trim to punchy tagline length
-            return [
-                f'single elegant tagline in refined serif typography: "{short}"',
-                "no body copy, no CTA button, minimal text, luxury editorial style",
-                "text placed in lower third with generous breathing room",
-            ]
-        return ["minimal text, editorial style, no CTA button"]
-
+        return _prompt_minimal(brief, product, visual)
+    if variant == "bold_type":
+        return _prompt_bold_type(brief, product, headline, cta)
+    if variant == "benefit_stack":
+        return _prompt_benefit_stack(brief, product, headline, body, cta)
+    if variant == "social_proof":
+        review = brief.get("social_proof_snippet", "") or ""
+        return _prompt_social_proof(brief, product, headline, review)
+    if variant == "origin_story":
+        return _prompt_origin_story(brief, product, visual, headline)
+    if variant == "lifestyle_tagline":
+        return _prompt_lifestyle_tagline(brief, product, headline)
     if variant == "direct_response":
-        # Text-heavy conversion ad — full headline + body + big CTA button
-        parts = []
-        if headline:
-            parts.append(
-                f'large bold headline text in upper portion: "{headline.upper()}"'
-            )
-        if body:
-            parts.append(
-                f'smaller body copy paragraph below headline: "{body}"'
-            )
-        if cta:
-            parts.append(
-                f'large high-contrast CTA button at bottom center with text "{cta.upper()}"'
-            )
-        parts.append(
-            "strong visual hierarchy, conversion-optimised layout, "
-            "text dominates lower two-thirds of the frame"
-        )
-        return parts
+        return _prompt_direct_response(brief, product, headline, body, cta)
+    if variant == "premium":
+        return _prompt_premium(brief, product, headline)
 
-    if variant == "reveal":
-        # Bold headline + very short punchy subline, CTA at bottom
-        parts = []
-        if headline:
-            parts.append(
-                f'bold centred headline: "{headline.upper()}"'
-            )
-        if body:
-            # Use only the first sentence / first 60 chars as a punchy sub-line
-            subline = body.split(".")[0].strip()[:60]
-            if subline:
-                parts.append(f'short punchy subline below headline: "{subline}"')
-        if cta:
-            parts.append(
-                f'small CTA text at very bottom: "{cta}"'
-            )
-        parts.append(
-            "dramatic split composition, text overlaid on high-contrast areas, "
-            "headline is the dominant visual element"
-        )
-        return parts
-
-    if variant == "product_hero":
-        # Pure product photography — absolutely no text
-        return [
-            "no text, no copy, no typography, no overlays, "
-            "pure product hero photography only",
-        ]
-
-    # Fallback for unknown variants — minimal text treatment
-    if headline:
-        return [f'headline text: "{headline}"']
-    return []
+    # Fallback for any unknown variant
+    return f"{visual}. {product}. {headline}."
 
 
 def _build_negative_prompt(variant: str) -> str:
@@ -271,6 +345,9 @@ def build_render_specs(
 ) -> list[dict[str, Any]]:
     """
     Build one RenderSpec dict per variant strategy.
+
+    Each variant uses a structurally distinct layout template — background type,
+    typography treatment, and text density differ completely across variants.
 
     Parameters
     ----------

@@ -158,7 +158,7 @@ class TestRenderSchema:
 # ─────────────────────────────────────────────
 
 class TestPromptBuilder:
-    def test_returns_five_specs_by_default(self, sample_brief):
+    def test_returns_specs_matching_variant_count(self, sample_brief):
         specs = build_render_specs(sample_brief, production_output_id=1)
         assert len(specs) == len(VARIANT_STRATEGIES)
 
@@ -191,8 +191,11 @@ class TestPromptBuilder:
 
     def test_headline_overlay_from_headline_options(self, sample_brief):
         specs = build_render_specs(sample_brief, production_output_id=1)
+        valid = set(sample_brief["headline_options"])
         for spec in specs:
-            assert spec["headline_overlay"] == "Headline A"
+            assert spec["headline_overlay"] in valid, (
+                f"headline_overlay {spec['headline_overlay']!r} not in headline_options"
+            )
 
     def test_cta_text_from_brief(self, sample_brief):
         specs = build_render_specs(sample_brief, production_output_id=1)
@@ -524,6 +527,8 @@ class TestRenderExporters:
         assert "## Minimal Variant" in md
         assert "## Premium Variant" in md
         assert "## Direct Response Variant" in md
+        assert "## Bold Type Variant" in md
+        assert "## Social Proof Variant" in md
 
     def test_markdown_no_empty_specs(self, five_specs):
         md = render_spec_to_markdown(five_specs)
@@ -537,7 +542,7 @@ class TestRenderExporters:
         js = render_spec_to_json(five_specs)
         parsed = json.loads(js)
         assert isinstance(parsed, list)
-        assert len(parsed) == 5
+        assert len(parsed) == len(VARIANT_STRATEGIES)
 
     def test_json_contains_variant_labels(self, five_specs):
         js = render_spec_to_json(five_specs)
