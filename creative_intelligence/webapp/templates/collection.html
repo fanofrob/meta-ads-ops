@@ -95,6 +95,20 @@ header h1 { font-size: 15px; font-weight: 700; letter-spacing: -.3px; }
 .dl-link { font-size: 11px; color: var(--muted); text-decoration: none; padding: 3px 7px; border-radius: 5px; border: 1px solid var(--border); margin-left: auto; }
 .dl-link:hover { color: var(--text); border-color: var(--accent); }
 
+/* Product filter */
+.filter-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+.filter-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; white-space: nowrap; }
+.product-select {
+  font-size: 12px; padding: 5px 28px 5px 10px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); cursor: pointer; min-width: 180px; max-width: 260px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236a6a88'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 9px center;
+}
+.product-select:focus { outline: none; border-color: var(--accent); }
+.filter-count { font-size: 11px; color: var(--muted); }
+
 /* Toast */
 #toast { position: fixed; bottom: 16px; right: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 12px; box-shadow: 0 4px 16px #0006; opacity: 0; transform: translateY(6px); transition: all .2s; pointer-events: none; z-index: 999; }
 #toast.show { opacity: 1; transform: translateY(0); }
@@ -117,6 +131,14 @@ header h1 { font-size: 15px; font-weight: 700; letter-spacing: -.3px; }
 <div class="page-body">
   <div class="stats-bar" id="statsBar">
     <span class="loading-msg">Loading collection…</span>
+  </div>
+
+  <div class="filter-bar" id="filterBar" style="display:none">
+    <span class="filter-label">Product</span>
+    <select class="product-select" id="productFilter" onchange="applyProductFilter()">
+      <option value="">All Products</option>
+    </select>
+    <span class="filter-count" id="filterCount"></span>
   </div>
 
   <div class="tabs" id="tabBar" style="display:none">
@@ -147,6 +169,7 @@ let allAssets = [];
 let allVideos = [];
 let allVideoOutputs = [];
 let currentTab = 'images';
+let activeProduct = '';
 
 document.addEventListener('DOMContentLoaded', loadCollection);
 
@@ -158,30 +181,68 @@ async function loadCollection() {
     allAssets       = data.images        || [];
     allVideos       = data.videos        || [];
     allVideoOutputs = data.video_outputs || [];
+    populateProductFilter();
     renderStats();
     renderSections(currentTab);
     document.getElementById('tabBar').style.display = 'flex';
+    document.getElementById('filterBar').style.display = 'flex';
   } catch(e) {
     document.getElementById('statsBar').innerHTML =
       `<span style="color:var(--orange)">Failed to load: ${esc(e.message)}</span>`;
   }
 }
 
+function populateProductFilter() {
+  const all = [
+    ...allAssets.map(a => a.product_name),
+    ...allVideos.map(v => v.product_name),
+    ...allVideoOutputs.map(v => v.product_name),
+  ];
+  const products = [...new Set(all.filter(Boolean))].sort();
+  const sel = document.getElementById('productFilter');
+  // Clear old options except "All Products"
+  while (sel.options.length > 1) sel.remove(1);
+  products.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p;
+    opt.textContent = p;
+    sel.appendChild(opt);
+  });
+}
+
+function applyProductFilter() {
+  activeProduct = document.getElementById('productFilter').value;
+  renderStats();
+  renderSections(currentTab);
+}
+
+// Filtered views used by renderSections
+function visibleAssets()       { return activeProduct ? allAssets.filter(a => a.product_name === activeProduct) : allAssets; }
+function visibleVideos()       { return activeProduct ? allVideos.filter(v => v.product_name === activeProduct) : allVideos; }
+function visibleVideoOutputs() { return activeProduct ? allVideoOutputs.filter(v => v.product_name === activeProduct) : allVideoOutputs; }
+
 function renderStats() {
-  const ready    = allAssets.filter(a => a.is_ready_to_test).length;
-  const imgFav   = allAssets.filter(a => a.is_favorite).length;
-  const approved = allAssets.filter(a => a.review_status === 'approved').length;
-  const vidFav      = allVideos.filter(v => v.is_favorite).length;
-  const vidApproved = allVideos.filter(v => v.is_approved).length;
-  const outFav      = allVideoOutputs.filter(v => v.is_favorite).length;
-  const outApproved = allVideoOutputs.filter(v => v.is_approved).length;
+  const assets = visibleAssets();
+  const videos = visibleVideos();
+  const outputs = visibleVideoOutputs();
+  const ready    = assets.filter(a => a.is_ready_to_test).length;
+  const imgFav   = assets.filter(a => a.is_favorite).length;
+  const approved = assets.filter(a => a.review_status === 'approved').length;
+  const vidFav      = videos.filter(v => v.is_favorite).length;
+  const vidApproved = videos.filter(v => v.is_approved).length;
+  const outFav      = outputs.filter(v => v.is_favorite).length;
+  const outApproved = outputs.filter(v => v.is_approved).length;
+  const total = assets.length + videos.length + outputs.length;
   document.getElementById('statsBar').innerHTML = `
     <span class="stat-pill p-ready">${ready} 🧪 ready to test</span>
     <span class="stat-pill p-fav">${imgFav} ⭐ image favs</span>
     <span class="stat-pill p-fav" style="border-color:#0d3a2a;color:#4ecdc4;background:#061a14">${outFav} 🎬 video favs</span>
     <span class="stat-pill p-approved">${approved + vidApproved + outApproved} ✓ approved</span>
-    <span class="stat-pill">${allAssets.length + allVideos.length + allVideoOutputs.length} total</span>
+    <span class="stat-pill">${total} total</span>
   `;
+  // Show filter count hint
+  const countEl = document.getElementById('filterCount');
+  if (countEl) countEl.textContent = activeProduct ? `${total} asset${total !== 1 ? 's' : ''}` : '';
 }
 
 function showTab(tab, btn) {
@@ -195,35 +256,39 @@ function renderSections(tab) {
   const container = document.getElementById('sectionsContainer');
   container.innerHTML = '';
 
+  const assets  = visibleAssets();
+  const videos  = visibleVideos();
+  const outputs = visibleVideoOutputs();
+
   if (tab === 'images') {
-    const ready    = allAssets.filter(a => a.is_ready_to_test);
-    const fav      = allAssets.filter(a => a.is_favorite && !a.is_ready_to_test);
-    const approved = allAssets.filter(a => a.review_status === 'approved' && !a.is_favorite && !a.is_ready_to_test);
+    const ready    = assets.filter(a => a.is_ready_to_test);
+    const fav      = assets.filter(a => a.is_favorite && !a.is_ready_to_test);
+    const approved = assets.filter(a => a.review_status === 'approved' && !a.is_favorite && !a.is_ready_to_test);
     container.appendChild(buildSection('🧪 Ready to Test', ready, 'ready-title', 'image'));
     container.appendChild(buildSection('⭐ Favorites', fav, 'fav-title', 'image'));
     container.appendChild(buildSection('✓ Approved', approved, 'approved-title', 'image'));
   } else if (tab === 'videos') {
-    const outFav      = allVideoOutputs.filter(v => v.is_favorite && !v.is_approved);
-    const outApproved = allVideoOutputs.filter(v => v.is_approved);
+    const outFav      = outputs.filter(v => v.is_favorite && !v.is_approved);
+    const outApproved = outputs.filter(v => v.is_approved);
     container.appendChild(buildSection('⭐ Favorite Videos', outFav, 'fav-title', 'video_output'));
     container.appendChild(buildSection('✓ Approved Videos', outApproved, 'approved-title', 'video_output'));
   } else if (tab === 'storyboards') {
-    const vidFav      = allVideos.filter(v => v.is_favorite && !v.is_approved);
-    const vidApproved = allVideos.filter(v => v.is_approved);
+    const vidFav      = videos.filter(v => v.is_favorite && !v.is_approved);
+    const vidApproved = videos.filter(v => v.is_approved);
     container.appendChild(buildSection('⭐ Favorite Storyboards', vidFav, 'fav-title', 'video'));
     container.appendChild(buildSection('✓ Approved Storyboards', vidApproved, 'approved-title', 'video'));
   } else if (tab === 'ready') {
-    const ready = allAssets.filter(a => a.is_ready_to_test);
+    const ready = assets.filter(a => a.is_ready_to_test);
     container.appendChild(buildSection('🧪 Ready to Test', ready, 'ready-title', 'image'));
   } else {
     // All
-    const ready       = allAssets.filter(a => a.is_ready_to_test);
-    const fav         = allAssets.filter(a => a.is_favorite && !a.is_ready_to_test);
-    const approved    = allAssets.filter(a => a.review_status === 'approved' && !a.is_favorite && !a.is_ready_to_test);
-    const outFav      = allVideoOutputs.filter(v => v.is_favorite && !v.is_approved);
-    const outApproved = allVideoOutputs.filter(v => v.is_approved);
-    const vidFav      = allVideos.filter(v => v.is_favorite && !v.is_approved);
-    const vidApproved = allVideos.filter(v => v.is_approved);
+    const ready       = assets.filter(a => a.is_ready_to_test);
+    const fav         = assets.filter(a => a.is_favorite && !a.is_ready_to_test);
+    const approved    = assets.filter(a => a.review_status === 'approved' && !a.is_favorite && !a.is_ready_to_test);
+    const outFav      = outputs.filter(v => v.is_favorite && !v.is_approved);
+    const outApproved = outputs.filter(v => v.is_approved);
+    const vidFav      = videos.filter(v => v.is_favorite && !v.is_approved);
+    const vidApproved = videos.filter(v => v.is_approved);
     container.appendChild(buildSection('🧪 Ready to Test', ready, 'ready-title', 'image'));
     container.appendChild(buildSection('⭐ Image Favorites', fav, 'fav-title', 'image'));
     container.appendChild(buildSection('✓ Approved Images', approved, 'approved-title', 'image'));
