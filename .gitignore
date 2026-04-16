@@ -10,3 +10,8 @@ outputs/
 .venv/
 venv/
 credentials/
+
+# SQLite DB files — persisted on Railway volume, not committed
+creative_intelligence_data/*.db
+creative_intelligence_data/*.db-shm
+creative_intelligence_data/*.db-wal
