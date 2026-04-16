@@ -1538,6 +1538,205 @@ def render_asset_favorite(asset_id: int) -> Any:
         return jsonify({"error": str(exc)}), 500
 
 
+# ─────────────────────────────────────────────
+# Asset feedback (rejection notes + learning)
+# ─────────────────────────────────────────────
+
+@app.post("/api/render/asset/<int:asset_id>/feedback")
+def render_asset_feedback(asset_id: int) -> Any:
+    """Store rejection/improvement feedback for an asset, then re-score."""
+    try:
+        body          = request.get_json(force=True) or {}
+        feedback_type = body.get("feedback_type", "rejection")
+        tags          = body.get("rejection_tags", [])
+        note          = body.get("note", "").strip()
+        conn          = _db()
+
+        # Look up product_id and variant_label for denormalisation
+        row = conn.execute(
+            """SELECT ra.variant_label, po.product_id
+               FROM render_assets ra
+               JOIN render_outputs ro ON ro.id = ra.render_output_id
+               LEFT JOIN production_outputs po ON po.id = ro.source_production_output_id
+               WHERE ra.id = ?""",
+            (asset_id,),
+        ).fetchone()
+        product_id    = row["product_id"]    if row else None
+        variant_label = row["variant_label"] if row else None
+
+        conn.execute(
+            """INSERT INTO asset_feedback
+               (asset_id, asset_type, feedback_type, rejection_tags, note, product_id, variant_label)
+               VALUES (?, 'render', ?, ?, ?, ?, ?)""",
+            (asset_id, feedback_type, json.dumps(tags), note, product_id, variant_label),
+        )
+        conn.commit()
+
+        # Re-score this asset and all assets for the same product (rates changed)
+        from creative_intelligence.scoring import score_asset, score_product_assets
+        score_asset(asset_id, conn)
+        if product_id:
+            score_product_assets(product_id, conn)
+
+        conn.close()
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.get("/api/learnings")
+def get_learnings() -> Any:
+    """Return active creative learnings, optionally filtered by product_id."""
+    try:
+        product_id = request.args.get("product_id")
+        conn = _db()
+        if product_id:
+            rows = conn.execute(
+                """SELECT * FROM creative_learnings
+                   WHERE active = 1 AND product_id = ?
+                   ORDER BY id DESC""",
+                (product_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT cl.*, p.name as product_name
+                   FROM creative_learnings cl
+                   LEFT JOIN products p ON p.id = cl.product_id
+                   WHERE cl.active = 1
+                   ORDER BY cl.id DESC"""
+            ).fetchall()
+        conn.close()
+        return jsonify({"learnings": [dict(r) for r in rows]})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/learnings/distill")
+def distill_learnings() -> Any:
+    """Distil recent feedback into creative_learnings rows via LLM.
+
+    Body: { "product_id": str (optional) }
+    Reads last 50 feedback entries, calls LLM to summarise patterns,
+    writes new creative_learnings rows (deactivates old ones for same product first).
+    """
+    try:
+        body       = request.get_json(force=True) or {}
+        product_id = body.get("product_id")
+        conn       = _db()
+
+        # Fetch recent feedback
+        if product_id:
+            feedback_rows = conn.execute(
+                """SELECT feedback_type, rejection_tags, note, variant_label, created_at
+                   FROM asset_feedback
+                   WHERE product_id = ?
+                   ORDER BY id DESC LIMIT 50""",
+                (product_id,),
+            ).fetchall()
+        else:
+            feedback_rows = conn.execute(
+                """SELECT feedback_type, rejection_tags, note, variant_label, product_id, created_at
+                   FROM asset_feedback
+                   ORDER BY id DESC LIMIT 50"""
+            ).fetchall()
+
+        if not feedback_rows:
+            conn.close()
+            return jsonify({"ok": True, "learnings": [], "message": "No feedback to distil"})
+
+        # Build feedback summary for LLM
+        feedback_lines = []
+        for r in feedback_rows:
+            tags = json.loads(r["rejection_tags"] or "[]")
+            line = f"- [{r['feedback_type']}] variant={r['variant_label'] or 'unknown'}"
+            if tags:
+                line += f" tags=[{', '.join(tags)}]"
+            if r["note"]:
+                line += f' note="{r["note"]}"'
+            feedback_lines.append(line)
+        feedback_text = "\n".join(feedback_lines)
+
+        from creative_intelligence.llm_client import get_llm_client
+        client = get_llm_client()
+        resp = client.messages.create(
+            model="claude-3-5-haiku-20241022",
+            max_tokens=800,
+            system=(
+                "You are a creative strategist analysing ad creative feedback to extract actionable learnings. "
+                "Output ONLY valid JSON — no markdown, no explanation."
+            ),
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Analyse this creative feedback and extract 3–6 concise actionable learnings.\n\n"
+                    f"Feedback:\n{feedback_text}\n\n"
+                    f"Output JSON: {{\"learnings\": ["
+                    f"{{\"learning_type\": \"avoid\" or \"prefer\", "
+                    f"\"summary\": \"one clear sentence for prompt injection\", "
+                    f"\"detail\": \"brief explanation\"}}]}}"
+                ),
+            }],
+        )
+        raw = resp.content[0].text.strip()
+        # Strip markdown fences if present
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        parsed = json.loads(raw)
+        learnings = parsed.get("learnings", [])
+
+        # Deactivate old learnings for this product, insert new ones
+        if product_id:
+            conn.execute(
+                "UPDATE creative_learnings SET active = 0 WHERE product_id = ?",
+                (product_id,),
+            )
+        else:
+            conn.execute("UPDATE creative_learnings SET active = 0")
+
+        inserted = []
+        for lrn in learnings:
+            summary = str(lrn.get("summary", "")).strip()
+            if not summary:
+                continue
+            conn.execute(
+                """INSERT INTO creative_learnings
+                   (product_id, learning_type, source, summary, detail_json)
+                   VALUES (?, ?, 'feedback', ?, ?)""",
+                (product_id, lrn.get("learning_type", "avoid"),
+                 summary, json.dumps({"detail": lrn.get("detail", "")})),
+            )
+            inserted.append(summary)
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "learnings": inserted})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.post("/api/score/recompute")
+def recompute_scores() -> Any:
+    """Recompute quality_score for all render assets (or just one product).
+
+    Body: { "product_id": str (optional) }
+    """
+    try:
+        body       = request.get_json(force=True) or {}
+        product_id = body.get("product_id")
+        conn       = _db()
+
+        from creative_intelligence.scoring import score_asset, score_product_assets
+        if product_id:
+            results = score_product_assets(product_id, conn)
+        else:
+            rows = conn.execute("SELECT id FROM render_assets").fetchall()
+            results = [score_asset(r["id"], conn) for r in rows]
+
+        conn.close()
+        return jsonify({"ok": True, "scored": len(results)})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 @app.post("/api/render/asset/<int:asset_id>/ready")
 def render_asset_ready(asset_id: int) -> Any:
     """Toggle is_ready_to_test on a render asset."""

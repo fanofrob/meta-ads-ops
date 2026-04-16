@@ -543,6 +543,7 @@ def build_render_specs(
     production_output_id: int,
     variants: tuple[str, ...] = VARIANT_STRATEGIES,
     aspect_ratio: str = DEFAULT_ASPECT_RATIO,
+    product_learnings: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Build one RenderSpec dict per variant strategy.
@@ -572,6 +573,17 @@ def build_render_specs(
 
     # Base style seed from production_output_id — different for every product/brief
     base_seed = production_output_id if production_output_id else 0
+
+    # Build learnings suffix — injected into every variant's negative/positive prompt
+    _avoid_suffix = ""
+    _prefer_suffix = ""
+    if product_learnings:
+        avoids  = [l for l in product_learnings if l.get("type") == "avoid"]
+        prefers = [l for l in product_learnings if l.get("type") == "prefer"]
+        if avoids:
+            _avoid_suffix = " Avoid: " + "; ".join(l["summary"] for l in avoids) + "."
+        if prefers:
+            _prefer_suffix = " Prefer: " + "; ".join(l["summary"] for l in prefers) + "."
 
     # Filter to only known variants
     selected = [v for v in variants if v in VARIANT_STRATEGIES]
@@ -606,8 +618,8 @@ def build_render_specs(
                 body=body_overlay,
                 cta=brief.get("cta", ""),
                 style_seed=style_seed,
-            ),
-            "negative_prompt":   _build_negative_prompt(variant),
+            ) + _prefer_suffix,
+            "negative_prompt":   _build_negative_prompt(variant) + _avoid_suffix,
             "headline_overlay":  headline_overlay,
             "body_overlay":      body_overlay,
             "cta_text":          brief.get("cta", ""),

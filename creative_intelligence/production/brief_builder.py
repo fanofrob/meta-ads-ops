@@ -47,6 +47,7 @@ from creative_intelligence.production.exporters import to_markdown
 def _static_brief_prompt(
     concept: str,
     product_ctx: str,
+    avoid_notes: list[str] | None = None,
 ) -> tuple[str, str]:
     system = (
         "You are an expert direct-response ad designer specialising in DTC food and produce brands. "
@@ -75,6 +76,7 @@ def _static_brief_prompt(
         "Body options should each be 1-2 punchy sentences that could stand alone as primary text. "
         "Visual direction and composition notes should be specific enough for a designer to brief a photographer or illustrator. "
         "Why it works should reference the emotional hook and why this angle resonates for this product category."
+        + (f"\n\nWhat has NOT worked for this product (do not repeat): {'; '.join(avoid_notes)}." if avoid_notes else "")
     )
     return system, user
 
@@ -319,7 +321,18 @@ def build_static_brief(
     }
     """
     product_ctx = build_prompt_context_block(product_id, conn) if product_id else ""
-    system, user = _static_brief_prompt(concept, product_ctx)
+    # Load avoid-learnings for this product
+    _avoid_notes: list[str] = []
+    if product_id:
+        try:
+            rows = conn.execute(
+                "SELECT summary FROM creative_learnings WHERE product_id=? AND learning_type='avoid' AND active=1",
+                (product_id,),
+            ).fetchall()
+            _avoid_notes = [r["summary"] for r in rows]
+        except Exception:
+            pass
+    system, user = _static_brief_prompt(concept, product_ctx, avoid_notes=_avoid_notes)
     data = _call_llm(system, user, dry_run)
 
     # Normalise

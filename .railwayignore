@@ -1,0 +1,10 @@
+# Don't upload sensitive or unnecessary files to Railway
+.env
+data/raw/
+outputs/
+*.log
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+docs/
