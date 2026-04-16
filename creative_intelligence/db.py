@@ -141,6 +141,36 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "ALTER TABLE generated_hooks ADD COLUMN dcp_c TEXT",
         "ALTER TABLE generated_hooks ADD COLUMN dcp_ps TEXT",
         "ALTER TABLE generated_hooks ADD COLUMN dcp_clarity TEXT",
+        # ── Creative scoring + learning system (v1.8) ────────────────────────
+        "ALTER TABLE render_assets ADD COLUMN quality_score REAL",
+        "ALTER TABLE render_assets ADD COLUMN score_breakdown_json TEXT",
+        """CREATE TABLE IF NOT EXISTS asset_feedback (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    asset_id        INTEGER NOT NULL,
+    asset_type      TEXT NOT NULL DEFAULT 'render',
+    feedback_type   TEXT NOT NULL,
+    rejection_tags  TEXT DEFAULT '[]',
+    note            TEXT DEFAULT '',
+    product_id      TEXT,
+    variant_label   TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
+)""",
+        """CREATE INDEX IF NOT EXISTS idx_asset_feedback_asset
+   ON asset_feedback(asset_id)""",
+        """CREATE INDEX IF NOT EXISTS idx_asset_feedback_product
+   ON asset_feedback(product_id)""",
+        """CREATE TABLE IF NOT EXISTS creative_learnings (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id      TEXT,
+    learning_type   TEXT NOT NULL,
+    source          TEXT NOT NULL DEFAULT 'feedback',
+    summary         TEXT NOT NULL,
+    detail_json     TEXT DEFAULT '{}',
+    active          INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT DEFAULT (datetime('now'))
+)""",
+        """CREATE INDEX IF NOT EXISTS idx_creative_learnings_product
+   ON creative_learnings(product_id)""",
     ]
     for stmt in migrations:
         try:

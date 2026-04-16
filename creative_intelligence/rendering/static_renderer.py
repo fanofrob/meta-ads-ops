@@ -104,11 +104,25 @@ def render_static_brief(
         ) from exc
 
     # ── 2. Build render specs ────────────────────────────────────────────
+    # Load active learnings for this product to guide image prompts
+    _learnings_rows = []
+    _product_id = row_dict.get("product_id")
+    if _product_id:
+        try:
+            _learnings_rows = conn.execute(
+                "SELECT learning_type, summary FROM creative_learnings WHERE product_id=? AND active=1",
+                (_product_id,),
+            ).fetchall()
+        except Exception:
+            pass
+    _learnings = [{"type": r["learning_type"], "summary": r["summary"]} for r in _learnings_rows]
+
     specs = build_render_specs(
         brief=brief,
         production_output_id=production_output_id,
         variants=variants,
         aspect_ratio=aspect_ratio,
+        product_learnings=_learnings if _learnings else None,
     )
 
     # ── 3. Persist render_outputs row ────────────────────────────────────

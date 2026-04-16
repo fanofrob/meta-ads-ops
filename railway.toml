@@ -1,4 +1,10 @@
+[build]
+builder = "NIXPACKS"
+
 [deploy]
 startCommand = "PYTHONPATH=. python3 creative_intelligence/webapp/app.py"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
+
+[[volumes]]
+mountPath = "/app/creative_intelligence_data"
