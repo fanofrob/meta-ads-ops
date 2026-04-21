@@ -248,6 +248,7 @@ Generate exactly {request_count} hooks now."""
 # ─────────────────────────────────────────────
 
 _BANNED_FRAGMENTS = [
+    # Original 5 templates
     "from the supermarket never quite delivers",
     "you've never tasted",
     "wishes it could be. hand-picked",
@@ -256,6 +257,11 @@ _BANNED_FRAGMENTS = [
     "most intensely flavorful",
     "grocery store.*wishes it could be",
     "never quite delivers.*this is why",
+    # Next-tier defaults the LLM falls back to after the first 5 are banned
+    "been making people cancel their grocery orders",
+    "grown at peak altitude and harvested the morning your order ships",
+    "harvested the morning your order ships",
+    "this is real.*avocado|this is real.*mango|this is real.*fruit|this is real.*papaya|this is real.*cherry",
 ]
 
 import re as _re
@@ -531,85 +537,82 @@ def generate_hooks_from_pattern(
 
     # Diversity: pick a random angle to ensure each run explores different territory
     diversity_angle = random.choice(_DIVERSITY_ANGLES)
-    # Short label for the REQUIRED ANGLE MIX slot (part before the em-dash)
-    diversity_angle_short = diversity_angle.split("—")[0].strip()
 
     # Recent hooks: fetch what was already generated so the LLM avoids repeating ideas
     recent = _get_recent_hooks(product_id, db, limit=12)
-    recent_block = _recent_hooks_block(recent)
-
-    # Over-request by 1.5× so QA filtering leaves enough clean hooks.
-    request_count = max(count, int(count * 1.5))
-
-    prompt = _HOOK_PROMPT_TEMPLATE.format(
-        request_count      = request_count,
-        hook_type          = pattern.get("hook_type") or "unknown",
-        angle              = pattern.get("angle") or "unknown",
-        archetype          = pattern.get("archetype") or "unknown",
-        emotional_trigger  = pattern.get("emotional_trigger") or "unknown",
-        avg_ctr            = f"{pattern.get('avg_ctr') or 0:.2%}" if pattern.get("avg_ctr") else "unknown",
-        tone               = tone,
-        goal               = goal or "conversions",
-        audience           = audience or "general consumers",
-        product_context    = product_ctx or "No product context provided.",
-        avatar_context     = avatar_ctx or "No avatar data available — use product context to infer desires and conflicts.",
-        visual_context     = visual_ctx,
-        example_hooks      = "\n".join(f"- {h}" for h in example_hooks[:5]) or "None available.",
-        product_name       = product_name,
-        forbidden_openings = forbidden,
-        diversity_angle       = diversity_angle,
-        diversity_angle_short = diversity_angle_short,
-        recent_hooks_block    = recent_block,
-    )
 
     run_id = _create_run("hooks", example_ids, [pattern_id], product_id, dry_run, db, llm.model)
 
-    # Higher temperature (0.9) to force more creative variation across runs
-    raw = llm.complete_json(_SYSTEM_PROMPT, prompt, temperature=0.9)
-    # The LLM returns a list of rich objects: {text, archetype, d, c, ps, clarity}
-    raw_hook_objects: list = raw.get("hooks", raw.get("items", [])) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
+    def _run_generation(extra_forbidden: list[str]) -> list[dict]:
+        """One generation pass. Returns filtered rich hook objects."""
+        # Add any extra forbidden hooks (from prior failed passes) to the recent block
+        all_recent = recent + extra_forbidden
+        retry_block = _recent_hooks_block(all_recent[:15])
+        # Pick a fresh diversity angle on retry
+        d_angle = random.choice(_DIVERSITY_ANGLES) if extra_forbidden else diversity_angle
+        d_short = d_angle.split("—")[0].strip()
 
-    # Extract plain text for QA filtering; keep objects aligned.
-    raw_hook_texts: list[str] = []
-    for h in raw_hook_objects:
-        if isinstance(h, dict):
-            raw_hook_texts.append(str(h.get("text", "")).strip())
-        else:
-            raw_hook_texts.append(str(h).strip())
+        p = _HOOK_PROMPT_TEMPLATE.format(
+            request_count      = max(count + 2, int(count * 1.8)),  # ask for more to have buffer
+            hook_type          = pattern.get("hook_type") or "unknown",
+            angle              = pattern.get("angle") or "unknown",
+            archetype          = pattern.get("archetype") or "unknown",
+            emotional_trigger  = pattern.get("emotional_trigger") or "unknown",
+            avg_ctr            = f"{pattern.get('avg_ctr') or 0:.2%}" if pattern.get("avg_ctr") else "unknown",
+            tone               = tone,
+            goal               = goal or "conversions",
+            audience           = audience or "general consumers",
+            product_context    = product_ctx or "No product context provided.",
+            avatar_context     = avatar_ctx or "No avatar data available — use product context to infer desires and conflicts.",
+            visual_context     = visual_ctx,
+            example_hooks      = "\n".join(f"- {h}" for h in example_hooks[:5]) or "None available.",
+            product_name       = product_name,
+            forbidden_openings = forbidden,
+            diversity_angle       = d_angle,
+            diversity_angle_short = d_short,
+            recent_hooks_block    = retry_block,
+        )
+        raw = llm.complete_json(_SYSTEM_PROMPT, p, temperature=0.92)
+        objs: list = raw.get("hooks", raw.get("items", [])) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
 
-    # QA filter — source_hooks = example_hooks so we don't re-surface winning copy verbatim.
-    qa_cfg = QAConfig(
-        similarity_threshold=similarity_threshold,
-        diversity=diversity,
-    )
-    qa_results = filter_hooks(
-        raw_hook_texts,
-        source_hooks=example_hooks,
-        config=qa_cfg,
-        required_terms=required_terms,
-    )
-    qa_summary = summarise_qa(qa_results)
+        texts = [str(h.get("text", "")).strip() if isinstance(h, dict) else str(h).strip() for h in objs]
+        qa_cfg = QAConfig(similarity_threshold=similarity_threshold, diversity=diversity)
+        qa_res = filter_hooks(texts, source_hooks=example_hooks, config=qa_cfg, required_terms=required_terms)
 
-    # Rebuild passed hooks as rich dicts (re-attach original object data where available).
-    text_to_obj: dict[str, dict] = {}
-    for h in raw_hook_objects:
-        if isinstance(h, dict):
-            t = h.get("text", "").strip()
-            if t:
-                text_to_obj[t] = h
+        t2o = {str(h.get("text", "")).strip(): h for h in objs if isinstance(h, dict)}
+        passed = []
+        for r in qa_res:
+            if r.passed:
+                obj = t2o.get(r.hook, {"text": r.hook})
+                if not isinstance(obj, dict):
+                    obj = {"text": r.hook}
+                if "text" not in obj:
+                    obj["text"] = r.hook
+                if not _is_cliche(obj.get("text", "")):
+                    passed.append(obj)
+        return passed
 
-    hooks_rich: list[dict] = []
-    for r in qa_results:
-        if r.passed:
-            obj = text_to_obj.get(r.hook, {"text": r.hook})
-            if not isinstance(obj, dict):
-                obj = {"text": r.hook}
-            if "text" not in obj:
-                obj["text"] = r.hook
-            # Hard filter: discard known cliché templates even if LLM ignored the ban
-            if not _is_cliche(obj.get("text", "")):
-                hooks_rich.append(obj)
+    # First pass
+    hooks_rich = _run_generation([])
+
+    # Retry up to 2 times if we don't have enough hooks
+    for _attempt in range(2):
+        if len(hooks_rich) >= count:
+            break
+        already_generated = [h["text"] for h in hooks_rich]
+        hooks_rich += _run_generation(already_generated)
+        # Deduplicate
+        seen_texts: set[str] = set()
+        deduped = []
+        for h in hooks_rich:
+            t = h.get("text", "")
+            if t not in seen_texts:
+                seen_texts.add(t)
+                deduped.append(h)
+        hooks_rich = deduped
+
     hooks_rich = hooks_rich[:count]
+    qa_summary: dict = {}  # qa_summary not easily propagated from helper; leave empty
 
     # Plain text list for backwards-compat return value
     hooks = [h["text"] for h in hooks_rich]
