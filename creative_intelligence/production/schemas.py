@@ -72,7 +72,8 @@ class StaticAdBrief:
     "origin_story": "Provenance or origin headline ≤8 words",
     "lifestyle_tagline": "Emotional brand statement ≤7 words",
     "direct_response": "Urgency/action headline ≤8 words",
-    "premium": "Elegant aspirational headline ≤6 words"
+    "premium": "Elegant aspirational headline ≤6 words",
+    "scroll_stopping": "Wild/absurd/funny claim or 1-star complaint that's secretly a rave review ≤12 words"
   },
   "body_options": ["Primary text A (1-2 sentences)", "Primary text B", "Primary text C"],
   "visual_direction": "1-2 sentences on the overall visual concept",

@@ -130,6 +130,10 @@ _VARIANT_NEGATIVES: dict[str, str] = {
         "CTA button, price tags, badges, body copy paragraph, cluttered design, "
         "low-end photography, harsh lighting, busy typography"
     ),
+    "scroll_stopping": (
+        "generic layout, polished corporate design, serious tone, "
+        "expected composition, boring headline, professional stock photo feel"
+    ),
 }
 
 # Known shot-type keywords to detect in composition notes
@@ -489,6 +493,99 @@ def _prompt_premium(
     )
 
 
+def _prompt_scroll_stopping(
+    brief: dict, product: str, headline: str, body: str, style_seed: int
+) -> str:
+    """Pattern-interrupt format: wild claim, absurd 1-star review, or ridiculous statement."""
+
+    # Three structural sub-formats, rotated via style_seed
+    fmt = style_seed % 3
+
+    if fmt == 0:
+        # ── 1-star review format ────────────────────────────────────────
+        # White card with a single star, absurd complaint that's actually a compliment
+        complaints = [
+            "1 star. I ate the whole box before my family got home.",
+            "1 star. I can't stop ordering this and my bank account hates it.",
+            "1 star. Now I can't eat supermarket fruit anymore. Thanks a lot.",
+            "1 star. My nutritionist told me to stop, I told her to try it first.",
+            "1 star. I drove 40 minutes to get more after the first bite.",
+            "1 star. My children look at me differently now. Worth it.",
+        ]
+        complaint = complaints[style_seed % len(complaints)]
+        star_text = "★☆☆☆☆"
+
+        bg_options = [
+            "clean white background",
+            "warm cream background (#F5EDD8)",
+            "very pale yellow background",
+        ]
+        bg = bg_options[style_seed % len(bg_options)]
+
+        return (
+            f"Scroll-stopping Meta ad. {bg}. Photorealistic {product} in the upper portion. "
+            f"Large single gold star {star_text} prominently displayed — makes the viewer do a double-take. "
+            f'Below the star: bold text "{complaint}". '
+            "Clean card layout, high contrast black text on white/cream. "
+            "The joke lands instantly — unexpected review format forces a re-read. "
+            "No CTA button, no badges. The surprise IS the hook."
+        )
+
+    elif fmt == 1:
+        # ── Wild/ridiculous claim format ────────────────────────────────
+        # Bold oversized claim that's absurd but true / exaggerated
+        claim = headline or f"WARNING: Extremely good {product}"
+        short_claim = _truncate(claim, 60).upper()
+
+        # High-contrast, slightly chaotic backgrounds
+        chaos_bgs = [
+            "bright acid yellow background (#FFE600), high energy",
+            "electric lime green background (#CCFF00), bold and loud",
+            "hot coral background (#FF4D4D), attention-grabbing red-orange",
+            "vivid cyan background (#00E5FF), unexpected pop of colour",
+        ]
+        bg = chaos_bgs[style_seed % len(chaos_bgs)]
+
+        fine_prints = [
+            "*results may vary. They might be even better.",
+            "*not responsible for repeat purchases.",
+            "*warning: highly habit-forming.",
+            "*side effects: happiness, re-ordering, telling everyone.",
+        ]
+        fine_print = fine_prints[style_seed % len(fine_prints)]
+
+        return (
+            f"Scroll-stopping Meta ad. {bg}. Photorealistic {product}, bold and prominent. "
+            f"Massive all-caps bold condensed typography: \"{short_claim}\" fills most of the frame. "
+            f'Very small fine-print text at the bottom: "{fine_print}". '
+            "Unexpectedly bold colour, oversized text creates a visual shock. "
+            "Feels like a parody warning label but the product looks genuinely incredible. "
+            "No traditional CTA button. The energy IS the call to action."
+        )
+
+    else:
+        # ── Absurd stat / ridiculous fact format ────────────────────────
+        # "97% of people who tried this" style wild stat with product hero
+        stat = body or headline or "People who tried this never went back to store-bought"
+        short_stat = _clean_body_for_overlay(stat, max_chars=70)
+
+        stat_bgs = [
+            "deep black background, single dramatic spotlight on product",
+            "very dark navy background (#0A0E1A), moody and dramatic",
+            "rich dark forest green (#0D1F14), bold and unexpected",
+        ]
+        bg = stat_bgs[style_seed % len(stat_bgs)]
+
+        return (
+            f"Scroll-stopping Meta ad. {bg}. Photorealistic {product}, dramatically lit. "
+            f'Oversized bold number or statement dominates the upper frame: "{short_stat}". '
+            "Typography: massive, punchy, white on dark — impossible to ignore. "
+            "Dark dramatic background makes the product and text glow. "
+            "Unexpected contrast between the dramatic visual and the absurd/funny claim. "
+            "No CTA button. No badges. Pure pattern interrupt."
+        )
+
+
 # ─────────────────────────────────────────────
 # Dispatcher
 # ─────────────────────────────────────────────
@@ -522,6 +619,8 @@ def _build_visual_prompt(
         return _prompt_direct_response(brief, product, headline, body, cta, style_seed)
     if variant == "premium":
         return _prompt_premium(brief, product, headline, style_seed)
+    if variant == "scroll_stopping":
+        return _prompt_scroll_stopping(brief, product, headline, body, style_seed)
 
     # Fallback
     return f"{visual}. {product}. {headline}."

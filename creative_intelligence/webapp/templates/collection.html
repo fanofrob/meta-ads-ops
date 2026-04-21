@@ -78,9 +78,10 @@ header h1 { font-size: 15px; font-weight: 700; letter-spacing: -.3px; }
 
 .badge-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px 4px; }
 .variant-badge { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 10px; text-transform: uppercase; letter-spacing: .5px; }
-.badge-minimal         { background: #0c2040; color: #5ba4e8; }
-.badge-premium         { background: #1a1a0c; color: #d4af37; }
-.badge-direct-response { background: #2a0a0a; color: #f87171; }
+.badge-minimal          { background: #0c2040; color: #5ba4e8; }
+.badge-premium          { background: #1a1a0c; color: #d4af37; }
+.badge-direct-response  { background: #2a0a0a; color: #f87171; }
+.badge-scroll-stopping  { background: #1a0a1a; color: #e879f9; }
 .badge-reveal          { background: #0a1a2a; color: #60a5fa; }
 .badge-product-hero    { background: #1a2a0c; color: #7ecb5b; }
 .status-icons { margin-left: auto; display: flex; gap: 4px; font-size: 13px; }
@@ -407,9 +408,10 @@ function buildSection(title, assets, titleClass, cardType) {
 function buildCard(a) {
   const variantLabel = a.variant_label || '';
   const badgeClass = {
-    minimal:         'badge-minimal',
-    premium:         'badge-premium',
-    direct_response: 'badge-direct-response',
+    minimal:          'badge-minimal',
+    premium:          'badge-premium',
+    direct_response:  'badge-direct-response',
+    scroll_stopping:  'badge-scroll-stopping',
     reveal:          'badge-reveal',
     product_hero:    'badge-product-hero',
   }[variantLabel] || 'badge-minimal';

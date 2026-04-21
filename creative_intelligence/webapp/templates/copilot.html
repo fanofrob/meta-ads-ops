@@ -1176,12 +1176,13 @@ function prodVariantHeadlines(vh) {
   const variantLabels = {
     minimal: 'Minimal', bold_type: 'Bold Type', benefit_stack: 'Benefit Stack',
     social_proof: 'Social Proof', origin_story: 'Origin Story',
-    lifestyle_tagline: 'Lifestyle Tagline', direct_response: 'Direct Response', premium: 'Premium'
+    lifestyle_tagline: 'Lifestyle Tagline', direct_response: 'Direct Response',
+    premium: 'Premium', scroll_stopping: 'Scroll Stopping'
   };
   const variantColors = {
     minimal: '#60a5fa', bold_type: '#c084fc', benefit_stack: '#fb923c',
     social_proof: '#4ade80', origin_story: '#a3e635', lifestyle_tagline: '#fbbf24',
-    direct_response: '#f87171', premium: '#fcd34d'
+    direct_response: '#f87171', premium: '#fcd34d', scroll_stopping: '#e879f9'
   };
   return '<div class="variant-headlines-grid">' +
     Object.entries(vh).map(([k, v]) => {
