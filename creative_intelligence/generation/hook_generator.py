@@ -14,6 +14,7 @@ Results are persisted in generated_hooks and generation_runs tables.
 from __future__ import annotations
 
 import json
+import random
 import re
 import sqlite3
 from datetime import datetime
@@ -24,6 +25,31 @@ from creative_intelligence.generation.llm_client import get_llm_client
 from creative_intelligence.generation.hook_qa import filter_hooks, QAConfig, summarise_qa
 from creative_intelligence.analysis.patterns import get_patterns
 from creative_intelligence.product_knowledge.enricher import build_prompt_context_block
+
+# ─────────────────────────────────────────────
+# Diversity — one angle is randomly injected per run so each batch
+# explores a different creative territory.
+# ─────────────────────────────────────────────
+
+_DIVERSITY_ANGLES = [
+    "sensory immersion — taste, texture, aroma, mouthfeel, the moment of first bite",
+    "origin story — where it grows, how it's harvested, the farm-to-door journey",
+    "discovery moment — the first time someone encounters this fruit and is astonished",
+    "gift and occasion — sending to family or friends, surprising someone with something rare",
+    "supermarket vs reality — what's missing from grocery store produce and why this is different",
+    "the ripeness window — the narrow 24-48h when it's perfect and why that's hard to capture",
+    "health and vitality — natural energy, vitamins, eating clean and feeling it",
+    "rarity and status — this is a rare find that most people will never taste",
+    "social proof frame — other adventurous eaters who discovered it and couldn't go back",
+    "price-to-experience — a premium fruit experience that's cheaper than a restaurant dessert",
+    "curiosity and novelty — something most people have never heard of, let alone tasted",
+    "contrast reversal — something that looks strange but tastes extraordinary",
+    "season and scarcity — only available for a few weeks a year, harvested at peak",
+    "the specific variety — not just 'mango' but the specific cultivar and why it's superior",
+    "kid reaction — children instinctively love it because it's naturally sweet and fun",
+    "cook and creator angle — what chefs, bakers, and food lovers use it for",
+]
+
 
 _SYSTEM_PROMPT = """You are an expert direct-response ad copywriter specialising in Meta/Facebook/Instagram ads.
 You write scroll-stopping hooks that make people stop, feel seen, and click to buy.
@@ -146,6 +172,18 @@ Spread your {request_count} hooks across AT LEAST 6 different archetypes (A1–A
 Use A11 or A12 (Carousel) for at least one hook if count ≥ 8.
 Never use the same archetype twice with the same opening structure.
 
+## THIS RUN'S MANDATORY CREATIVE ANGLE
+Every hook in this batch must be coloured by this specific lens:
+→ {diversity_angle}
+Open at least 3 hooks from this angle in a way that couldn't appear in any other batch.
+This is non-negotiable — it is what makes this batch unique.
+
+## RECENTLY GENERATED HOOKS — DO NOT REPEAT
+The following hooks were already generated for this product.
+Do not reuse their opening structure, metaphor, archetype treatment, or central idea.
+Treat these as exhausted territory:
+{recent_hooks_block}
+
 ## Output format — return a JSON object with a "hooks" array
 Each hook object must have ALL of these fields:
 {{
@@ -170,6 +208,33 @@ Example output shape:
 ]}}
 
 Generate exactly {request_count} hooks now."""
+
+
+def _get_recent_hooks(
+    product_id: str | None,
+    db: sqlite3.Connection,
+    limit: int = 12,
+) -> list[str]:
+    """Fetch the most recently generated hooks for this product to avoid repetition."""
+    if not product_id:
+        return []
+    try:
+        rows = db.execute(
+            """SELECT hook_text FROM generated_hooks
+               WHERE product_id = ? AND hook_text != ''
+               ORDER BY id DESC LIMIT ?""",
+            (product_id, limit),
+        ).fetchall()
+        return [r["hook_text"] for r in rows if r["hook_text"]]
+    except Exception:
+        return []
+
+
+def _recent_hooks_block(recent_hooks: list[str]) -> str:
+    """Format recent hooks as a numbered do-not-repeat list."""
+    if not recent_hooks:
+        return "  (none yet — this is the first batch for this product)"
+    return "\n".join(f"  {i+1}. {h}" for i, h in enumerate(recent_hooks[:12]))
 
 
 def _get_example_hooks(
@@ -377,30 +442,40 @@ def generate_hooks_from_pattern(
     product_name = _product_name_from_context(product_ctx, pattern)
     forbidden = _forbidden_openings(example_hooks)
 
+    # Diversity: pick a random angle to ensure each run explores different territory
+    diversity_angle = random.choice(_DIVERSITY_ANGLES)
+
+    # Recent hooks: fetch what was already generated so the LLM avoids repeating ideas
+    recent = _get_recent_hooks(product_id, db, limit=12)
+    recent_block = _recent_hooks_block(recent)
+
     # Over-request by 1.5× so QA filtering leaves enough clean hooks.
     request_count = max(count, int(count * 1.5))
 
     prompt = _HOOK_PROMPT_TEMPLATE.format(
-        request_count     = request_count,
-        hook_type         = pattern.get("hook_type") or "unknown",
-        angle             = pattern.get("angle") or "unknown",
-        archetype         = pattern.get("archetype") or "unknown",
-        emotional_trigger = pattern.get("emotional_trigger") or "unknown",
-        avg_ctr           = f"{pattern.get('avg_ctr') or 0:.2%}" if pattern.get("avg_ctr") else "unknown",
-        tone              = tone,
-        goal              = goal or "conversions",
-        audience          = audience or "general consumers",
-        product_context   = product_ctx or "No product context provided.",
-        avatar_context    = avatar_ctx or "No avatar data available — use product context to infer desires and conflicts.",
-        visual_context    = visual_ctx,
-        example_hooks     = "\n".join(f"- {h}" for h in example_hooks[:5]) or "None available.",
-        product_name      = product_name,
+        request_count      = request_count,
+        hook_type          = pattern.get("hook_type") or "unknown",
+        angle              = pattern.get("angle") or "unknown",
+        archetype          = pattern.get("archetype") or "unknown",
+        emotional_trigger  = pattern.get("emotional_trigger") or "unknown",
+        avg_ctr            = f"{pattern.get('avg_ctr') or 0:.2%}" if pattern.get("avg_ctr") else "unknown",
+        tone               = tone,
+        goal               = goal or "conversions",
+        audience           = audience or "general consumers",
+        product_context    = product_ctx or "No product context provided.",
+        avatar_context     = avatar_ctx or "No avatar data available — use product context to infer desires and conflicts.",
+        visual_context     = visual_ctx,
+        example_hooks      = "\n".join(f"- {h}" for h in example_hooks[:5]) or "None available.",
+        product_name       = product_name,
         forbidden_openings = forbidden,
+        diversity_angle    = diversity_angle,
+        recent_hooks_block = recent_block,
     )
 
     run_id = _create_run("hooks", example_ids, [pattern_id], product_id, dry_run, db, llm.model)
 
-    raw = llm.complete_json(_SYSTEM_PROMPT, prompt, temperature=0.85)
+    # Higher temperature (0.9) to force more creative variation across runs
+    raw = llm.complete_json(_SYSTEM_PROMPT, prompt, temperature=0.9)
     # The LLM returns a list of rich objects: {text, archetype, d, c, ps, clarity}
     raw_hook_objects: list = raw.get("hooks", raw.get("items", [])) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
 

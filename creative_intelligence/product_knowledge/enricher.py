@@ -123,6 +123,45 @@ def get_product_context(
     }
 
 
+_VARIETY_KEYWORDS = frozenset({
+    "variety", "mixed", "mix", "collection", "assortment",
+    "sampler", "bundle", "selection", "box", "crate",
+})
+
+_EXOTIC_FRUIT_COPY_NAMES = [
+    "exotic fruit collection",
+    "rare tropical fruits",
+    "hand-picked exotic fruits",
+    "tropical fruit selection",
+    "rare & exotic fruits",
+]
+
+_EXOTIC_FRUIT_EXAMPLES = (
+    "cherimoyas, dragonfruit, jackfruit, passion fruit, sapodilla, "
+    "mamey sapote, longan, lychee, rambutan, starfruit, atemoya, feijoa"
+)
+
+
+def is_variety_product(name: str, category: str | None = None) -> bool:
+    """Return True if the product is a mixed/variety collection rather than a single fruit."""
+    text = f"{name} {category or ''}".lower()
+    tokens = set(text.split())
+    return bool(tokens & _VARIETY_KEYWORDS)
+
+
+def _variety_copy_name(product_id: str | None, db: Any | None = None) -> str:
+    """Return an evocative copy name for variety products — rotates so briefs vary."""
+    # Use product_id as a deterministic seed so the same product gets the same name per session
+    # but different products may vary.
+    if product_id:
+        try:
+            idx = int(product_id) % len(_EXOTIC_FRUIT_COPY_NAMES)
+        except (ValueError, TypeError):
+            idx = hash(product_id) % len(_EXOTIC_FRUIT_COPY_NAMES)
+        return _EXOTIC_FRUIT_COPY_NAMES[idx]
+    return _EXOTIC_FRUIT_COPY_NAMES[0]
+
+
 def _clean_product_name(raw: str, category: str | None = None) -> str:
     """Extract a clean fruit/product name from a Shopify listing name.
 
@@ -164,6 +203,12 @@ def build_prompt_context_block(product_id: str, conn: sqlite3.Connection | None 
     p = ctx["product"]
     clean_name    = _clean_product_name(p["name"], p.get("category"))
     product_label = p.get("category") or p["name"]
+
+    # Detect variety/mixed-fruit products and override copy framing
+    variety = is_variety_product(p["name"], p.get("category"))
+    if variety:
+        clean_name = _variety_copy_name(product_id)
+
     lines = [
         f"Name: {clean_name}",          # clean fruit name for use in copy — NO weight/price/SKU
         f"Product type: {product_label}",  # category for context only, not for use in hooks
@@ -205,5 +250,15 @@ def build_prompt_context_block(product_id: str, conn: sqlite3.Connection | None 
         ]
         if quality_tags:
             lines.append("Quality signals: " + ", ".join(quality_tags))
+
+    # Variety product framing — override generic "Variety Box" language
+    if variety:
+        lines.append(
+            f"COPY RULE — this is a mixed exotic fruit collection. "
+            f"NEVER call it 'Variety Box' or 'mixed box' in any hook or headline. "
+            f"Instead use: '{clean_name}', 'exotic fruits', 'rare tropicals', "
+            f"or name individual fruits from this list: {_EXOTIC_FRUIT_EXAMPLES}. "
+            f"Hooks should mention 1-2 specific fruit names for credibility and curiosity."
+        )
 
     return "\n".join(lines)

@@ -138,6 +138,8 @@ class ReplicateSceneClipProvider(SceneClipProvider):
     # Per-model image input field name for image-to-video conditioning.
     # Each model uses a different key to pass the first-frame reference image.
     _IMAGE_FIELD: dict[str, str] = {
+        "bytedance/seedance-2.0":       "image",
+        "bytedance/seedance-1.5":       "image",
         "minimax/video-01-live":        "first_frame_image",
         "minimax/video-01":             "first_frame_image",
         "runwayml/gen-4-turbo":         "prompt_image",
@@ -157,10 +159,21 @@ class ReplicateSceneClipProvider(SceneClipProvider):
                 return field
         return None  # model doesn't support image conditioning
 
+    def _model_extra_params(self, aspect_ratio: str) -> dict:
+        """Return model-specific extra input params beyond prompt/duration/image.
+
+        Seedance 2.0 uses a 'ratio' field (e.g. '9:16') for aspect ratio.
+        Other models are typically text-to-video with no native aspect ratio param.
+        """
+        if self._model.startswith("bytedance/seedance"):
+            return {"ratio": aspect_ratio}
+        return {}
+
     def create_prediction(
         self,
         prompt: str,
         duration: float = 5.0,
+        aspect_ratio: str = "9:16",
         image_url: str | None = None,
     ) -> str | None:
         """
@@ -170,8 +183,7 @@ class ReplicateSceneClipProvider(SceneClipProvider):
         image_url: optional product reference image URL.
             When provided and the model supports it, the video starts FROM this
             image (true image-to-video), keeping product appearance consistent.
-            minimax/video-01-live uses 'first_frame_image' — this is the
-            recommended model for product clips as it locks the first frame.
+            bytedance/seedance-2.0 and minimax/video-01-live both support this.
         """
         if not self._api_key:
             return None
@@ -179,7 +191,11 @@ class ReplicateSceneClipProvider(SceneClipProvider):
         if not client:
             return None
         duration_sec = 10 if duration >= 8 else 5
-        prediction_input: dict = {"prompt": prompt, "duration": duration_sec}
+        prediction_input: dict = {
+            "prompt": prompt,
+            "duration": duration_sec,
+            **self._model_extra_params(aspect_ratio),
+        }
         if image_url:
             field = self._image_field_for_model()
             if field:
@@ -237,6 +253,7 @@ class ReplicateSceneClipProvider(SceneClipProvider):
         aspect_ratio: str = "9:16",
         scene_id: int = 0,
         output_dir: Path | None = None,
+        image_url: str | None = None,
         **kwargs: Any,
     ) -> str | None:
         """Synchronous generate (blocks until done). Used for single-clip generation."""
@@ -246,11 +263,18 @@ class ReplicateSceneClipProvider(SceneClipProvider):
         if not client:
             return None
         duration_sec = 10 if duration >= 8 else 5
+        prediction_input: dict = {
+            "prompt": prompt,
+            "duration": duration_sec,
+            **self._model_extra_params(aspect_ratio),
+        }
+        if image_url:
+            field = self._image_field_for_model()
+            if field:
+                prediction_input[field] = image_url
+                log.info("Image-to-video (sync): model=%s field=%s", self._model, field)
         try:
-            output = client.run(
-                self._model,
-                input={"prompt": prompt, "duration": duration_sec},
-            )
+            output = client.run(self._model, input=prediction_input)
         except Exception as exc:
             log.error("Replicate call failed for scene %s: %s", scene_id, exc, exc_info=True)
             return None
