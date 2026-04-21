@@ -166,11 +166,26 @@ Study the angle, specificity, and emotional register. Write better versions — 
 4. ONE ARCHETYPE PER HOOK — label each hook with its archetype (A1–A12).
 5. LOOP NEVER COMPLETED — the hook must not answer its own question.
 6. AD-FIRST — the PS must tease a product purchase/experience, not content consumption.
+7. ANGLE DIVERSITY — each hook in this batch MUST use a completely different core angle.
+   Examples of distinct angles: sensory taste, origin/farm story, discovery moment, rarity/scarcity,
+   gift or occasion, health/vitality, social proof, ripeness window, price-to-experience, novelty.
+   MAXIMUM 1 hook may use a "supermarket/grocery store comparison" framing.
+   MAXIMUM 1 hook may open with a question.
+   Two hooks with the same central metaphor = automatic fail.
 
 ## ARCHETYPE DISTRIBUTION
 Spread your {request_count} hooks across AT LEAST 6 different archetypes (A1–A12).
 Use A11 or A12 (Carousel) for at least one hook if count ≥ 8.
 Never use the same archetype twice with the same opening structure.
+
+REQUIRED ANGLE MIX — assign each hook a different territory before writing it:
+  - 1 hook: sensory (taste, texture, aroma, mouthfeel — specific and evocative)
+  - 1 hook: origin or provenance (farm, grower, growing region, harvest window)
+  - 1 hook: discovery or first encounter (someone tasting it for the first time)
+  - 1 hook: {diversity_angle_short} (this run's mandatory unique angle)
+  - remaining: choose from rarity, social proof, gift/occasion, price-value, health, novelty
+DO NOT default to "grocery store/supermarket comparison" for multiple hooks.
+That single angle is overused — use it for at most 1 hook.
 
 ## THIS RUN'S MANDATORY CREATIVE ANGLE
 Every hook in this batch must be coloured by this specific lens:
@@ -213,11 +228,18 @@ Generate exactly {request_count} hooks now."""
 def _get_recent_hooks(
     product_id: str | None,
     db: sqlite3.Connection,
-    limit: int = 12,
+    limit: int = 15,
 ) -> list[str]:
-    """Fetch the most recently generated hooks for this product to avoid repetition."""
+    """Fetch the most recently generated hooks for this product to avoid repetition.
+
+    Queries BOTH generated_hooks (dry_run=False runs) and copilot_iterations
+    (copilot always uses dry_run=True, saving hooks there instead).
+    """
     if not product_id:
         return []
+    hooks: list[str] = []
+
+    # 1. generated_hooks (pattern-bank runs, dry_run=False)
     try:
         rows = db.execute(
             """SELECT hook_text FROM generated_hooks
@@ -225,9 +247,30 @@ def _get_recent_hooks(
                ORDER BY id DESC LIMIT ?""",
             (product_id, limit),
         ).fetchall()
-        return [r["hook_text"] for r in rows if r["hook_text"]]
+        hooks.extend(r["hook_text"] for r in rows if r["hook_text"])
     except Exception:
-        return []
+        pass
+
+    # 2. copilot_iterations — copilot generate / rewrite / variants all land here
+    try:
+        rows = db.execute(
+            """SELECT concept_text FROM copilot_iterations
+               WHERE product_id = ? AND concept_text != ''
+               ORDER BY id DESC LIMIT ?""",
+            (product_id, limit),
+        ).fetchall()
+        hooks.extend(r["concept_text"] for r in rows if r["concept_text"])
+    except Exception:
+        pass
+
+    # Deduplicate preserving recency order, apply limit
+    seen: set[str] = set()
+    result: list[str] = []
+    for h in hooks:
+        if h not in seen:
+            seen.add(h)
+            result.append(h)
+    return result[:limit]
 
 
 def _recent_hooks_block(recent_hooks: list[str]) -> str:
@@ -444,6 +487,8 @@ def generate_hooks_from_pattern(
 
     # Diversity: pick a random angle to ensure each run explores different territory
     diversity_angle = random.choice(_DIVERSITY_ANGLES)
+    # Short label for the REQUIRED ANGLE MIX slot (part before the em-dash)
+    diversity_angle_short = diversity_angle.split("—")[0].strip()
 
     # Recent hooks: fetch what was already generated so the LLM avoids repeating ideas
     recent = _get_recent_hooks(product_id, db, limit=12)
@@ -468,8 +513,9 @@ def generate_hooks_from_pattern(
         example_hooks      = "\n".join(f"- {h}" for h in example_hooks[:5]) or "None available.",
         product_name       = product_name,
         forbidden_openings = forbidden,
-        diversity_angle    = diversity_angle,
-        recent_hooks_block = recent_block,
+        diversity_angle       = diversity_angle,
+        diversity_angle_short = diversity_angle_short,
+        recent_hooks_block    = recent_block,
     )
 
     run_id = _create_run("hooks", example_ids, [pattern_id], product_id, dry_run, db, llm.model)
