@@ -673,9 +673,10 @@ def _prompt_lifestyle_tagline(
 
     return (
         f"Lifestyle brand ad. {moment}. "
-        f"{typo}. The brand statement \"{short}\" is the primary visual element — "
-        f"bold and emotionally resonant. "
-        "Product is visible in its lifestyle context — not floating on white. "
+        f"The hero of this scene is {product} — it must be immediately recognisable and beautiful. "
+        f"Show {product} specifically, not generic mixed fruit. "
+        f"The {product} is the centrepiece of the lifestyle moment — prominent, detailed, photorealistic. "
+        f'{typo}. The brand statement "{short}" overlaid — bold and emotionally resonant. '
         "No CTA button, no body copy paragraph, no badges, no price. "
         "Generous breathing room. Aspirational, emotional, brand-building."
     )
