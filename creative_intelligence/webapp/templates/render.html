@@ -121,6 +121,7 @@ header .subtitle { font-size: 12px; color: var(--muted); }
 .badge-lifestyle-tagline { background: #2a1a0a; color: #fbbf24; }
 .badge-direct-response   { background: #2a0a0a; color: #f87171; }
 .badge-premium           { background: #1a1a0c; color: #d4af37; }
+.badge-scroll-stopping   { background: #1a0a1a; color: #e879f9; }
 .card-rationale { font-size: 11px; color: var(--muted); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .spec-toggle { font-size: 10px; color: var(--muted2); cursor: pointer; background: none; border: none; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
 .spec-toggle:hover { color: var(--text2); background: var(--surface2); }
@@ -289,6 +290,11 @@ header .subtitle { font-size: 12px; color: var(--muted); }
           <input type="checkbox" value="premium" checked>
           <span class="vc-badge badge-premium">Premium</span>
           <span class="vc-label">White bg, elegant product label</span>
+        </label>
+        <label class="variant-check-row">
+          <input type="checkbox" value="scroll_stopping" checked>
+          <span class="vc-badge badge-scroll-stopping">Scroll Stopping</span>
+          <span class="vc-label">Wild claim / absurd 1-star review / pattern interrupt</span>
         </label>
       </div>
 
@@ -576,6 +582,7 @@ function buildCard(spec, finalAsset, bgAsset) {
     lifestyle_tagline: 'badge-lifestyle-tagline',
     direct_response:   'badge-direct-response',
     premium:           'badge-premium',
+    scroll_stopping:   'badge-scroll-stopping',
   }[variantLabel] || 'badge-minimal';
   const badgeLabel = variantLabel.replace(/_/g,' ');
 

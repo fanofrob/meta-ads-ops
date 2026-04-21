@@ -21,6 +21,7 @@ VARIANT_STRATEGIES: tuple[str, ...] = (
     "lifestyle_tagline", # single emotional brand statement, clean background
     "direct_response",   # full conversion toolkit: headline + body + CTA button
     "premium",           # pure white bg, product centered, small elegant label
+    "scroll_stopping",   # wild claim / absurd 1-star review / pattern interrupt
 )
 
 VARIANT_RATIONALES: dict[str, str] = {
@@ -55,6 +56,10 @@ VARIANT_RATIONALES: dict[str, str] = {
     "premium": (
         "Pure white studio shot with a single product and minimal label. "
         "Elevates perceived quality — ideal for first-touch premium positioning."
+    ),
+    "scroll_stopping": (
+        "Pattern-interrupt format: wild claim, absurd 1-star review, or ridiculous-but-true "
+        "statement that forces a double-take. Stops the scroll through surprise and humour."
     ),
 }
 
