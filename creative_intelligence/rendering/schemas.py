@@ -22,6 +22,9 @@ VARIANT_STRATEGIES: tuple[str, ...] = (
     "direct_response",   # full conversion toolkit: headline + body + CTA button
     "premium",           # pure white bg, product centered, small elegant label
     "scroll_stopping",   # wild claim / absurd 1-star review / pattern interrupt
+    "craving_macro",     # extreme close-up texture/flesh shot — pure sensory desire, no copy
+    "supermarket_contrast", # split-frame visual argument: dull store fruit vs. vivid ripe fruit
+    "seasonal_drop",     # product-drop energy: atmospheric dark bg, bold season signal, FOMO urgency
 )
 
 VARIANT_RATIONALES: dict[str, str] = {
@@ -60,6 +63,21 @@ VARIANT_RATIONALES: dict[str, str] = {
     "scroll_stopping": (
         "Pattern-interrupt format: wild claim, absurd 1-star review, or ridiculous-but-true "
         "statement that forces a double-take. Stops the scroll through surprise and humour."
+    ),
+    "craving_macro": (
+        "Extreme macro close-up of the fruit's interior — flesh, juice, texture. "
+        "No text. Pure sensory desire. Differentiates from Minimal by being raw, "
+        "visceral, and always showing the interior at close range."
+    ),
+    "supermarket_contrast": (
+        "Split-frame visual argument: left half shows dull, pale, waxy supermarket fruit; "
+        "right half shows vivid, ripe, moisture-glistening farm-direct fruit. "
+        "Destroys the 'I can get this at the store' objection before it forms."
+    ),
+    "seasonal_drop": (
+        "Product-drop energy for seasonal fruit: dark atmospheric background, "
+        "dramatically lit product, bold season announcement, urgency copy. "
+        "Creates FOMO through exclusivity and time-scarcity — like a sneaker drop."
     ),
 }
 

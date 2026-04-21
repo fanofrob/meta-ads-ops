@@ -78,12 +78,20 @@ header h1 { font-size: 15px; font-weight: 700; letter-spacing: -.3px; }
 
 .badge-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 12px 4px; }
 .variant-badge { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 10px; text-transform: uppercase; letter-spacing: .5px; }
-.badge-minimal          { background: #0c2040; color: #5ba4e8; }
-.badge-premium          { background: #1a1a0c; color: #d4af37; }
-.badge-direct-response  { background: #2a0a0a; color: #f87171; }
-.badge-scroll-stopping  { background: #1a0a1a; color: #e879f9; }
-.badge-reveal          { background: #0a1a2a; color: #60a5fa; }
-.badge-product-hero    { background: #1a2a0c; color: #7ecb5b; }
+.badge-minimal             { background: #0c2040; color: #5ba4e8; }
+.badge-bold-type           { background: #1a0a2a; color: #c084fc; }
+.badge-benefit-stack       { background: #1a0f00; color: #fb923c; }
+.badge-social-proof        { background: #062015; color: #4ade80; }
+.badge-origin-story        { background: #0f1a02; color: #a3e635; }
+.badge-lifestyle-tagline   { background: #1a1200; color: #fbbf24; }
+.badge-direct-response     { background: #2a0a0a; color: #f87171; }
+.badge-premium             { background: #1a1a0c; color: #d4af37; }
+.badge-scroll-stopping     { background: #1a0a1a; color: #e879f9; }
+.badge-craving-macro       { background: #431407; color: #f97316; }
+.badge-supermarket-contrast { background: #083344; color: #06b6d4; }
+.badge-seasonal-drop       { background: #1a2e05; color: #84cc16; }
+.badge-reveal              { background: #0a1a2a; color: #60a5fa; }
+.badge-product-hero        { background: #1a2a0c; color: #7ecb5b; }
 .status-icons { margin-left: auto; display: flex; gap: 4px; font-size: 13px; }
 
 .card-info { padding: 0 12px 8px; }
@@ -408,12 +416,20 @@ function buildSection(title, assets, titleClass, cardType) {
 function buildCard(a) {
   const variantLabel = a.variant_label || '';
   const badgeClass = {
-    minimal:          'badge-minimal',
-    premium:          'badge-premium',
-    direct_response:  'badge-direct-response',
-    scroll_stopping:  'badge-scroll-stopping',
-    reveal:          'badge-reveal',
-    product_hero:    'badge-product-hero',
+    minimal:             'badge-minimal',
+    bold_type:           'badge-bold-type',
+    benefit_stack:       'badge-benefit-stack',
+    social_proof:        'badge-social-proof',
+    origin_story:        'badge-origin-story',
+    lifestyle_tagline:   'badge-lifestyle-tagline',
+    direct_response:     'badge-direct-response',
+    premium:             'badge-premium',
+    scroll_stopping:     'badge-scroll-stopping',
+    craving_macro:       'badge-craving-macro',
+    supermarket_contrast:'badge-supermarket-contrast',
+    seasonal_drop:       'badge-seasonal-drop',
+    reveal:              'badge-reveal',
+    product_hero:        'badge-product-hero',
   }[variantLabel] || 'badge-minimal';
   const badgeLabel = variantLabel.replace(/_/g,' ');
 
