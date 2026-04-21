@@ -132,9 +132,9 @@ A12 Carousel Re-Hook — Different Angle (slide 2–3)
 
 _HOOK_PROMPT_TEMPLATE = """Write {request_count} scroll-stopping Meta ad hooks using the D+C+PS framework.
 
-## Creative Pattern (style reference — use for tone and format, NOT as an angle constraint)
+## Creative Pattern (FORMAT reference — use hook_type and archetype for structure only)
 Hook type: {hook_type}
-Historical angle: {angle}  ← reference only; the REQUIRED ANGLE MIX below overrides this
+Creative angle for THIS batch: {diversity_angle_short}  ← this batch's angle; ignore historical angle
 Archetype: {archetype}
 Emotional trigger: {emotional_trigger}
 Average CTR of this pattern: {avg_ctr}
@@ -152,8 +152,9 @@ Use this to identify the specific D, C, and PS for each hook.
 ## Visual Context (if available)
 {visual_context}
 
-## Winning hooks from YOUR account history (same pattern)
-Study the angle, specificity, and emotional register. Write better versions — never copies.
+## Reference hooks (FORMAT study only — do NOT copy their creative angle or territory)
+These show D+C+PS structure and archetype execution. Ignore their subject matter.
+Your hooks must use the REQUIRED ANGLE MIX territories, not the angles shown here.
 {example_hooks}
 
 ## HARD RULES (violations will be rejected)
