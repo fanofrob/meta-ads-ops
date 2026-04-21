@@ -362,6 +362,7 @@ def run_action(
             raw_hooks = raw
 
         # Support both plain strings and rich {text, archetype, d, c, ps, clarity} objects
+        from creative_intelligence.generation.hook_generator import _is_cliche
         hooks: list[str] = []
         hooks_rich: list[dict] = []
         for h in raw_hooks:
@@ -369,7 +370,7 @@ def run_action(
                 text = str(h.get("text", "")).strip()
             else:
                 text = str(h).strip()
-            if text:
+            if text and not _is_cliche(text):
                 hooks.append(text)
                 if isinstance(h, dict):
                     hooks_rich.append(h)

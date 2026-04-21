@@ -243,6 +243,32 @@ Example output shape:
 Generate exactly {request_count} hooks now."""
 
 
+# ─────────────────────────────────────────────
+# Python-level cliché filter — catches banned templates the LLM ignores
+# ─────────────────────────────────────────────
+
+_BANNED_FRAGMENTS = [
+    "from the supermarket never quite delivers",
+    "you've never tasted",
+    "wishes it could be. hand-picked",
+    "the way nature actually intended",
+    "most intensely flavourful",
+    "most intensely flavorful",
+    "grocery store.*wishes it could be",
+    "never quite delivers.*this is why",
+]
+
+import re as _re
+
+def _is_cliche(text: str) -> bool:
+    """Return True if the hook matches a known banned template."""
+    lower = text.lower()
+    for frag in _BANNED_FRAGMENTS:
+        if _re.search(frag, lower):
+            return True
+    return False
+
+
 def _get_recent_hooks(
     product_id: str | None,
     db: sqlite3.Connection,
@@ -580,7 +606,9 @@ def generate_hooks_from_pattern(
                 obj = {"text": r.hook}
             if "text" not in obj:
                 obj["text"] = r.hook
-            hooks_rich.append(obj)
+            # Hard filter: discard known cliché templates even if LLM ignored the ban
+            if not _is_cliche(obj.get("text", "")):
+                hooks_rich.append(obj)
     hooks_rich = hooks_rich[:count]
 
     # Plain text list for backwards-compat return value
