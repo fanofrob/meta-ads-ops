@@ -91,7 +91,16 @@ _BASE_NEGATIVE = (
     "blurry, low quality, distorted, out of focus, pixelated, jpeg artifacts, "
     "oversaturated, fake-looking, watermarks, logos, busy clutter, "
     "illustration, digital painting, cartoon, anime, drawn, painted, "
-    "watercolor, gouache, vector art, clip art, CGI render, 3D render"
+    "watercolor, gouache, vector art, clip art, CGI render, 3D render, "
+    # Packaging / boxes — product photos should show the fruit, not the shipping box
+    "cardboard box, shipping box, delivery box, kraft box, packaging box, "
+    "food packaging, corrugated box, brown box, paper bag, plastic bag, "
+    # Platform names — never write 'Meta', 'Facebook', 'Instagram' on the image
+    "Meta, Facebook, Instagram, TikTok, platform logo, social media logo, "
+    "website URL, .com, brand watermark, "
+    # Generic text noise the image model may hallucinate
+    "price tag, barcode, QR code, stock photo watermark, sample text, "
+    "lorem ipsum, placeholder text"
 )
 
 _VARIANT_NEGATIVES: dict[str, str] = {
@@ -260,7 +269,7 @@ def _prompt_bold_type(
     text_colour = "white" if label in dark_bgs else "near-black"
 
     return (
-        f"Bold typographic Meta ad. {bg}. "
+        f"Bold typographic ad. {bg}. "
         f"{typo}. "
         f'{text_colour} text "{short}" fills the upper 55% of the frame. '
         f"{product} is positioned in the lower portion of the image. "
@@ -297,7 +306,7 @@ def _prompt_benefit_stack(
     )
 
     return (
-        f"Direct response Meta ad. {bg}. "
+        f"Direct response ad. {bg}. "
         f"{product} in the upper portion of the frame. "
         f"{typo}. "
         f'Two clean lines of high-contrast text stacked centrally: '
@@ -329,7 +338,7 @@ def _prompt_social_proof(
     card = card_styles[style_seed % len(card_styles)]
 
     return (
-        f"Social proof Meta ad. {product} as full-bleed background photography. "
+        f"Social proof ad. {product} as full-bleed background photography. "
         f"{card} overlay covering the lower two-thirds of the image. "
         f"Five gold stars (★★★★★) at the top of the card. "
         f'Bold product name "{product_name}" below the stars. '
@@ -364,7 +373,7 @@ def _prompt_origin_story(
     typo = _style(style_seed, _TYPO_MOODS)
 
     return (
-        f"Provenance Meta ad. {scene}. "
+        f"Origin story ad. {scene}. "
         f"Foreground: {product}, freshly harvested, photorealistic. "
         f'{typo}. Bold white or light headline text overlaid: "{short_headline}". '
         "The background scene tells the story of where the product is grown. "
@@ -409,7 +418,7 @@ def _prompt_lifestyle_tagline(
     pos = product_pos[style_seed % len(product_pos)]
 
     return (
-        f"Lifestyle brand Meta ad. {bg}. "
+        f"Lifestyle brand ad. {bg}. "
         f"{typo}. The brand statement \"{short}\" is the primary visual element — bold and dominant. "
         f"Photorealistic {product}, {pos}. "
         "No CTA button, no body copy paragraph, no badges, no price. "
@@ -438,7 +447,7 @@ def _prompt_direct_response(
     )
 
     return (
-        f"Conversion-focused Meta ad. {bg}. "
+        f"Conversion-focused ad. {bg}. "
         f"Photorealistic {product} product photography in the centre of the frame. "
         f'{typo}. Large bold headline at the top: "{headline_upper}". '
         + (f'Body copy below the headline: "{body_clean}". ' if body_clean else "")
@@ -484,7 +493,7 @@ def _prompt_premium(
     typo = typo_options[style_seed % len(typo_options)]
 
     return (
-        f"Premium product catalog Meta ad. {bg}. "
+        f"Premium product catalog ad. {bg}. "
         f"Photorealistic {product}, {treatment}. "
         f'{typo}. Label text: "{label}". '
         "Generous white space throughout. High-end specialty food brand aesthetic. "
@@ -523,7 +532,7 @@ def _prompt_scroll_stopping(
         bg = bg_options[style_seed % len(bg_options)]
 
         return (
-            f"Scroll-stopping Meta ad. {bg}. Photorealistic {product} in the upper portion. "
+            f"Scroll-stopping ad. {bg}. Photorealistic {product} in the upper portion. "
             f"Large single gold star {star_text} prominently displayed — makes the viewer do a double-take. "
             f'Below the star: bold text "{complaint}". '
             "Clean card layout, high contrast black text on white/cream. "
@@ -555,7 +564,7 @@ def _prompt_scroll_stopping(
         fine_print = fine_prints[style_seed % len(fine_prints)]
 
         return (
-            f"Scroll-stopping Meta ad. {bg}. Photorealistic {product}, bold and prominent. "
+            f"Scroll-stopping ad. {bg}. Photorealistic {product}, bold and prominent. "
             f"Massive all-caps bold condensed typography: \"{short_claim}\" fills most of the frame. "
             f'Very small fine-print text at the bottom: "{fine_print}". '
             "Unexpectedly bold colour, oversized text creates a visual shock. "
@@ -577,7 +586,7 @@ def _prompt_scroll_stopping(
         bg = stat_bgs[style_seed % len(stat_bgs)]
 
         return (
-            f"Scroll-stopping Meta ad. {bg}. Photorealistic {product}, dramatically lit. "
+            f"Scroll-stopping ad. {bg}. Photorealistic {product}, dramatically lit. "
             f'Oversized bold number or statement dominates the upper frame: "{short_stat}". '
             "Typography: massive, punchy, white on dark — impossible to ignore. "
             "Dark dramatic background makes the product and text glow. "
@@ -590,6 +599,43 @@ def _prompt_scroll_stopping(
 # Dispatcher
 # ─────────────────────────────────────────────
 
+def _clean_product_desc(product_visibility: str) -> str:
+    """Strip packaging/box references from product_visibility before using in image prompts.
+
+    Prevents the image model from generating cardboard boxes, kraft packaging,
+    or shipping containers in product shots.
+    """
+    text = product_visibility
+
+    # Pass 1: strip "... [preposition] [article] [adjective] box/packaging/crate/..."
+    # The pattern handles: "in its kraft delivery box", "next to their shipping box", etc.
+    text = re.sub(
+        r"[,\s]*(?:(?:in|inside|with|next to|alongside|beside|and)\s+)?"
+        r"(?:(?:its|their|a|an|the)\s+)?"
+        r"(?:(?:kraft|shipping|delivery|cardboard|corrugated|paper|gift|wooden)\s+)*"
+        r"(?:box(?:es)?|packaging|package|crate|container|bags?)"
+        r"(?:\s+(?:packaging|box))?",  # handle "packaging box"
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # Pass 2: strip trailing dangling prepositions/articles
+    text = re.sub(
+        r"[,\s]*\b(?:in|inside|with|next\s+to|next|alongside|beside|and|"
+        r"its|their|a|an|the|to|of|from)\s*$",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # Tidy up
+    text = re.sub(r"\s{2,}", " ", text)
+    text = re.sub(r",\s*,", ",", text)
+    text = text.strip().rstrip(",;: ")
+    return text or product_visibility  # fallback to original if completely stripped
+
+
 def _build_visual_prompt(
     brief: dict[str, Any],
     variant: str,
@@ -599,7 +645,7 @@ def _build_visual_prompt(
     style_seed: int = 0,
 ) -> str:
     """Build a structurally distinct image-generation prompt for the given variant."""
-    product = brief.get("product_visibility", "").strip()
+    product = _clean_product_desc(brief.get("product_visibility", "").strip())
     visual  = brief.get("visual_direction", "").strip()
 
     if variant == "minimal":
