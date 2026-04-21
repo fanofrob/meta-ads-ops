@@ -170,10 +170,10 @@ CI_CLIP_OUTPUT_DIR: str = os.getenv(
 )
 
 # Replicate model for text-to-video / image-to-video clip generation.
-# minimax/video-01-live: supports first_frame_image for true image-to-video
-#   — recommended when a product image is available (consistent product appearance).
+# bytedance/seedance-2.0: default — high-quality, native 9:16 support, image-to-video via 'image' field.
+# minimax/video-01-live: alternative — uses first_frame_image for image conditioning.
 # runwayml/gen-4.5: text-to-video only (no reliable image conditioning via Replicate).
-CI_CLIP_MODEL: str = os.getenv("CI_CLIP_MODEL", "minimax/video-01-live")
+CI_CLIP_MODEL: str = os.getenv("CI_CLIP_MODEL", "bytedance/seedance-2.0")
 
 # Runway direct API key (scaffold — future use when not proxied through Replicate)
 CI_RUNWAY_API_KEY: str = os.getenv("CI_RUNWAY_API_KEY", "")
