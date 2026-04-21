@@ -500,8 +500,11 @@ def copilot_generate() -> Any:
             patterns = get_patterns(min_winners=1, conn=conn)
 
             if patterns:
-                # Pattern-guided generation (normal path)
-                pattern = patterns[0]
+                # Pattern-guided generation (normal path).
+                # Rotate through patterns per session so different sessions explore
+                # different creative territories rather than always using the top pattern.
+                pattern_idx = hash(session_id or "") % len(patterns)
+                pattern = patterns[pattern_idx]
                 result = generate_hooks_from_pattern(
                     pattern_id=pattern["id"],
                     count=count,

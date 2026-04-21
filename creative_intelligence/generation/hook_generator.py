@@ -132,9 +132,9 @@ A12 Carousel Re-Hook — Different Angle (slide 2–3)
 
 _HOOK_PROMPT_TEMPLATE = """Write {request_count} scroll-stopping Meta ad hooks using the D+C+PS framework.
 
-## Creative Pattern (what's working in this account)
+## Creative Pattern (style reference — use for tone and format, NOT as an angle constraint)
 Hook type: {hook_type}
-Angle: {angle}
+Historical angle: {angle}  ← reference only; the REQUIRED ANGLE MIX below overrides this
 Archetype: {archetype}
 Emotional trigger: {emotional_trigger}
 Average CTR of this pattern: {avg_ctr}
@@ -178,20 +178,20 @@ Spread your {request_count} hooks across AT LEAST 6 different archetypes (A1–A
 Use A11 or A12 (Carousel) for at least one hook if count ≥ 8.
 Never use the same archetype twice with the same opening structure.
 
-REQUIRED ANGLE MIX — assign each hook a different territory before writing it:
-  - 1 hook: sensory (taste, texture, aroma, mouthfeel — specific and evocative)
-  - 1 hook: origin or provenance (farm, grower, growing region, harvest window)
-  - 1 hook: discovery or first encounter (someone tasting it for the first time)
-  - 1 hook: {diversity_angle_short} (this run's mandatory unique angle)
-  - remaining: choose from rarity, social proof, gift/occasion, price-value, health, novelty
-DO NOT default to "grocery store/supermarket comparison" for multiple hooks.
-That single angle is overused — use it for at most 1 hook.
+REQUIRED ANGLE MIX — each hook gets a UNIQUE territory. Assign before writing:
+  Hook 1: sensory — taste, texture, aroma, mouthfeel. Specific and evocative.
+  Hook 2: origin / provenance — farm, grower, growing region, harvest window.
+  Hook 3: discovery — someone tasting it for the very first time, astonished.
+  Hook 4: {diversity_angle_short} — this run's unique angle (see details below).
+  Hook 5+: one each from: rarity/scarcity · gift/occasion · health/vitality · price-value · novelty
+  FORBIDDEN: assigning the same territory to two hooks. Each hook = its own world.
+  MAXIMUM 1 hook total may use grocery store / supermarket comparison framing.
 
-## THIS RUN'S MANDATORY CREATIVE ANGLE
-Every hook in this batch must be coloured by this specific lens:
+## THIS RUN'S UNIQUE ANGLE (Hook 4's territory)
+Hook 4 must be built entirely from this specific lens — make it unmistakably this:
 → {diversity_angle}
-Open at least 3 hooks from this angle in a way that couldn't appear in any other batch.
-This is non-negotiable — it is what makes this batch unique.
+This is what makes Hook 4 impossible to generate in any other batch.
+The other hooks (1, 2, 3, 5+) should NOT share this angle — they have their own territories above.
 
 ## RECENTLY GENERATED HOOKS — DO NOT REPEAT
 The following hooks were already generated for this product.
