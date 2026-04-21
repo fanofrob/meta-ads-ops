@@ -122,6 +122,9 @@ header .subtitle { font-size: 12px; color: var(--muted); }
 .badge-direct-response   { background: #2a0a0a; color: #f87171; }
 .badge-premium           { background: #1a1a0c; color: #d4af37; }
 .badge-scroll-stopping   { background: #1a0a1a; color: #e879f9; }
+.badge-craving-macro { background: #431407; color: #f97316; }
+.badge-supermarket-contrast { background: #083344; color: #06b6d4; }
+.badge-seasonal-drop { background: #1a2e05; color: #84cc16; }
 .card-rationale { font-size: 11px; color: var(--muted); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .spec-toggle { font-size: 10px; color: var(--muted2); cursor: pointer; background: none; border: none; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
 .spec-toggle:hover { color: var(--text2); background: var(--surface2); }
@@ -295,6 +298,21 @@ header .subtitle { font-size: 12px; color: var(--muted); }
           <input type="checkbox" value="scroll_stopping" checked>
           <span class="vc-badge badge-scroll-stopping">Scroll Stopping</span>
           <span class="vc-label">Wild claim / absurd 1-star review / pattern interrupt</span>
+        </label>
+        <label class="variant-check-row">
+          <input type="checkbox" value="craving_macro" checked>
+          <span class="vc-badge badge-craving-macro">Craving Macro</span>
+          <span class="vc-label">Extreme close-up texture shot — pure sensory desire, no copy</span>
+        </label>
+        <label class="variant-check-row">
+          <input type="checkbox" value="supermarket_contrast" checked>
+          <span class="vc-badge badge-supermarket-contrast">Supermarket Contrast</span>
+          <span class="vc-label">Split-frame: dull store fruit vs. vivid ripe fruit</span>
+        </label>
+        <label class="variant-check-row">
+          <input type="checkbox" value="seasonal_drop" checked>
+          <span class="vc-badge badge-seasonal-drop">Seasonal Drop</span>
+          <span class="vc-label">Dark atmospheric, bold season signal, FOMO urgency</span>
         </label>
       </div>
 
@@ -583,6 +601,9 @@ function buildCard(spec, finalAsset, bgAsset) {
     direct_response:   'badge-direct-response',
     premium:           'badge-premium',
     scroll_stopping:   'badge-scroll-stopping',
+    craving_macro:     'badge-craving-macro',
+    supermarket_contrast: 'badge-supermarket-contrast',
+    seasonal_drop:     'badge-seasonal-drop',
   }[variantLabel] || 'badge-minimal';
   const badgeLabel = variantLabel.replace(/_/g,' ');
 
