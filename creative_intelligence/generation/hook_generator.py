@@ -124,6 +124,15 @@ A12 Carousel Re-Hook — Different Angle (slide 2–3)
 ✗ Completed loops (hook that answers its own question)
 ✗ Placeholder brackets [like this]
 
+## PERMANENTLY BANNED hook templates (never use these in any form)
+These five are the most overused fruit e-commerce hooks. They are banned forever:
+✗ "Ever wondered why [product] from the supermarket never quite delivers?"
+✗ "You've never tasted [product] like this. We guarantee it."
+✗ "What grocery store [product] wishes it could be."
+✗ "Taste [product] the way nature actually intended — nothing grocery stores carry comes close."
+✗ "These are the most intensely flavourful [product] you will ever taste."
+If you write any of these, the output is discarded. Find a completely different angle.
+
 ## Specificity rules
 - Numbers anchor credibility: "3 days", "6-hour window", "$12 a fruit", "3 years"
 - Name the specific variety, origin, or sensory detail — not just the category
@@ -173,6 +182,14 @@ Your hooks must use the REQUIRED ANGLE MIX territories, not the angles shown her
    MAXIMUM 1 hook may use a "supermarket/grocery store comparison" framing.
    MAXIMUM 1 hook may open with a question.
    Two hooks with the same central metaphor = automatic fail.
+8. BANNED TEMPLATES — these five hook structures are overused clichés. Any hook that
+   matches these patterns (even with the product name swapped) is an automatic fail:
+   ✗ "Ever wondered why [product] from the supermarket never quite delivers?"
+   ✗ "You've never tasted [product] like this. We guarantee it."
+   ✗ "What grocery store [product] wishes it could be."
+   ✗ "Taste [product] the way nature actually intended — nothing grocery stores carry comes close."
+   ✗ "These are the most intensely flavourful [product] you will ever taste."
+   Do not use these openings, these sentence structures, or these central ideas in ANY form.
 
 ## ARCHETYPE DISTRIBUTION
 Spread your {request_count} hooks across AT LEAST 6 different archetypes (A1–A12).
