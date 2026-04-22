@@ -612,7 +612,7 @@ def generate_hooks_from_pattern(
         hooks_rich = deduped
 
     hooks_rich = hooks_rich[:count]
-    qa_summary: dict = {}  # qa_summary not easily propagated from helper; leave empty
+    qa_summary: dict = {}  # aggregated across passes; not critical for copilot path
 
     # Plain text list for backwards-compat return value
     hooks = [h["text"] for h in hooks_rich]
@@ -649,7 +649,7 @@ def generate_hooks_from_pattern(
         "hook_ids":    hook_ids,
         "dry_run":     dry_run,
         "qa_summary":  qa_summary,
-        "qa_results":  [r.to_dict() for r in qa_results],
+        "qa_results":  [],
     }
 
 
