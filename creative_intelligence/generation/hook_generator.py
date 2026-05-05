@@ -124,14 +124,20 @@ A12 Carousel Re-Hook — Different Angle (slide 2–3)
 ✗ Completed loops (hook that answers its own question)
 ✗ Placeholder brackets [like this]
 
-## PERMANENTLY BANNED hook templates (never use these in any form)
-These five are the most overused fruit e-commerce hooks. They are banned forever:
+## PERMANENTLY BANNED hook templates (these are auto-rejected — do not waste a hook slot)
 ✗ "Ever wondered why [product] from the supermarket never quite delivers?"
 ✗ "You've never tasted [product] like this. We guarantee it."
 ✗ "What grocery store [product] wishes it could be."
 ✗ "Taste [product] the way nature actually intended — nothing grocery stores carry comes close."
 ✗ "These are the most intensely flavourful [product] you will ever taste."
-If you write any of these, the output is discarded. Find a completely different angle.
+✗ "Try the [product] that's been making people cancel their grocery orders for good."
+✗ "Grown at peak altitude and harvested the morning your order ships — this is real [product]."
+✗ "Why do our customers say grocery-store [product] is ruined for them forever?"
+✗ "Sweet, complex, nothing artificial — [product] the way it should have always tasted."
+✗ Any hook ending in "…the way it should [taste/be/have always been]"
+✗ Any hook using "[product] as it should be" or "[product] the way it was meant to be"
+These are generic templates — any product name can be dropped in. Your hooks must be
+specific to THIS product's unique qualities, story, season, and sensory profile.
 
 ## Specificity rules
 - Numbers anchor credibility: "3 days", "6-hour window", "$12 a fruit", "3 years"
@@ -248,7 +254,7 @@ Generate exactly {request_count} hooks now."""
 # ─────────────────────────────────────────────
 
 _BANNED_FRAGMENTS = [
-    # Original 5 templates
+    # Tier-1 originals
     "from the supermarket never quite delivers",
     "you've never tasted",
     "wishes it could be. hand-picked",
@@ -257,11 +263,22 @@ _BANNED_FRAGMENTS = [
     "most intensely flavorful",
     "grocery store.*wishes it could be",
     "never quite delivers.*this is why",
-    # Next-tier defaults the LLM falls back to after the first 5 are banned
+    # Tier-2 fallbacks
     "been making people cancel their grocery orders",
     "grown at peak altitude and harvested the morning your order ships",
     "harvested the morning your order ships",
     "this is real.*avocado|this is real.*mango|this is real.*fruit|this is real.*papaya|this is real.*cherry",
+    # Tier-3 fallbacks
+    "grocery.store.*ruined for them forever",
+    "ruined.*for them forever",
+    "the way it should have always tasted",
+    "sweet, complex, nothing artificial",
+    "nothing artificial.*the way it should",
+    # Generic low-specificity structures
+    "the way it should",
+    "as it should be",
+    "the way.*should taste",
+    "taste.*as.*intended",
 ]
 
 import re as _re
@@ -552,8 +569,10 @@ def generate_hooks_from_pattern(
         d_angle = random.choice(_DIVERSITY_ANGLES) if extra_forbidden else diversity_angle
         d_short = d_angle.split("—")[0].strip()
 
+        # Scale up aggressively on retries — if first pass only gave 2 hooks, we need many more
+        overrequest = max(count + 4, int(count * 3)) if not extra_forbidden else max(count * 4, 20)
         p = _HOOK_PROMPT_TEMPLATE.format(
-            request_count      = max(count + 2, int(count * 1.8)),  # ask for more to have buffer
+            request_count      = overrequest,
             hook_type          = pattern.get("hook_type") or "unknown",
             angle              = pattern.get("angle") or "unknown",
             archetype          = pattern.get("archetype") or "unknown",
@@ -595,12 +614,15 @@ def generate_hooks_from_pattern(
     # First pass
     hooks_rich = _run_generation([])
 
-    # Retry up to 2 times if we don't have enough hooks
+    # Retry up to 2 times if we don't have enough hooks.
+    # Pass ALL hooks seen so far (good + bad) so the LLM generates genuinely new ones.
+    _all_seen: list[str] = []
     for _attempt in range(2):
         if len(hooks_rich) >= count:
             break
-        already_generated = [h["text"] for h in hooks_rich]
-        hooks_rich += _run_generation(already_generated)
+        # Include both the passing hooks AND any already-tried content as forbidden context
+        _all_seen = [h["text"] for h in hooks_rich] + _all_seen
+        hooks_rich += _run_generation(_all_seen)
         # Deduplicate
         seen_texts: set[str] = set()
         deduped = []
