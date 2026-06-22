@@ -528,6 +528,8 @@ def generate_hooks_from_pattern(
     goal: str = "conversions",
     audience: str = "",
     required_terms: list[str] | None = None,
+    # Custom product override — used when product is not yet in Shopify
+    custom_product_context: str | None = None,
 ) -> dict[str, Any]:
     """Generate hooks based on a single creative pattern.
 
@@ -546,7 +548,8 @@ def generate_hooks_from_pattern(
     example_ids = json.loads(pattern.get("example_creative_ids") or "[]")
     example_hooks = _get_example_hooks(example_ids, db)
     visual_ctx = _get_visual_context(example_ids, db)
-    product_ctx = build_prompt_context_block(product_id, db) if product_id else ""
+    # Custom context overrides DB lookup for products not yet in Shopify
+    product_ctx = custom_product_context or (build_prompt_context_block(product_id, db) if product_id else "")
     avatar_ctx = _build_avatar_context(product_id, db)
 
     product_name = _product_name_from_context(product_ctx, pattern)
