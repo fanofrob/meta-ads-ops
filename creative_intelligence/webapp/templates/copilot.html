@@ -354,9 +354,13 @@ header .subtitle { font-size: 12px; color: var(--muted); }
   <aside class="sidebar">
     <div class="sidebar-top">
       <label for="product">Product</label>
-      <select id="product">
+      <select id="product" onchange="onProductChange()">
         <option value="">— No product context —</option>
       </select>
+      <input id="customProduct" type="text" placeholder="Type product name…"
+             style="display:none;margin-top:6px"
+             oninput="onCustomProductInput()"
+             autocomplete="off">
 
       <label for="goal">Goal</label>
       <select id="goal">
@@ -492,7 +496,35 @@ async function loadProducts() {
       opt.textContent = p.display_name || cleanProductLabel(p.label || p.name);
       sel.appendChild(opt);
     });
+    // "Other" option — lets the user type any product not yet in Shopify
+    const other = document.createElement('option');
+    other.value = '__other__';
+    other.textContent = '✏️  Other (type product name…)';
+    sel.appendChild(other);
   } catch (e) { console.warn('Could not load products', e); }
+}
+
+function onProductChange() {
+  const isOther = document.getElementById('product').value === '__other__';
+  const customEl = document.getElementById('customProduct');
+  customEl.style.display = isOther ? '' : 'none';
+  if (isOther) customEl.focus();
+}
+
+function onCustomProductInput() {
+  // Keep productId null — custom name is sent separately
+  productId = null;
+}
+
+function _resolvedProductId() {
+  const sel = document.getElementById('product').value;
+  return (sel && sel !== '__other__') ? sel : null;
+}
+
+function _customProductName() {
+  const sel = document.getElementById('product').value;
+  if (sel !== '__other__') return '';
+  return document.getElementById('customProduct').value.trim();
 }
 
 /* ── Sessions sidebar ────────────────────────────────── */
@@ -523,16 +555,25 @@ async function loadSessions() {
 /* ── Start session (+ optional generate) ────────────── */
 async function startSession() {
   const concept = document.getElementById('concept').value.trim();
-  productId = document.getElementById('product').value || null;
+  productId = _resolvedProductId();
+  const customName = _customProductName();
+
+  // Require a name if "Other" is selected but field is empty
+  if (document.getElementById('product').value === '__other__' && !customName) {
+    document.getElementById('customProduct').focus();
+    toast('Please type a product name first');
+    return;
+  }
 
   setLoading(true);
   try {
     // Create session
     const sr = await api('/api/copilot/session', {
-      product_id: productId,
-      goal:       document.getElementById('goal').value,
-      audience:   document.getElementById('audience').value,
-      tone:       document.getElementById('tone').value,
+      product_id:          productId,
+      custom_product_name: customName || undefined,
+      goal:                document.getElementById('goal').value,
+      audience:            document.getElementById('audience').value,
+      tone:                document.getElementById('tone').value,
     });
     sessionId = sr.session_id;
     toast('Session started' + (sr.product_name ? ` — ${sr.product_name}` : ''));
@@ -540,13 +581,14 @@ async function startSession() {
 
     // Generate or store concept
     const gr = await api('/api/copilot/generate', {
-      session_id: sessionId,
-      concept:    concept,
-      product_id: productId,
-      goal:       document.getElementById('goal').value,
-      audience:   document.getElementById('audience').value,
-      tone:       document.getElementById('tone').value,
-      count:      5,
+      session_id:          sessionId,
+      concept:             concept,
+      product_id:          productId,
+      custom_product_name: customName || undefined,
+      goal:                document.getElementById('goal').value,
+      audience:            document.getElementById('audience').value,
+      tone:                document.getElementById('tone').value,
+      count:               5,
     });
 
     clearFeed();
@@ -609,11 +651,12 @@ async function runAction(actionType) {
   const loadCard = appendLoading(`Running: ${actionType.replace(/_/g, ' ')}…`);
   try {
     const r = await api('/api/copilot/action', {
-      session_id:   sessionId,
-      iteration_id: currentIterId,
+      session_id:          sessionId,
+      iteration_id:        currentIterId,
       concept,
-      action_type:  actionType,
-      product_id:   document.getElementById('product').value || null,
+      action_type:         actionType,
+      product_id:          _resolvedProductId(),
+      custom_product_name: _customProductName() || undefined,
       params: {
         count,
         audience: document.getElementById('audience').value,
@@ -655,8 +698,9 @@ async function doExplain() {
   try {
     const r = await api('/api/copilot/explain', {
       concept,
-      product_id:   document.getElementById('product').value || null,
-      iteration_id: currentIterId,
+      product_id:          _resolvedProductId(),
+      custom_product_name: _customProductName() || undefined,
+      iteration_id:        currentIterId,
     });
     loadCard.remove();
     appendExplanation(r.explanation, concept);
@@ -957,10 +1001,11 @@ function goVideoStoryboard() {
     return;
   }
   const params = new URLSearchParams({
-    concept:    concept,
-    product_id: productId || '',
-    session_id: sessionId || '',
-    autogen:    '1',
+    concept:             concept,
+    product_id:          _resolvedProductId() || '',
+    custom_product_name: _customProductName() || '',
+    session_id:          sessionId || '',
+    autogen:             '1',
   });
   if (_videoPkg?.id) {
     params.set('source_production_output_id', _videoPkg.id);
@@ -997,10 +1042,11 @@ async function runProduction(outputType) {
 
   try {
     const payload = {
-      output_type: outputType,
+      output_type:         outputType,
       concept,
-      product_id:  productId || null,
-      session_id:  sessionId || null,
+      product_id:          _resolvedProductId() || null,
+      custom_product_name: _customProductName() || undefined,
+      session_id:          sessionId || null,
       iteration_id: currentIterId || null,
       audience:    (document.getElementById('audience') || {}).value || '',
       goal:        (document.getElementById('goal') || {}).value || 'conversions',

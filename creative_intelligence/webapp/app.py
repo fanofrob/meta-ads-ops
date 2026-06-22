@@ -422,11 +422,12 @@ def copilot_page() -> Any:
 @app.post("/api/copilot/session")
 def copilot_session() -> Any:
     """Create a new copilot session and return its session_id."""
-    data       = request.get_json(force=True)
-    product_id = data.get("product_id") or None
-    goal       = data.get("goal", "conversions")
-    audience   = data.get("audience", "")
-    tone       = data.get("tone", "authentic")
+    data                = request.get_json(force=True)
+    product_id          = data.get("product_id") or None
+    custom_product_name = (data.get("custom_product_name") or "").strip()
+    goal                = data.get("goal", "conversions")
+    audience            = data.get("audience", "")
+    tone                = data.get("tone", "authentic")
 
     session_id = str(uuid.uuid4())
     try:
@@ -437,9 +438,9 @@ def copilot_session() -> Any:
                 " VALUES (?,?,?,?,?)",
                 (session_id, product_id, goal, audience, tone),
             )
-        # Fetch product name for display
-        product_name = None
-        if product_id:
+        # Resolve display name: Shopify product → DB lookup; custom → use as-is
+        product_name = custom_product_name or None
+        if product_id and not product_name:
             row = conn.execute(
                 "SELECT name FROM products WHERE id = ?", (product_id,)
             ).fetchone()
@@ -462,14 +463,15 @@ def copilot_generate() -> Any:
     from creative_intelligence.generation.hook_generator import generate_hooks_from_pattern
     from creative_intelligence.generation.copilot_actions import score_concept
 
-    data       = request.get_json(force=True)
-    session_id = data.get("session_id")
-    concept    = (data.get("concept") or "").strip()
-    product_id = data.get("product_id") or None
-    goal       = data.get("goal", "conversions")
-    audience   = data.get("audience", "")
-    tone       = data.get("tone", "authentic")
-    count      = max(1, min(int(data.get("count", 5)), 20))
+    data                = request.get_json(force=True)
+    session_id          = data.get("session_id")
+    concept             = (data.get("concept") or "").strip()
+    product_id          = data.get("product_id") or None
+    custom_product_name = (data.get("custom_product_name") or "").strip()
+    goal                = data.get("goal", "conversions")
+    audience            = data.get("audience", "")
+    tone                = data.get("tone", "authentic")
+    count               = max(1, min(int(data.get("count", 5)), 20))
 
     if not session_id:
         return jsonify({"error": "session_id required"}), 400
@@ -499,6 +501,13 @@ def copilot_generate() -> Any:
             # Generate from top pattern — fall back to direct generation if DB is empty
             patterns = get_patterns(min_winners=1, conn=conn)
 
+            # Build a minimal context block for custom (non-Shopify) products
+            custom_ctx = (
+                f"Product Name: {custom_product_name}\n"
+                f"This product is not yet in the Shopify catalogue — use the name and any "
+                f"audience/goal context to infer desires and write specific, vivid hooks."
+            ) if custom_product_name and not product_id else ""
+
             if patterns:
                 # Pattern-guided generation (normal path).
                 # Rotate through patterns per session so different sessions explore
@@ -515,6 +524,7 @@ def copilot_generate() -> Any:
                     tone=tone,
                     goal=goal,
                     audience=audience,
+                    custom_product_context=custom_ctx or None,
                 )
                 hooks_rich = result.get("hooks_rich", [])
                 pattern_name = pattern.get("pattern_name", "")
@@ -522,10 +532,17 @@ def copilot_generate() -> Any:
                 # No patterns yet — generate directly from product context
                 from creative_intelligence.generation.copilot_actions import run_action as _run_action
                 from creative_intelligence.product_knowledge.enricher import build_prompt_context_block
-                product_ctx = build_prompt_context_block(product_id, conn) if product_id else ""
+                product_ctx = (
+                    custom_ctx
+                    or (build_prompt_context_block(product_id, conn) if product_id else "")
+                )
                 seed = (
-                    f"Generate {count} direct-response Meta ad hooks for this product."
-                    if not product_ctx else product_ctx.split("\n")[0]
+                    f"Generate {count} direct-response Meta ad hooks for: {custom_product_name}."
+                    if custom_product_name and not product_id
+                    else (
+                        f"Generate {count} direct-response Meta ad hooks for this product."
+                        if not product_ctx else product_ctx.split("\n")[0]
+                    )
                 )
                 action_result = _run_action(
                     action_type="variants",
