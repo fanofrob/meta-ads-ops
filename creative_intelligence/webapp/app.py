@@ -501,9 +501,11 @@ def copilot_generate() -> Any:
             # Generate from top pattern — fall back to direct generation if DB is empty
             patterns = get_patterns(min_winners=1, conn=conn)
 
-            # Build a minimal context block for custom (non-Shopify) products
+            # Build a minimal context block for custom (non-Shopify) products.
+            # IMPORTANT: first line must start with "Name:" so that
+            # _product_name_from_context() in hook_generator.py can parse it.
             custom_ctx = (
-                f"Product Name: {custom_product_name}\n"
+                f"Name: {custom_product_name}\n"
                 f"This product is not yet in the Shopify catalogue — use the name and any "
                 f"audience/goal context to infer desires and write specific, vivid hooks."
             ) if custom_product_name and not product_id else ""
