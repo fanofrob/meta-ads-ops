@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "creative-copilot",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["creative_intelligence/webapp/app.py"],
+      "port": 5555,
+      "env": { "PYTHONPATH": ".", "CI_WEB_PORT": "5555" }
+    }
+  ]
+}

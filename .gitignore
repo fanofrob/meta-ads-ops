@@ -11,7 +11,7 @@ outputs/
 venv/
 credentials/
 
-# SQLite DB files — persisted on Railway volume, not committed
-creative_intelligence_data/*.db
-creative_intelligence_data/*.db-shm
-creative_intelligence_data/*.db-wal
+# Runtime/volume data — SQLite DBs, uploaded reference photos, generated
+# images (render_outputs, labels, adstudio, clip_outputs), DB backups.
+# Persisted on the Railway volume; never source. Ignore the whole directory.
+creative_intelligence_data/

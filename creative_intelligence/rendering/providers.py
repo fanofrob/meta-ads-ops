@@ -202,6 +202,10 @@ class ReplicateGenerator(ImageGenerator):
         "4:5":   (896,  1120),
         "1:1":   (1024, 1024),
         "16:9":  (1344, 768),
+        # 2:3 — candle-label trim (2" x 3"). Held at 960x1440 because FLUX 1.1
+        # Pro rejects height > 1440 (422 input validation). Exact 2:3, accepted
+        # by every model we offer; upscale afterwards for print.
+        "2:3":   (960, 1440),
     }
 
     @property

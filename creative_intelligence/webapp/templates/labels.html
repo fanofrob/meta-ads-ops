@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Candle Label Studio</title>
+<style>
+:root {
+  --bg:       #0d0d14;
+  --surface:  #13131e;
+  --surface2: #1a1a2a;
+  --border:   #252535;
+  --text:     #e8e8f0;
+  --text2:    #b0b0c8;
+  --muted:    #6a6a88;
+  --accent:   #4f46e5;
+  --accent2:  #818cf8;
+  --green:    #4ade80;
+  --gold:     #fbbf24;
+  --orange:   #fb923c;
+  --red:      #f87171;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+
+header { display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
+header h1 { font-size: 15px; font-weight: 700; letter-spacing: -.3px; }
+header .subtitle { font-size: 12px; color: var(--muted); }
+.nav-right { margin-left: auto; display: flex; gap: 14px; align-items: center; }
+.nav-link { font-size: 12px; color: var(--accent2); text-decoration: none; }
+.nav-link:hover { text-decoration: underline; }
+.pdf-link { font-size: 12px; color: var(--gold); text-decoration: none; border: 1px solid #4a3a12; padding: 3px 9px; border-radius: 5px; }
+.pdf-link:hover { background: #2a2210; }
+
+.layout { display: flex; height: calc(100vh - 44px); overflow: hidden; }
+
+/* ── Controls sidebar ── */
+.controls { width: 360px; flex-shrink: 0; border-right: 1px solid var(--border); overflow-y: auto; padding: 14px 16px 40px; }
+.sku-row { display: flex; gap: 6px; margin-bottom: 6px; }
+.sku-btn { flex: 1; padding: 8px 4px; border: 1px solid var(--border); background: var(--surface); color: var(--text2); border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 600; text-align: center; }
+.sku-btn:hover { background: var(--surface2); }
+.sku-btn.active { border-color: var(--accent); background: #1e1b4b; color: #fff; }
+.sku-meta { font-size: 11px; color: var(--muted); margin-bottom: 14px; line-height: 1.5; }
+
+.knob { margin-bottom: 14px; }
+.knob-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 5px; display: flex; align-items: center; gap: 6px; }
+.knob select { width: 100%; padding: 7px 9px; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
+.knob select:focus { outline: none; border-color: var(--accent); }
+.knob-desc { font-size: 11.5px; color: var(--text2); line-height: 1.55; margin-top: 6px; padding: 7px 9px; background: var(--surface); border-left: 2px solid var(--border); border-radius: 0 4px 4px 0; }
+.pdf-badge { font-size: 9px; color: var(--gold); border: 1px solid #4a3a12; padding: 1px 5px; border-radius: 7px; letter-spacing: .3px; }
+
+.recipe-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 9px 11px; margin: 4px 0 12px; }
+.recipe-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; color: var(--accent2); font-weight: 600; }
+.recipe-hint { font-size: 10.5px; color: var(--muted); margin-top: 3px; }
+
+.warn { background: #2a1a0a; border: 1px solid #7c4a12; color: #fcd9a0; font-size: 11.5px; line-height: 1.5; padding: 8px 10px; border-radius: 6px; margin-bottom: 10px; }
+
+.btn-row { display: flex; gap: 8px; margin-bottom: 10px; }
+.btn { flex: 1; padding: 9px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer; }
+.btn:hover { background: #23233a; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-primary:hover { background: #4338ca; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-ghost { font-size: 11px; padding: 6px; }
+.cost-note { font-size: 10.5px; color: var(--muted); text-align: center; margin-bottom: 14px; }
+
+/* ── Main ── */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.tabs { display: flex; gap: 4px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.tab { padding: 5px 12px; font-size: 12px; border-radius: 5px; cursor: pointer; color: var(--text2); border: 1px solid transparent; }
+.tab:hover { background: var(--surface2); }
+.tab.active { background: var(--surface2); border-color: var(--border); color: var(--text); }
+.pane { flex: 1; overflow-y: auto; padding: 18px; display: none; }
+.pane.active { display: block; }
+
+.img-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.img-wrap img { max-height: 68vh; border-radius: 8px; border: 1px solid var(--border); background: #fff; }
+.img-meta { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--accent2); }
+.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--muted); gap: 8px; text-align: center; }
+.empty h2 { font-size: 16px; color: var(--text2); }
+.empty p { font-size: 13px; max-width: 460px; line-height: 1.6; }
+
+pre.prompt { white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; line-height: 1.6; color: var(--text2); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+.copy-btn { margin-bottom: 10px; }
+
+/* ── History rail ── */
+.history { width: 210px; flex-shrink: 0; border-left: 1px solid var(--border); overflow-y: auto; padding: 12px 0; }
+.history h3 { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; padding: 0 14px 8px; }
+.hist-item { padding: 8px 14px; cursor: pointer; border-left: 2px solid transparent; }
+.hist-item:hover { background: var(--surface2); }
+.hist-item.active { border-left-color: var(--accent); background: var(--surface2); }
+.hist-recipe { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: var(--text2); }
+.hist-meta { font-size: 10px; color: var(--muted); margin-top: 2px; }
+.dot-done   { color: var(--green); }
+.dot-failed { color: var(--red); }
+.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--muted); border-top-color: var(--accent2); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -2px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🕯️ Candle Label Studio</h1>
+  <span class="subtitle">GHF · 1d Full-bleed Photo — deterministic recipe grid</span>
+  <div class="nav-right">
+    <a class="pdf-link" href="/static/reference/GHF_Candle_Labels_Selected_Reference.pdf" target="_blank">📄 Approved reference PDF</a>
+    <a class="nav-link" href="/copilot">← Copilot</a>
+    <a class="nav-link" href="/render">Render →</a>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- ── Controls ── -->
+  <div class="controls">
+    <div class="knob-label">SKU</div>
+    <div class="sku-row" id="skuRow"></div>
+    <div class="sku-meta" id="skuMeta"></div>
+
+    <div class="recipe-box">
+      <div class="recipe-code" id="recipeCode">—</div>
+      <div class="recipe-hint">Change one letter → one controlled change. 1,125 per SKU.</div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-ghost" id="btnDefault">↺ Approved default</button>
+    </div>
+
+    <div id="warnings"></div>
+
+    <div class="knob">
+      <div class="knob-label">B1 · Count &amp; State <span id="badgeS"></span></div>
+      <select id="selS"></select>
+      <div class="knob-desc" id="descS"></div>
+    </div>
+
+    <div class="knob">
+      <div class="knob-label">B2 · Interior Detail <span id="badgeI"></span></div>
+      <select id="selI"></select>
+      <div class="knob-desc" id="descI"></div>
+    </div>
+
+    <div class="knob">
+      <div class="knob-label">B3 · Exterior Detail <span id="badgeE"></span></div>
+      <select id="selE"></select>
+      <div class="knob-desc" id="descE"></div>
+    </div>
+
+    <div class="knob">
+      <div class="knob-label">B4 · Hierarchy <span id="badgeH"></span></div>
+      <select id="selH"></select>
+      <div class="knob-desc" id="descH"></div>
+    </div>
+
+    <div class="knob">
+      <div class="knob-label">B5 · Palette &amp; Sweep <span id="badgeP"></span></div>
+      <select id="selP"></select>
+      <div class="knob-desc" id="descP"></div>
+    </div>
+
+    <div class="knob">
+      <div class="knob-label">Image Model</div>
+      <select id="selModel"></select>
+      <div class="knob-desc" id="descModel"></div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btnGenerate">Generate Image</button>
+    </div>
+    <div class="cost-note">Uses a real image-generation call (costs money). Building the prompt is free.</div>
+  </div>
+
+  <!-- ── Main ── -->
+  <div class="main">
+    <div class="tabs">
+      <div class="tab active" data-pane="paneImage">Image</div>
+      <div class="tab" data-pane="panePrompt">Prompt</div>
+    </div>
+
+    <div class="pane active" id="paneImage">
+      <div class="empty" id="imgEmpty">
+        <h2>No image yet</h2>
+        <p>Pick a recipe on the left and hit <strong>Generate Image</strong>. Lighting, background sweep, camera and framing are locked by the base style — only the five codes move.</p>
+      </div>
+      <div class="img-wrap" id="imgWrap" style="display:none">
+        <img id="outImg" alt="Generated label">
+        <div class="img-meta" id="outMeta"></div>
+      </div>
+    </div>
+
+    <div class="pane" id="panePrompt">
+      <button class="btn copy-btn" id="btnCopy" style="max-width:180px">Copy full prompt</button>
+      <pre class="prompt" id="promptText">Select a recipe…</pre>
+    </div>
+  </div>
+
+  <!-- ── History ── -->
+  <div class="history">
+    <h3>History</h3>
+    <div id="histList"></div>
+  </div>
+
+</div>
+
+<script>
+let CFG = null;
+let sku = null;
+const $ = id => document.getElementById(id);
+
+async function boot() {
+  CFG = await (await fetch('/api/labels/config')).json();
+  const row = $('skuRow');
+  Object.entries(CFG.skus).forEach(([code, d]) => {
+    const b = document.createElement('div');
+    b.className = 'sku-btn';
+    b.dataset.sku = code;
+    b.textContent = code;
+    b.title = d.name;
+    b.onclick = () => selectSku(code);
+    row.appendChild(b);
+  });
+  fillUniversal();
+  selectSku(Object.keys(CFG.skus)[0]);
+  loadHistory();
+}
+
+function opts(sel, table) {
+  sel.innerHTML = '';
+  Object.entries(table).forEach(([code, d]) => {
+    const o = document.createElement('option');
+    o.value = code;
+    o.textContent = `${code} · ${d.name}`;
+    sel.appendChild(o);
+  });
+}
+
+function fillUniversal() {
+  opts($('selS'), CFG.count_state);
+  opts($('selH'), CFG.hierarchy);
+  opts($('selP'), CFG.palette);
+
+  const m = $('selModel');
+  m.innerHTML = '';
+  (CFG.models || []).forEach(x => {
+    const o = document.createElement('option');
+    o.value = x.slug; o.textContent = x.label;
+    m.appendChild(o);
+  });
+  m.value = CFG.default_model;
+  m.onchange = updateModelDesc;
+  updateModelDesc();
+}
+
+function updateModelDesc() {
+  const slug = $('selModel').value;
+  $('descModel').textContent = slug === CFG.default_model
+    ? 'Gemini-based — the only model currently running on this Replicate account, and the one that can actually read the attached reference PDF.'
+    : slug.includes('3.5-large-turbo')
+      ? '⚠ Currently returns ModelError E002 on this account — every request fails.'
+      : slug;
+}
+
+function selectSku(code) {
+  sku = code;
+  document.querySelectorAll('.sku-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.sku === code));
+  const d = CFG.skus[code];
+  $('skuMeta').innerHTML =
+    `<strong>${d.name}</strong> — “${d.scent}”<br>Hero: ${d.hero}<br>PDF page ${d.pdf_page} of 4`;
+  opts($('selI'), d.interior);
+  opts($('selE'), d.exterior);
+  applyDefault();
+  loadHistory();
+}
+
+function applyDefault() {
+  const def = CFG.skus[sku].default;
+  $('selS').value = def.S; $('selI').value = def.I;
+  $('selE').value = def.E; $('selH').value = def.H; $('selP').value = def.P;
+  refresh();
+}
+
+function current() {
+  return { sku, s: $('selS').value, i: $('selI').value,
+           e: $('selE').value, h: $('selH').value, p: $('selP').value };
+}
+
+function tables() {
+  return { S: CFG.count_state, I: CFG.skus[sku].interior,
+           E: CFG.skus[sku].exterior, H: CFG.hierarchy, P: CFG.palette };
+}
+
+function refresh() {
+  const c = current(), t = tables();
+  const map = { S: c.s, I: c.i, E: c.e, H: c.h, P: c.p };
+  for (const k of ['S','I','E','H','P']) {
+    const d = t[k][map[k]];
+    $('desc'+k).textContent = d ? d.desc : '';
+    $('badge'+k).innerHTML = (d && d.pdf) ? '<span class="pdf-badge">MATCHES PDF</span>' : '';
+  }
+  $('recipeCode').textContent = `${c.sku} · ${c.s} / ${c.i} / ${c.e} / ${c.h} / ${c.p}`;
+  buildPrompt();
+}
+
+async function buildPrompt() {
+  const r = await fetch('/api/labels/prompt', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(current())
+  });
+  const d = await r.json();
+  if (d.error) { $('promptText').textContent = 'Error: ' + d.error; return; }
+  $('promptText').textContent = d.full_text;
+  $('warnings').innerHTML = (d.warnings || [])
+    .map(w => `<div class="warn">⚠ ${w}</div>`).join('');
+}
+
+async function generate() {
+  const btn = $('btnGenerate');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Generating…';
+  try {
+    const r = await fetch('/api/labels/generate', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ ...current(), model: $('selModel').value })
+    });
+    const d = await r.json();
+    if (d.status === 'done') {
+      showImage(d.id, d.recipe);
+    } else {
+      alert('Generation failed:\n\n' + (d.error || 'unknown error'));
+    }
+  } catch (e) {
+    alert('Request failed: ' + e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Generate Image';
+    loadHistory();
+  }
+}
+
+function showImage(id, recipe) {
+  $('imgEmpty').style.display = 'none';
+  $('imgWrap').style.display = 'flex';
+  $('outImg').src = `/api/labels/image/${id}?t=${Date.now()}`;
+  $('outMeta').textContent = recipe;
+  document.querySelector('.tab[data-pane="paneImage"]').click();
+}
+
+async function loadHistory() {
+  const r = await fetch(`/api/labels/history?sku=${sku || ''}&limit=40`);
+  const d = await r.json();
+  $('histList').innerHTML = (d.renders || []).map(x => `
+    <div class="hist-item" data-id="${x.id}" data-has="${x.has_image}">
+      <div class="hist-recipe">${x.recipe}</div>
+      <div class="hist-meta">
+        <span class="${x.status === 'done' ? 'dot-done' : x.status === 'failed' ? 'dot-failed' : ''}">●</span>
+        ${x.status} · ${(x.created_at || '').slice(5, 16)}
+      </div>
+    </div>`).join('') || '<div class="hist-meta" style="padding:0 14px">Nothing yet</div>';
+
+  document.querySelectorAll('.hist-item').forEach(el => {
+    el.onclick = async () => {
+      document.querySelectorAll('.hist-item').forEach(h => h.classList.remove('active'));
+      el.classList.add('active');
+      const id = el.dataset.id;
+      const rec = await (await fetch(`/api/labels/${id}`)).json();
+      // restore the exact recipe into the pickers
+      if (rec.sku !== sku) selectSku(rec.sku);
+      $('selS').value = rec.code_s; $('selI').value = rec.code_i;
+      $('selE').value = rec.code_e; $('selH').value = rec.code_h;
+      $('selP').value = rec.code_p;
+      refresh();
+      if (el.dataset.has === '1') showImage(id, rec.recipe);
+    };
+  });
+}
+
+['selS','selI','selE','selH','selP'].forEach(id => $(id).onchange = refresh);
+$('btnDefault').onclick = applyDefault;
+$('btnGenerate').onclick = generate;
+$('btnCopy').onclick = () => {
+  navigator.clipboard.writeText($('promptText').textContent);
+  $('btnCopy').textContent = 'Copied ✓';
+  setTimeout(() => $('btnCopy').textContent = 'Copy full prompt', 1400);
+};
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.pane').forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  $(t.dataset.pane).classList.add('active');
+});
+
+boot();
+</script>
+</body>
+</html>

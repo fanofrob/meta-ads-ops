@@ -171,6 +171,80 @@ def _migrate(conn: sqlite3.Connection) -> None:
 )""",
         """CREATE INDEX IF NOT EXISTS idx_creative_learnings_product
    ON creative_learnings(product_id)""",
+        # GHF candle-label studio — isolated from the ads render pipeline.
+        """CREATE TABLE IF NOT EXISTS label_renders (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    sku             TEXT NOT NULL,
+    recipe          TEXT NOT NULL,
+    code_s          TEXT NOT NULL,
+    code_i          TEXT NOT NULL,
+    code_e          TEXT NOT NULL,
+    code_h          TEXT NOT NULL,
+    code_p          TEXT NOT NULL,
+    prompt          TEXT NOT NULL,
+    negative_prompt TEXT NOT NULL,
+    image_path      TEXT,
+    provider        TEXT,
+    model           TEXT,
+    status          TEXT NOT NULL DEFAULT 'spec_only',
+    error_message   TEXT,
+    is_favorite     INTEGER NOT NULL DEFAULT 0,
+    notes           TEXT DEFAULT '',
+    created_at      TEXT DEFAULT (datetime('now'))
+)""",
+        """CREATE INDEX IF NOT EXISTS idx_label_renders_sku
+   ON label_renders(sku, created_at DESC)""",
+        # ── Ad Studio — reference-photo product ads (isolated) ──────────────
+        """CREATE TABLE IF NOT EXISTS adstudio_products (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL,
+    description   TEXT DEFAULT '',
+    scent_notes   TEXT DEFAULT '',
+    physical_desc TEXT DEFAULT '',
+    created_at    TEXT DEFAULT (datetime('now'))
+)""",
+        """CREATE TABLE IF NOT EXISTS adstudio_photos (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id  INTEGER NOT NULL,
+    path        TEXT NOT NULL,
+    is_primary  INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT DEFAULT (datetime('now'))
+)""",
+        """CREATE INDEX IF NOT EXISTS idx_adstudio_photos_product
+   ON adstudio_photos(product_id)""",
+        """CREATE TABLE IF NOT EXISTS adstudio_hooks (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id  INTEGER NOT NULL,
+    hook_text   TEXT NOT NULL DEFAULT '',
+    archetype   TEXT DEFAULT '',
+    d           TEXT DEFAULT '',
+    c           TEXT DEFAULT '',
+    ps          TEXT DEFAULT '',
+    headline    TEXT DEFAULT '',
+    subhead     TEXT DEFAULT '',
+    body        TEXT DEFAULT '',
+    cta         TEXT DEFAULT '',
+    source      TEXT DEFAULT 'manual',
+    created_at  TEXT DEFAULT (datetime('now'))
+)""",
+        """CREATE INDEX IF NOT EXISTS idx_adstudio_hooks_product
+   ON adstudio_hooks(product_id)""",
+        """CREATE TABLE IF NOT EXISTS adstudio_ads (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id    INTEGER NOT NULL,
+    hook_id       INTEGER,
+    format_key    TEXT NOT NULL,
+    aspect_ratio  TEXT NOT NULL DEFAULT '4:5',
+    prompt        TEXT NOT NULL DEFAULT '',
+    model         TEXT DEFAULT '',
+    status        TEXT NOT NULL DEFAULT 'queued',
+    image_path    TEXT,
+    error_message TEXT,
+    is_favorite   INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT DEFAULT (datetime('now'))
+)""",
+        """CREATE INDEX IF NOT EXISTS idx_adstudio_ads_product
+   ON adstudio_ads(product_id, created_at DESC)""",
     ]
     for stmt in migrations:
         try:
