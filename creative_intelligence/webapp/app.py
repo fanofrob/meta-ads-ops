@@ -3551,13 +3551,32 @@ def adstudio_create_product() -> Any:
     conn = _db()
     with conn:
         cur = conn.execute(
-            "INSERT INTO adstudio_products (name, description, scent_notes, physical_desc)"
-            " VALUES (?,?,?,?)",
-            (name, d.get("description", ""), d.get("scent_notes", ""), d.get("physical_desc", "")),
+            "INSERT INTO adstudio_products (name, description, scent_notes, physical_desc, notes)"
+            " VALUES (?,?,?,?,?)",
+            (name, d.get("description", ""), d.get("scent_notes", ""),
+             d.get("physical_desc", ""), d.get("notes", "")),
         )
     pid = cur.lastrowid
     conn.close()
     return jsonify({"id": pid, "name": name})
+
+
+@app.post("/api/adstudio/product/<int:pid>/update")
+def adstudio_update_product(pid: int) -> Any:
+    """Update editable product fields (name, scent_notes, physical_desc, description, notes)."""
+    d = request.get_json(force=True, silent=True) or {}
+    sets, vals = [], []
+    for k in ("name", "scent_notes", "physical_desc", "description", "notes"):
+        if k in d:
+            sets.append(f"{k}=?"); vals.append(d[k])
+    if not sets:
+        return jsonify({"error": "no fields"}), 400
+    vals.append(pid)
+    conn = _db()
+    with conn:
+        conn.execute(f"UPDATE adstudio_products SET {', '.join(sets)} WHERE id=?", vals)
+    conn.close()
+    return jsonify({"ok": True})
 
 
 @app.get("/api/adstudio/products")
@@ -3698,6 +3717,42 @@ def adstudio_chat(pid: int) -> Any:
     except Exception as exc:
         app.logger.exception("adstudio chat failed")
         return jsonify({"error": str(exc)[:300]}), 500
+
+
+@app.post("/api/adstudio/product/<int:pid>/extract-hooks")
+def adstudio_extract_hooks(pid: int) -> Any:
+    """Extract hooks from a chat conversation and (optionally) save them."""
+    from creative_intelligence.adstudio.chat import extract_hooks
+    d = request.get_json(force=True, silent=True) or {}
+    messages = d.get("messages") or []
+    if not messages:
+        return jsonify({"error": "no conversation to pull from"}), 400
+    conn = _db()
+    prod = _product_dict(conn, pid)
+    uris = _primary_photo_uris(conn, pid)
+    conn.close()
+    if prod is None:
+        return jsonify({"error": "product not found"}), 404
+    try:
+        hooks = extract_hooks(prod, messages, uris)
+    except Exception as exc:
+        app.logger.exception("extract-hooks failed")
+        return jsonify({"error": str(exc)[:300]}), 500
+
+    saved = 0
+    if d.get("save") and hooks:
+        conn = _db()
+        with conn:
+            for h in hooks:
+                conn.execute(
+                    "INSERT INTO adstudio_hooks (product_id, hook_text, archetype, d, c, ps,"
+                    " headline, subhead, body, cta, source) VALUES (?,?,?,?,?,?,?,?,?,?, 'chat')",
+                    (pid, h.get("hook_text", ""), h.get("archetype", ""), h.get("d", ""),
+                     h.get("c", ""), h.get("ps", ""), h.get("headline", ""),
+                     h.get("subhead", ""), h.get("body", ""), h.get("cta", "")))
+                saved += 1
+        conn.close()
+    return jsonify({"hooks": hooks, "saved_count": saved})
 
 
 @app.post("/api/adstudio/product/<int:pid>/suggest-hooks")
@@ -3886,6 +3941,280 @@ def adstudio_export() -> Any:
     buf.seek(0)
     return send_file(buf, mimetype="application/zip", as_attachment=True,
                      download_name="adstudio_ads.zip")
+
+
+# ─────────────────────────────────────────────
+# AD STUDIO v2 — diversity-seed image library + programmatic overlay
+# ─────────────────────────────────────────────
+
+@app.post("/api/adstudio/product/<int:pid>/gen-images")
+def adstudio_gen_images(pid: int) -> Any:
+    """Claude invents N distinct text-free concepts (avoiding prior ones); queue them."""
+    from creative_intelligence.adstudio.concepts import generate_concepts, build_image_prompt
+    from creative_intelligence.adstudio.formats import DEFAULT_ASPECT
+    d = request.get_json(force=True, silent=True) or {}
+    n = max(1, min(int(d.get("n", 4)), 12))
+    aspect = d.get("aspect_ratio", DEFAULT_ASPECT)
+
+    conn = _db()
+    prod = _product_dict(conn, pid)
+    if prod is None:
+        conn.close(); return jsonify({"error": "product not found"}), 404
+    uris = _primary_photo_uris(conn, pid)
+    prior = [dict(r) for r in conn.execute(
+        "SELECT archetype, title, concept FROM adstudio_images WHERE product_id=?"
+        " ORDER BY id DESC LIMIT 60", (pid,)).fetchall()]
+    conn.close()
+
+    try:
+        concepts = generate_concepts(prod, n, prior, uris)
+    except Exception as exc:
+        app.logger.exception("gen-images concepts failed")
+        return jsonify({"error": str(exc)[:300]}), 500
+    if not concepts:
+        return jsonify({"error": "no concepts returned"}), 500
+
+    conn = _db()
+    created = []
+    with conn:
+        for cpt in concepts:
+            prompt = build_image_prompt(prod, cpt["scene"], aspect)
+            cur = conn.execute(
+                "INSERT INTO adstudio_images (product_id, archetype, title, concept,"
+                " prompt, aspect_ratio, model, status) VALUES (?,?,?,?,?,?,?, 'queued')",
+                (pid, cpt["archetype"], cpt["title"], cpt["scene"], prompt, aspect,
+                 "google/nano-banana-pro"))
+            created.append({"id": cur.lastrowid, "title": cpt["title"],
+                            "archetype": cpt["archetype"]})
+    conn.close()
+    return jsonify({"queued": created})
+
+
+def _run_image(ad_id_unused=None):  # placeholder to keep symmetry; not used
+    pass
+
+
+@app.post("/api/adstudio/image/<int:img_id>/run")
+def adstudio_run_image(img_id: int) -> Any:
+    """Generate one queued text-free image (frontend calls these sequentially)."""
+    from creative_intelligence.adstudio.generate import generate_ad, AdGenError
+    from creative_intelligence.adstudio.store import save_generated_image
+    conn = _db()
+    row = conn.execute("SELECT * FROM adstudio_images WHERE id=?", (img_id,)).fetchone()
+    if row is None:
+        conn.close(); return jsonify({"error": "not found"}), 404
+    row = dict(row)
+    uris = _primary_photo_uris(conn, row["product_id"], limit=3)
+    with conn:
+        conn.execute("UPDATE adstudio_images SET status='generating' WHERE id=?", (img_id,))
+    conn.close()
+    try:
+        url = generate_ad(row["prompt"], uris, row["aspect_ratio"])
+        saved = save_generated_image(url, row["product_id"], img_id)
+        conn = _db()
+        with conn:
+            conn.execute("UPDATE adstudio_images SET status='done', image_path=?,"
+                         " error_message=NULL WHERE id=?", (saved, img_id))
+        conn.close()
+        return jsonify({"id": img_id, "status": "done"})
+    except (AdGenError, Exception) as exc:
+        msg = str(exc)[:400]
+        conn = _db()
+        with conn:
+            conn.execute("UPDATE adstudio_images SET status='failed', error_message=? WHERE id=?",
+                         (msg, img_id))
+        conn.close()
+        code = 429 if "429" in msg or "throttled" in msg.lower() else 500
+        return jsonify({"id": img_id, "status": "failed", "error": msg}), code
+
+
+@app.post("/api/adstudio/image/<int:img_id>/regenerate")
+def adstudio_regen_image(img_id: int) -> Any:
+    """Re-run a concept, optionally with operator feedback ('fix') folded in.
+
+    Rebuilds the prompt from the stored concept with the CURRENT builders, so
+    prompt improvements (label lock, ingredient accuracy) and the fix note both
+    apply — instead of blindly re-running the stale stored prompt.
+    """
+    from creative_intelligence.adstudio.concepts import build_image_prompt
+    d = request.get_json(force=True, silent=True) or {}
+    fix = (d.get("fix") or "").strip()
+
+    conn = _db()
+    row = conn.execute("SELECT * FROM adstudio_images WHERE id=?", (img_id,)).fetchone()
+    if row is None:
+        conn.close(); return jsonify({"error": "not found"}), 404
+    row = dict(row)
+    prod = _product_dict(conn, row["product_id"])
+    new_prompt = row["prompt"]
+    if prod and row.get("concept"):
+        try:
+            new_prompt = build_image_prompt(prod, row["concept"], row["aspect_ratio"], fix)
+        except Exception:
+            pass
+    with conn:
+        conn.execute("UPDATE adstudio_images SET status='queued', error_message=NULL,"
+                     " prompt=? WHERE id=?", (new_prompt, img_id))
+    conn.close()
+    return adstudio_run_image(img_id)
+
+
+@app.get("/api/adstudio/images")
+def adstudio_list_images() -> Any:
+    pid = request.args.get("product_id")
+    conn = _db()
+    sql = ("SELECT id, product_id, archetype, title, status, is_favorite, aspect_ratio,"
+           " error_message, created_at, image_path IS NOT NULL AS has_image"
+           " FROM adstudio_images")
+    params: list[Any] = []
+    if pid:
+        sql += " WHERE product_id=?"; params.append(int(pid))
+    sql += " ORDER BY id DESC LIMIT 300"
+    rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    conn.close()
+    return jsonify({"images": rows})
+
+
+@app.get("/api/adstudio/image-file/<int:img_id>")
+def adstudio_image_file(img_id: int) -> Any:
+    conn = _db()
+    row = conn.execute("SELECT image_path FROM adstudio_images WHERE id=?", (img_id,)).fetchone()
+    conn.close()
+    if row is None or not row["image_path"] or not Path(row["image_path"]).exists():
+        return ("", 404)
+    return send_file(row["image_path"], mimetype="image/png", conditional=True)
+
+
+@app.post("/api/adstudio/image/<int:img_id>/favorite")
+def adstudio_fav_image(img_id: int) -> Any:
+    conn = _db()
+    row = conn.execute("SELECT is_favorite FROM adstudio_images WHERE id=?", (img_id,)).fetchone()
+    if row is None:
+        conn.close(); return jsonify({"error": "not found"}), 404
+    nv = 0 if row["is_favorite"] else 1
+    with conn:
+        conn.execute("UPDATE adstudio_images SET is_favorite=? WHERE id=?", (nv, img_id))
+    conn.close()
+    return jsonify({"id": img_id, "is_favorite": nv})
+
+
+@app.post("/api/adstudio/image/<int:img_id>/delete")
+def adstudio_del_image(img_id: int) -> Any:
+    conn = _db()
+    with conn:
+        conn.execute("DELETE FROM adstudio_images WHERE id=?", (img_id,))
+    conn.close()
+    return jsonify({"ok": True})
+
+
+# ── Compose: draw copy onto a chosen text-free image ─────────────────────
+@app.post("/api/adstudio/compose")
+def adstudio_compose() -> Any:
+    from creative_intelligence.adstudio.overlay import compose
+    from creative_intelligence.adstudio.store import composites_dir
+    import json as _json
+    d = request.get_json(force=True, silent=True) or {}
+    image_id = int(d.get("image_id", 0))
+    conn = _db()
+    img = conn.execute("SELECT * FROM adstudio_images WHERE id=?", (image_id,)).fetchone()
+    if img is None or not img["image_path"] or not Path(img["image_path"]).exists():
+        conn.close(); return jsonify({"error": "base image not found"}), 404
+    img = dict(img)
+
+    # copy: explicit fields override; else pull from a hook
+    headline = d.get("headline", ""); subhead = d.get("subhead", ""); cta = d.get("cta", "")
+    hook_id = d.get("hook_id")
+    if hook_id and not (headline or subhead or cta):
+        h = conn.execute("SELECT headline, hook_text, subhead, cta FROM adstudio_hooks WHERE id=?",
+                         (hook_id,)).fetchone()
+        if h:
+            headline = h["headline"] or h["hook_text"] or ""
+            subhead = h["subhead"] or ""; cta = h["cta"] or ""
+    layout = d.get("layout") or {}
+
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO adstudio_composites (product_id, image_id, hook_id, headline,"
+            " subhead, cta, layout_json) VALUES (?,?,?,?,?,?,?)",
+            (img["product_id"], image_id, hook_id, headline, subhead, cta, _json.dumps(layout)))
+    comp_id = cur.lastrowid
+    try:
+        out = str(composites_dir() / f"comp{comp_id}.png")
+        compose(img["image_path"], out, headline=headline, subhead=subhead, cta=cta, layout=layout)
+        with conn:
+            conn.execute("UPDATE adstudio_composites SET output_path=? WHERE id=?", (out, comp_id))
+        conn.close()
+        return jsonify({"id": comp_id})
+    except Exception as exc:
+        app.logger.exception("compose failed")
+        conn.close()
+        return jsonify({"error": str(exc)[:300]}), 500
+
+
+@app.get("/api/adstudio/composites")
+def adstudio_list_composites() -> Any:
+    pid = request.args.get("product_id")
+    conn = _db()
+    sql = ("SELECT id, product_id, image_id, headline, is_favorite, created_at,"
+           " output_path IS NOT NULL AS has_image FROM adstudio_composites")
+    params: list[Any] = []
+    if pid:
+        sql += " WHERE product_id=?"; params.append(int(pid))
+    sql += " ORDER BY id DESC LIMIT 300"
+    rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    conn.close()
+    return jsonify({"composites": rows})
+
+
+@app.get("/api/adstudio/composite/<int:comp_id>/image")
+def adstudio_composite_image(comp_id: int) -> Any:
+    conn = _db()
+    row = conn.execute("SELECT output_path FROM adstudio_composites WHERE id=?", (comp_id,)).fetchone()
+    conn.close()
+    if row is None or not row["output_path"] or not Path(row["output_path"]).exists():
+        return ("", 404)
+    return send_file(row["output_path"], mimetype="image/png", conditional=True)
+
+
+@app.post("/api/adstudio/composite/<int:comp_id>/favorite")
+def adstudio_fav_composite(comp_id: int) -> Any:
+    conn = _db()
+    row = conn.execute("SELECT is_favorite FROM adstudio_composites WHERE id=?", (comp_id,)).fetchone()
+    if row is None:
+        conn.close(); return jsonify({"error": "not found"}), 404
+    nv = 0 if row["is_favorite"] else 1
+    with conn:
+        conn.execute("UPDATE adstudio_composites SET is_favorite=? WHERE id=?", (nv, comp_id))
+    conn.close()
+    return jsonify({"id": comp_id, "is_favorite": nv})
+
+
+@app.post("/api/adstudio/composite/<int:comp_id>/delete")
+def adstudio_del_composite(comp_id: int) -> Any:
+    conn = _db()
+    with conn:
+        conn.execute("DELETE FROM adstudio_composites WHERE id=?", (comp_id,))
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@app.get("/api/adstudio/export-composites")
+def adstudio_export_composites() -> Any:
+    import io, zipfile
+    pid = request.args.get("product_id")
+    conn = _db()
+    rows = conn.execute(
+        "SELECT id, output_path FROM adstudio_composites WHERE product_id=? AND output_path IS NOT NULL",
+        (int(pid),)).fetchall() if pid else []
+    conn.close()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for r in rows:
+            if r["output_path"] and Path(r["output_path"]).exists():
+                z.write(r["output_path"], arcname=f"ad_{r['id']}.png")
+    buf.seek(0)
+    return send_file(buf, mimetype="application/zip", as_attachment=True,
+                     download_name="adstudio_composites.zip")
 
 
 if __name__ == "__main__":

@@ -37,12 +37,23 @@ def generate_ad(prompt: str, reference_data_uris: list[str],
         payload["image_input"] = reference_data_uris
 
     client = replicate.Client(api_token=config.CI_REPLICATE_API_KEY)
-    try:
-        out = client.run(MODEL, input=payload)
-    except Exception as exc:  # surface a clean, storable message
-        raise AdGenError(str(exc)) from exc
-
-    return _extract_url(out)
+    import time as _t
+    last: Exception | None = None
+    for attempt in range(3):
+        try:
+            return _extract_url(client.run(MODEL, input=payload))
+        except Exception as exc:
+            last = exc
+            m = str(exc).lower()
+            if "429" in m or "throttled" in m:
+                raise AdGenError(str(exc)) from exc   # let caller back off
+            # transient network/poll timeouts and 5xx → retry
+            if any(k in m for k in ("timed out", "timeout", "read operation",
+                                    "connection", "502", "503", "504", "temporarily")):
+                _t.sleep(3 * (attempt + 1))
+                continue
+            raise AdGenError(str(exc)) from exc       # real error
+    raise AdGenError(f"failed after retries: {last}")
 
 
 def _extract_url(out: Any) -> str:

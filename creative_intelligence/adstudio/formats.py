@@ -41,10 +41,15 @@ NEGATIVE = (
 )
 
 REFERENCE_LOCK = (
-    "A reference photo of the product is attached. Reproduce the product EXACTLY "
-    "as shown — its packaging, shape, colors, label artwork, wordmark, and every "
-    "word of text on the label. Do not redesign the label, change the product, "
-    "or alter any text on it. The attached photo defines the product."
+    "A reference photo of the product is attached — it is the single source of "
+    "truth for the product's appearance. Reproduce the product with PERFECT "
+    "fidelity to that photo: the jar/packaging shape and color, and above all the "
+    "LABEL — its exact illustration, layout, wordmark, and every line of text, "
+    "rendered crisp and legible. Do NOT redraw, restyle, simplify, re-letter, or "
+    "invent any part of the label, and do not change its wording. Keep the product "
+    "prominent and in sharp focus so the label stays clearly readable — never "
+    "shrink it so small, tilt it so far, or obscure it so much that the label "
+    "becomes illegible or gets reinterpreted."
 )
 
 ASPECT_RATIOS = ["4:5", "1:1", "9:16", "2:3", "3:4", "16:9"]
@@ -138,6 +143,136 @@ FORMATS: dict[str, dict[str, Any]] = {
             "Product-drop energy: the product dramatically lit against a dark, "
             "atmospheric background, with a bold short season/urgency headline. "
             "Exclusive, time-scarce, like a limited release."
+        ),
+    },
+
+    # ── Diversified archetypes (added for Meta Entity-ID spread + surround-sound).
+    # These are deliberately DIFFERENT composition families — flat-lay, human,
+    # text-led, comparison, in-situ — so Meta fingerprints them as distinct
+    # entities that can each reach fresh audiences, instead of collapsing into
+    # one. See docs: minor tweaks = same entity; different archetype = new entity.
+    "flat_lay": {
+        "name": "Overhead Flat-Lay",
+        "blurb": "Top-down styled arrangement — a distinct composition family.",
+        "text": True,
+        "staging": (
+            "Shot from directly overhead: the product centered on a clean tonal "
+            "surface, with scent/ingredient accents arranged in a balanced, styled "
+            "flat-lay around it. Symmetrical, editorial, catalog-grade. Reserve clear "
+            "space at the top for a headline."
+        ),
+    },
+    "in_hand": {
+        "name": "In-Hand / Human Touch",
+        "blurb": "A real hand holding/lighting it — the 'human' entity, new-audience gold.",
+        "text": True,
+        "staging": (
+            "A person's hand (only hand and wrist in frame, no face) holding or "
+            "lighting the product in a warm, real home setting — natural skin, cozy "
+            "morning or evening light. Human presence and scale. Reserve the upper "
+            "area for a headline."
+        ),
+    },
+    "room_scene": {
+        "name": "Room In-Situ",
+        "blurb": "The product living in a real room — a different scene = new entity.",
+        "text": True,
+        "staging": (
+            "The product placed and lit in the real room it belongs in — a bathroom "
+            "shelf, a bedside table, a coffee table — with soft ambient home light and "
+            "lived-in, aspirational styling. Wider environmental shot, not a close-up."
+        ),
+    },
+    "flame_macro": {
+        "name": "Flame / Texture Macro",
+        "blurb": "Extreme close-up of flame, wax, label texture. Pure sensory.",
+        "text": False,
+        "staging": (
+            "An extreme macro close-up — the lit flame, molten wax pool, or the label "
+            "texture — rich, tactile, glowing, shallow depth of field. Intimate and "
+            "sensory. No text; a clean product image."
+        ),
+    },
+    "color_pop": {
+        "name": "Color Pop",
+        "blurb": "Product on a bold saturated color. Graphic, thumb-stopping, distinct.",
+        "text": True,
+        "staging": (
+            "The product centered on a single bold, saturated solid-color background "
+            "(a vivid brand-adjacent hue), graphic and modern with a hard studio pop. "
+            "A short punchy headline. Deliberately unlike any neutral-background shot."
+        ),
+    },
+    "listicle": {
+        "name": "Listicle (3 Reasons)",
+        "blurb": "Numbered benefit list beside the product. Text-led concept.",
+        "text": True,
+        "staging": (
+            "An editorial listicle layout: a bold headline (e.g. '3 reasons to light "
+            "this') with three short numbered benefit lines cleanly stacked beside or "
+            "below the product on a tonal panel. Structured and skimmable."
+        ),
+    },
+    "pov": {
+        "name": "POV Moment",
+        "blurb": "First-person 'POV:' scene. Native, scroll-stopping concept.",
+        "text": True,
+        "staging": (
+            "A first-person 'POV' moment: the product in a real, lived scene as if the "
+            "viewer just walked in — glowing on a nightstand at night, or on a bathtub "
+            "ledge — with a casual 'POV:' style headline. Native, immersive, phone-shot "
+            "feel but still clean and on-brand."
+        ),
+    },
+    "before_after": {
+        "name": "Before / After",
+        "blurb": "Split comparison — this vs the generic alternative. Visual argument.",
+        "text": True,
+        "staging": (
+            "A split-frame comparison: one side shows the dull, generic, ordinary "
+            "alternative; the other shows this product vivid, warm, and desirable. A "
+            "short verdict headline. A clear visual before/after argument."
+        ),
+    },
+    "qa": {
+        "name": "Question / FAQ",
+        "blurb": "Bold objection-question + answer. Handles one buying doubt.",
+        "text": True,
+        "staging": (
+            "A bold question headline that names a real objection or curiosity, with a "
+            "concise one-line answer beneath it, and the product beside the copy on a "
+            "clean tonal panel. Reassuring and direct."
+        ),
+    },
+    "gift": {
+        "name": "Gift / Unboxing",
+        "blurb": "Giftable/just-opened moment. Seasonal & occasion audiences.",
+        "text": True,
+        "staging": (
+            "The product styled as a gift or a just-opened reveal — soft ribbon, tissue "
+            "or kraft hints, a warm giftable moment, hands optional. Occasion energy "
+            "(holiday, birthday, thank-you). Reserve space for a short headline."
+        ),
+    },
+    "editorial": {
+        "name": "Editorial / Magazine",
+        "blurb": "High-end magazine spread. Aspirational, refined, minimal words.",
+        "text": True,
+        "staging": (
+            "A high-end editorial magazine-spread look: generous dramatic negative "
+            "space, refined fashion-shoot lighting, the product as a hero object of "
+            "desire, one elegant line of copy. Aspirational and premium."
+        ),
+    },
+    "ingredient_story": {
+        "name": "Scent / Ingredient Story",
+        "blurb": "The scent notes made visual as a still-life. Distinct storytelling.",
+        "text": True,
+        "staging": (
+            "The scent made visual: the product surrounded by its actual scent "
+            "ingredients arranged as a considered still-life 'scent map' — each "
+            "ingredient identifiable and fresh — telling the fragrance story. One short "
+            "headline naming the notes."
         ),
     },
 }

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ad Studio</title>
 <style>
-:root{--bg:#0d0d14;--surface:#13131e;--surface2:#1a1a2a;--border:#252535;--text:#e8e8f0;--text2:#b0b0c8;--muted:#6a6a88;--accent:#4f46e5;--accent2:#818cf8;--green:#4ade80;--gold:#fbbf24;--red:#f87171;--orange:#fb923c;}
+:root{--bg:#0d0d14;--surface:#13131e;--surface2:#1a1a2a;--border:#252535;--text:#e8e8f0;--text2:#b0b0c8;--muted:#6a6a88;--accent:#4f46e5;--accent2:#818cf8;--green:#4ade80;--gold:#fbbf24;--red:#f87171;}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);font-size:14px;}
 header{display:flex;align-items:center;gap:12px;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--surface);}
@@ -17,25 +17,21 @@ header .sub{font-size:12px;color:var(--muted);}
 .rail{width:210px;flex-shrink:0;border-right:1px solid var(--border);overflow-y:auto;padding:10px;}
 .rail h3{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin:6px 4px;}
 .prod{padding:8px 10px;border-radius:6px;cursor:pointer;border:1px solid transparent;}
-.prod:hover{background:var(--surface2);}
-.prod.active{background:var(--surface2);border-color:var(--accent);}
+.prod:hover{background:var(--surface2);}.prod.active{background:var(--surface2);border-color:var(--accent);}
 .prod .pn{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .prod .pm{font-size:10.5px;color:var(--muted);margin-top:2px;}
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
 .tabs{display:flex;gap:4px;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--surface);align-items:center;}
 .tab{padding:5px 12px;font-size:12px;border-radius:5px;cursor:pointer;color:var(--text2);}
-.tab:hover{background:var(--surface2);}
-.tab.active{background:var(--surface2);color:var(--text);border:1px solid var(--border);}
-.pane{flex:1;overflow-y:auto;padding:18px;display:none;}
-.pane.active{display:block;}
+.tab:hover{background:var(--surface2);}.tab.active{background:var(--surface2);color:var(--text);border:1px solid var(--border);}
+.pane{flex:1;overflow-y:auto;padding:18px;display:none;}.pane.active{display:block;}
 label.fl{display:block;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:10px 0 4px;}
 input.f,textarea.f,select.f{width:100%;padding:8px 10px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;}
 textarea.f{min-height:52px;resize:vertical;}
 .btn{padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;}
-.btn:hover{background:#23233a;}
-.btn-p{background:var(--accent);border-color:var(--accent);color:#fff;}
-.btn-p:hover{background:#4338ca;}
+.btn:hover{background:#23233a;}.btn-p{background:var(--accent);border-color:var(--accent);color:#fff;}.btn-p:hover{background:#4338ca;}
 .btn:disabled{opacity:.5;cursor:not-allowed;}
+.btn.sm{padding:3px 8px;font-size:11px;}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px;}
 .muted{color:var(--muted);font-size:12px;}
@@ -45,49 +41,44 @@ textarea.f{min-height:52px;resize:vertical;}
 .photo .del{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:4px;font-size:11px;padding:1px 5px;cursor:pointer;}
 .photo .pri{position:absolute;bottom:0;left:0;right:0;background:rgba(79,70,229,.85);color:#fff;font-size:9px;text-align:center;padding:1px;}
 .hook{border-left:2px solid var(--accent);padding:8px 10px;background:var(--surface2);border-radius:0 6px 6px 0;margin-bottom:8px;}
-.hook .ht{font-size:13px;font-weight:600;}
-.hook .hd{font-size:11px;color:var(--text2);margin-top:3px;}
+.hook .ht{font-size:13px;font-weight:600;}.hook .hd{font-size:11px;color:var(--text2);margin-top:3px;}
 .hook .hx{font-size:10px;color:var(--muted);margin-top:3px;}
-.dcp{display:flex;gap:10px;font-size:10.5px;margin-top:4px;flex-wrap:wrap;}
-.dcp b{color:var(--accent2);}
-/* chat */
-.chat{display:flex;flex-direction:column;height:320px;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-top:8px;}
+.dcp{display:flex;gap:10px;font-size:10.5px;margin-top:4px;flex-wrap:wrap;}.dcp b{color:var(--accent2);}
+.chat{display:flex;flex-direction:column;height:300px;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-top:8px;}
 .chatlog{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px;}
 .msg{max-width:85%;padding:7px 10px;border-radius:8px;font-size:12.5px;line-height:1.5;white-space:pre-wrap;}
-.msg.user{align-self:flex-end;background:var(--accent);color:#fff;}
-.msg.assistant{align-self:flex-start;background:var(--surface2);}
-.chatin{display:flex;gap:6px;padding:8px;border-top:1px solid var(--border);}
-.chatin input{flex:1;}
-/* generate grid */
-table.grid{border-collapse:collapse;width:100%;font-size:12px;}
-table.grid th,table.grid td{border:1px solid var(--border);padding:6px 8px;text-align:center;}
-table.grid th.hk,table.grid td.hk{text-align:left;max-width:280px;}
-table.grid th{background:var(--surface2);color:var(--text2);font-weight:600;font-size:11px;}
-table.grid td.hk{font-size:12px;}
-/* gallery */
+.msg.user{align-self:flex-end;background:var(--accent);color:#fff;}.msg.assistant{align-self:flex-start;background:var(--surface2);}
+.chatin{display:flex;gap:6px;padding:8px;border-top:1px solid var(--border);}.chatin input{flex:1;}
 .gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;}
 .ad{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
-.ad .imgwrap{aspect-ratio:4/5;background:#0a0a12;display:flex;align-items:center;justify-content:center;}
+.ad .imgwrap{aspect-ratio:4/5;background:#0a0a12;display:flex;align-items:center;justify-content:center;position:relative;}
 .ad .imgwrap img{width:100%;height:100%;object-fit:cover;}
-.ad .ph{color:var(--muted);font-size:11px;}
+.ad .ph{color:var(--muted);font-size:11px;text-align:center;padding:8px;}
 .ad .meta{padding:7px 9px;font-size:11px;}
-.ad .fmt{color:var(--accent2);font-weight:600;}
-.ad .acts{display:flex;gap:6px;padding:0 9px 9px;}
+.ad .ttl{color:var(--accent2);font-weight:600;}
+.ad .acts{display:flex;gap:6px;padding:0 9px 9px;flex-wrap:wrap;}
 .ad .acts a,.ad .acts button{font-size:11px;text-decoration:none;color:var(--text2);background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:3px 7px;cursor:pointer;}
 .badge{font-size:10px;padding:1px 6px;border-radius:8px;border:1px solid var(--border);}
-.b-done{color:var(--green);border-color:#166534;}
-.b-failed{color:var(--red);border-color:#7c2d12;}
-.b-generating{color:var(--gold);border-color:#78560f;}
-.b-queued{color:var(--muted);}
+.b-done{color:var(--green);border-color:#166534;}.b-failed{color:var(--red);border-color:#7c2d12;}.b-generating,.b-queued{color:var(--gold);}
 .spinner{display:inline-block;width:12px;height:12px;border:2px solid var(--muted);border-top-color:var(--accent2);border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;}
 @keyframes spin{to{transform:rotate(360deg);}}
 .empty{color:var(--muted);text-align:center;padding:40px;font-size:13px;}
+/* compose */
+.compose-grid{display:grid;grid-template-columns:1fr 340px;gap:18px;align-items:start;}
+.strip{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;}
+.pick{flex:none;width:96px;height:120px;border-radius:6px;overflow:hidden;border:2px solid transparent;cursor:pointer;background:#0a0a12;}
+.pick img{width:100%;height:100%;object-fit:cover;}
+.pick.sel{border-color:var(--accent);}
+.preview{width:100%;max-width:420px;border-radius:8px;border:1px solid var(--border);background:#0a0a12;}
+.seg{display:flex;gap:4px;}
+.seg button{flex:1;padding:5px;font-size:11px;border:1px solid var(--border);background:var(--surface2);color:var(--text2);border-radius:5px;cursor:pointer;}
+.seg button.on{background:var(--accent);color:#fff;border-color:var(--accent);}
 </style>
 </head>
 <body>
 <header>
   <h1>🎬 Ad Studio</h1>
-  <span class="sub">Reference-photo product ads → Nano Banana Pro</span>
+  <span class="sub">Fresh diverse images → your copy, composited on</span>
   <div class="nav"><a href="/copilot">← Copilot</a><a href="/labels">🕯️ Labels</a></div>
 </header>
 
@@ -101,19 +92,32 @@ table.grid td.hk{font-size:12px;}
   <div class="main">
     <div class="tabs">
       <div class="tab active" data-pane="pSetup">Setup</div>
-      <div class="tab" data-pane="pGen">Generate</div>
+      <div class="tab" data-pane="pImages">Images</div>
+      <div class="tab" data-pane="pCompose">Compose</div>
       <div class="tab" data-pane="pGal">Gallery</div>
       <span class="muted" id="ctxName" style="margin-left:auto"></span>
     </div>
 
-    <!-- SETUP -->
-    <div class="pane active" id="pSetup">
-      <div id="setupBody"><div class="empty">Select or create a product to begin.</div></div>
+    <div class="pane active" id="pSetup"><div id="setupBody"><div class="empty">Select or create a product to begin.</div></div></div>
+
+    <!-- IMAGES -->
+    <div class="pane" id="pImages">
+      <div class="row" style="margin-bottom:6px">
+        <label class="fl" style="margin:0">Generate</label>
+        <select class="f" id="imgN" style="width:70px"><option>2</option><option selected>4</option><option>6</option><option>8</option></select>
+        <label class="fl" style="margin:0">fresh images at</label>
+        <select class="f" id="imgAspect" style="width:130px"></select>
+        <button class="btn btn-p" id="btnGenImages">✨ Generate fresh</button>
+        <button class="btn" id="btnRunPending">↻ Run all pending</button>
+        <span class="muted" id="imgStatus"></span>
+      </div>
+      <div class="muted" style="margin-bottom:12px">Claude invents new text-free scenes each time, avoiding everything already made for this product. No copy — you add that in Compose.</div>
+      <div class="gal" id="imgBody"></div>
     </div>
 
-    <!-- GENERATE -->
-    <div class="pane" id="pGen">
-      <div id="genBody"><div class="empty">Select a product with at least one hook.</div></div>
+    <!-- COMPOSE -->
+    <div class="pane" id="pCompose">
+      <div id="composeBody"></div>
     </div>
 
     <!-- GALLERY -->
@@ -128,278 +132,223 @@ table.grid td.hk{font-size:12px;}
   </div>
 </div>
 
-<!-- New product modal (inline) -->
 <div id="newProdForm" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10;align-items:center;justify-content:center;">
   <div class="card" style="width:460px;max-width:92vw;">
     <h3 style="margin-bottom:6px">New product</h3>
     <label class="fl">Name *</label><input class="f" id="np_name" placeholder="Guava Rosé Candle">
     <label class="fl">Scent / key notes</label><input class="f" id="np_scent" placeholder="Pink Guava · Rainier Cherry">
-    <label class="fl">What it looks like (packaging, label, wordmark)</label>
-    <textarea class="f" id="np_phys" placeholder="amber glass jar, wood lid, periwinkle label, GOOD HILL FARMS wordmark"></textarea>
+    <label class="fl">What it looks like</label><textarea class="f" id="np_phys" placeholder="amber jar, wood lid, periwinkle label, GOOD HILL FARMS wordmark"></textarea>
     <label class="fl">Description (optional)</label><textarea class="f" id="np_desc"></textarea>
-    <div class="row" style="margin-top:12px;justify-content:flex-end">
-      <button class="btn" id="np_cancel">Cancel</button>
-      <button class="btn btn-p" id="np_create">Create</button>
-    </div>
+    <label class="fl">🧠 Context / notes for Claude (optional)</label><textarea class="f" id="np_notes" placeholder="e.g. 'Rosé' = rosé wine, not the flower; ingredients are pink guava + Rainier cherry"></textarea>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn" id="np_cancel">Cancel</button><button class="btn btn-p" id="np_create">Create</button></div>
   </div>
 </div>
 
 <script>
 const $=id=>document.getElementById(id);
 let CFG=null, PID=null, DETAIL=null;
+let COMPOSE={imageId:null, layout:{position:'top',color:'auto',scrim:true}};
 
 async function boot(){
   CFG=await (await fetch('/api/adstudio/config')).json();
+  $('imgAspect').innerHTML=CFG.aspect_ratios.map(a=>`<option ${a===CFG.default_aspect?'selected':''}>${a}</option>`).join('');
   await loadProducts();
   document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
     document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
     document.querySelectorAll('.pane').forEach(x=>x.classList.remove('active'));
     t.classList.add('active');$(t.dataset.pane).classList.add('active');
-    if(t.dataset.pane==='pGen')renderGen();
+    if(t.dataset.pane==='pImages')loadImages();
+    if(t.dataset.pane==='pCompose')renderCompose();
     if(t.dataset.pane==='pGal')loadGallery();
   });
   $('btnNewProd').onclick=()=>$('newProdForm').style.display='flex';
   $('np_cancel').onclick=()=>$('newProdForm').style.display='none';
   $('np_create').onclick=createProduct;
   $('btnRefreshGal').onclick=loadGallery;
+  $('btnGenImages').onclick=genImages;
+  $('btnRunPending').onclick=runPending;
 }
-
 async function loadProducts(){
   const d=await (await fetch('/api/adstudio/products')).json();
-  $('prodList').innerHTML=d.products.map(p=>`
-    <div class="prod ${p.id===PID?'active':''}" data-id="${p.id}">
-      <div class="pn">${esc(p.name)}</div>
-      <div class="pm">${p.photo_count} photo · ${p.hook_count} hook</div>
-    </div>`).join('')||'<div class="muted" style="padding:8px">No products yet</div>';
+  $('prodList').innerHTML=d.products.map(p=>`<div class="prod ${p.id===PID?'active':''}" data-id="${p.id}"><div class="pn">${esc(p.name)}</div><div class="pm">${p.photo_count} photo · ${p.hook_count} hook</div></div>`).join('')||'<div class="muted" style="padding:8px">No products yet</div>';
   document.querySelectorAll('.prod').forEach(el=>el.onclick=()=>selectProduct(+el.dataset.id));
 }
-
 async function createProduct(){
   const name=$('np_name').value.trim(); if(!name){$('np_name').focus();return;}
-  const r=await fetch('/api/adstudio/products',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({name,scent_notes:$('np_scent').value,physical_desc:$('np_phys').value,description:$('np_desc').value})});
-  const d=await r.json();
-  $('newProdForm').style.display='none';
-  ['np_name','np_scent','np_phys','np_desc'].forEach(i=>$(i).value='');
+  const d=await (await fetch('/api/adstudio/products',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,scent_notes:$('np_scent').value,physical_desc:$('np_phys').value,description:$('np_desc').value,notes:$('np_notes').value})})).json();
+  $('newProdForm').style.display='none';['np_name','np_scent','np_phys','np_desc','np_notes'].forEach(i=>$(i).value='');
   await loadProducts(); selectProduct(d.id);
 }
-
 async function selectProduct(id){
-  PID=id;
+  PID=id; COMPOSE.imageId=null;
   document.querySelectorAll('.prod').forEach(el=>el.classList.toggle('active',+el.dataset.id===id));
   DETAIL=await (await fetch('/api/adstudio/product/'+id)).json();
   $('ctxName').textContent=DETAIL.product.name;
   renderSetup();
 }
 
+/* ---------- SETUP ---------- */
 function renderSetup(){
-  if(!DETAIL){return;}
-  const p=DETAIL.product;
+  if(!DETAIL)return; const p=DETAIL.product;
   $('setupBody').innerHTML=`
-    <div class="card">
-      <div class="row" style="justify-content:space-between">
-        <div><strong>${esc(p.name)}</strong> <span class="muted">${esc(p.scent_notes||'')}</span></div>
-      </div>
-      <div class="muted" style="margin-top:4px">${esc(p.physical_desc||'No product appearance description')}</div>
-      <label class="fl">Reference photos (Nano Banana copies these EXACTLY)</label>
-      <div class="photos" id="photos"></div>
-      <input type="file" id="photoInput" accept="image/*" style="margin-top:8px;font-size:12px">
-    </div>
-
-    <div class="card">
-      <div class="row" style="justify-content:space-between">
-        <strong>Hooks</strong>
-        <div class="row">
-          <input class="f" id="suggestBrief" style="width:220px" placeholder="optional steer for suggestions">
-          <button class="btn" id="btnSuggest">✨ Suggest 4 (Claude)</button>
-        </div>
-      </div>
-      <div id="suggestions"></div>
-      <div id="hooks" style="margin-top:10px"></div>
+    <div class="card"><div class="row" style="justify-content:space-between"><div><strong>${esc(p.name)}</strong> <span class="muted">${esc(p.scent_notes||'')}</span></div></div>
+      <div class="muted" style="margin-top:4px">${esc(p.physical_desc||'No appearance description')}</div>
+      <label class="fl">🧠 Context / notes for Claude — Claude reads &amp; expands these into every generation (they never go straight to the image model)</label>
+      <textarea class="f" id="prodNotes" style="min-height:70px" placeholder="e.g. 'Rosé' means rosé wine (blush-pink, fruity, celebratory) — NOT the rose flower. The only ingredients are pink guava + Rainier cherry. Avoid clichés; keep it modern and premium.">${esc(p.notes||'')}</textarea>
+      <button class="btn sm" id="btnSaveNotes" style="margin-top:6px">Save notes</button>
+      <label class="fl" style="margin-top:14px">Reference photos (Nano Banana copies these EXACTLY)</label>
+      <div class="photos" id="photos"></div><input type="file" id="photoInput" accept="image/*" style="margin-top:8px;font-size:12px"></div>
+    <div class="card"><div class="row" style="justify-content:space-between"><strong>Hooks</strong>
+      <div class="row"><input class="f" id="suggestBrief" style="width:220px" placeholder="optional steer"><button class="btn" id="btnSuggest">✨ Suggest 4</button></div></div>
+      <div id="suggestions"></div><div id="hooks" style="margin-top:10px"></div>
       <details style="margin-top:8px"><summary class="muted" style="cursor:pointer">+ Add hook manually</summary>
-        <label class="fl">Hook / headline *</label><input class="f" id="mh_head" placeholder="The season ends. The scent doesn't.">
-        <label class="fl">Subhead</label><input class="f" id="mh_sub">
-        <label class="fl">CTA</label><input class="f" id="mh_cta" placeholder="Shop now">
-        <button class="btn" id="btnAddHook" style="margin-top:8px">Add hook</button>
-      </details>
-    </div>
-
-    <div class="card">
-      <strong>💬 Develop hooks with Claude</strong>
-      <div class="muted">Claude sees your reference photo. Ask for angles, ideas, refinements.</div>
-      <div class="chat">
-        <div class="chatlog" id="chatlog"></div>
-        <div class="chatin"><input class="f" id="chatText" placeholder="e.g. give me 3 angles for a fall seasonal push"><button class="btn btn-p" id="chatSend">Send</button></div>
-      </div>
-    </div>`;
+        <label class="fl">Hook / headline *</label><input class="f" id="mh_head"><label class="fl">Subhead</label><input class="f" id="mh_sub"><label class="fl">CTA</label><input class="f" id="mh_cta" placeholder="Shop now"><button class="btn" id="btnAddHook" style="margin-top:8px">Add hook</button></details></div>
+    <div class="card"><div class="row" style="justify-content:space-between"><strong>💬 Develop hooks with Claude</strong><button class="btn sm" id="btnPullHooks">＋ Save hooks from chat</button></div><div class="muted">Claude sees your reference photo. Brainstorm, then pull the hooks straight into your Hooks list.</div>
+      <div class="chat"><div class="chatlog" id="chatlog"></div><div class="chatin"><input class="f" id="chatText" placeholder="e.g. 3 fall angles"><button class="btn btn-p" id="chatSend">Send</button></div></div></div>`;
   renderPhotos(); renderHooks();
-  $('photoInput').onchange=uploadPhoto;
-  $('btnAddHook').onclick=addHook;
-  $('btnSuggest').onclick=suggestHooks;
-  $('chatSend').onclick=chatSend;
-  $('chatText').addEventListener('keydown',e=>{if(e.key==='Enter')chatSend();});
+  $('btnSaveNotes').onclick=async()=>{const b=$('btnSaveNotes');b.textContent='…';await fetch('/api/adstudio/product/'+PID+'/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({notes:$('prodNotes').value})});DETAIL.product.notes=$('prodNotes').value;b.textContent='Saved ✓';setTimeout(()=>b.textContent='Save notes',1500);};
+  $('photoInput').onchange=uploadPhoto; $('btnAddHook').onclick=addHook; $('btnSuggest').onclick=suggestHooks;
+  $('chatSend').onclick=chatSend; $('chatText').addEventListener('keydown',e=>{if(e.key==='Enter')chatSend();});
+  $('btnPullHooks').onclick=pullHooksFromChat;
 }
-
 function renderPhotos(){
-  $('photos').innerHTML=DETAIL.photos.map(ph=>`
-    <div class="photo"><img src="/api/adstudio/photo/${ph.id}">
-      <button class="del" data-id="${ph.id}">✕</button>
-      ${ph.is_primary?'<div class="pri">PRIMARY</div>':''}</div>`).join('')
-    ||'<div class="muted">No photos yet — upload the product shot.</div>';
-  document.querySelectorAll('.photo .del').forEach(b=>b.onclick=async()=>{
-    await fetch('/api/adstudio/photo/'+b.dataset.id+'/delete',{method:'POST'});
-    await selectProduct(PID);});
+  $('photos').innerHTML=DETAIL.photos.map(ph=>`<div class="photo"><img src="/api/adstudio/photo/${ph.id}"><button class="del" data-id="${ph.id}">✕</button>${ph.is_primary?'<div class="pri">PRIMARY</div>':''}</div>`).join('')||'<div class="muted">No photos yet.</div>';
+  document.querySelectorAll('.photo .del').forEach(b=>b.onclick=async()=>{await fetch('/api/adstudio/photo/'+b.dataset.id+'/delete',{method:'POST'});await selectProduct(PID);});
 }
-
-async function uploadPhoto(e){
-  const f=e.target.files[0]; if(!f)return;
-  const fd=new FormData(); fd.append('file',f);
-  await fetch('/api/adstudio/product/'+PID+'/photo',{method:'POST',body:fd});
-  await selectProduct(PID);
-}
-
+async function uploadPhoto(e){const f=e.target.files[0];if(!f)return;const fd=new FormData();fd.append('file',f);await fetch('/api/adstudio/product/'+PID+'/photo',{method:'POST',body:fd});await selectProduct(PID);}
 function renderHooks(){
-  $('hooks').innerHTML=DETAIL.hooks.map(h=>`
-    <div class="hook">
-      <div class="ht">${esc(h.headline||h.hook_text)}</div>
-      ${h.subhead?`<div class="hd">${esc(h.subhead)}</div>`:''}
-      ${h.hook_text&&h.hook_text!==h.headline?`<div class="hx">hook: ${esc(h.hook_text)}</div>`:''}
-      ${(h.d||h.c||h.ps)?`<div class="dcp"><span><b>D</b> ${esc(h.d)}</span><span><b>C</b> ${esc(h.c)}</span><span><b>PS</b> ${esc(h.ps)}</span></div>`:''}
-      <div class="row" style="margin-top:5px"><span class="hx">${esc(h.archetype||h.source||'')}</span>
-        <button class="btn" style="padding:2px 7px;font-size:10px" data-del="${h.id}">delete</button></div>
-    </div>`).join('')||'<div class="muted">No hooks yet.</div>';
-  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
-    await fetch('/api/adstudio/hook/'+b.dataset.del+'/delete',{method:'POST'});await selectProduct(PID);});
+  $('hooks').innerHTML=DETAIL.hooks.map(h=>`<div class="hook"><div class="ht">${esc(h.headline||h.hook_text)}</div>${h.subhead?`<div class="hd">${esc(h.subhead)}</div>`:''}${(h.d||h.c||h.ps)?`<div class="dcp"><span><b>D</b> ${esc(h.d)}</span><span><b>C</b> ${esc(h.c)}</span><span><b>PS</b> ${esc(h.ps)}</span></div>`:''}<div class="row" style="margin-top:5px"><span class="hx">${esc(h.archetype||h.source||'')}</span><button class="btn sm" data-del="${h.id}">delete</button></div></div>`).join('')||'<div class="muted">No hooks yet.</div>';
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{await fetch('/api/adstudio/hook/'+b.dataset.del+'/delete',{method:'POST'});await selectProduct(PID);});
 }
-
-async function addHook(){
-  const head=$('mh_head').value.trim(); if(!head)return;
-  await fetch('/api/adstudio/product/'+PID+'/hook',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({headline:head,hook_text:head,subhead:$('mh_sub').value,cta:$('mh_cta').value})});
-  ['mh_head','mh_sub','mh_cta'].forEach(i=>$(i).value='');
-  await selectProduct(PID);
-}
-
+async function addHook(){const head=$('mh_head').value.trim();if(!head)return;await fetch('/api/adstudio/product/'+PID+'/hook',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({headline:head,hook_text:head,subhead:$('mh_sub').value,cta:$('mh_cta').value})});['mh_head','mh_sub','mh_cta'].forEach(i=>$(i).value='');await selectProduct(PID);}
 async function suggestHooks(){
-  const btn=$('btnSuggest'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span> thinking…';
-  try{
-    const r=await fetch('/api/adstudio/product/'+PID+'/suggest-hooks',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({n:4,brief:$('suggestBrief').value})});
-    const d=await r.json();
+  const btn=$('btnSuggest');btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
+  try{const d=await (await fetch('/api/adstudio/product/'+PID+'/suggest-hooks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({n:4,brief:$('suggestBrief').value})})).json();
     if(d.error){alert(d.error);return;}
-    $('suggestions').innerHTML='<label class="fl">Suggested — click Save to keep</label>'+d.hooks.map((h,i)=>`
-      <div class="hook" id="sg${i}">
-        <div class="ht">${esc(h.headline||h.hook_text)}</div>
-        <div class="hd">${esc(h.subhead||'')}</div>
-        <div class="dcp"><span><b>D</b> ${esc(h.d||'')}</span><span><b>C</b> ${esc(h.c||'')}</span><span><b>PS</b> ${esc(h.ps||'')}</span></div>
-        <div class="hx">${esc(h.archetype||'')}</div>
-        <button class="btn btn-p" style="margin-top:6px;padding:3px 9px;font-size:11px" data-save='${i}'>Save</button>
-      </div>`).join('');
-    document.querySelectorAll('[data-save]').forEach(b=>b.onclick=async()=>{
-      const h=d.hooks[+b.dataset.save];
-      await fetch('/api/adstudio/product/'+PID+'/hook',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({...h,source:'claude'})});
-      $('sg'+b.dataset.save).style.opacity=.4; b.textContent='Saved ✓'; b.disabled=true;
-      const det=await (await fetch('/api/adstudio/product/'+PID)).json(); DETAIL.hooks=det.hooks; renderHooks();});
-  }finally{btn.disabled=false;btn.textContent='✨ Suggest 4 (Claude)';}
+    $('suggestions').innerHTML='<label class="fl">Suggested — Save to keep</label>'+d.hooks.map((h,i)=>`<div class="hook" id="sg${i}"><div class="ht">${esc(h.headline||h.hook_text)}</div><div class="hd">${esc(h.subhead||'')}</div><div class="dcp"><span><b>D</b> ${esc(h.d||'')}</span><span><b>C</b> ${esc(h.c||'')}</span><span><b>PS</b> ${esc(h.ps||'')}</span></div><button class="btn btn-p sm" style="margin-top:6px" data-save='${i}'>Save</button></div>`).join('');
+    document.querySelectorAll('[data-save]').forEach(b=>b.onclick=async()=>{const h=d.hooks[+b.dataset.save];await fetch('/api/adstudio/product/'+PID+'/hook',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...h,source:'claude'})});$('sg'+b.dataset.save).style.opacity=.4;b.textContent='Saved ✓';b.disabled=true;const det=await (await fetch('/api/adstudio/product/'+PID)).json();DETAIL.hooks=det.hooks;renderHooks();});
+  }finally{btn.disabled=false;btn.textContent='✨ Suggest 4';}
 }
-
 let CHAT=[];
-async function chatSend(){
-  const t=$('chatText').value.trim(); if(!t)return;
-  CHAT.push({role:'user',text:t}); $('chatText').value='';
-  renderChat(true);
+async function chatSend(){const t=$('chatText').value.trim();if(!t)return;CHAT.push({role:'user',text:t});$('chatText').value='';renderChat(true);
+  try{const d=await (await fetch('/api/adstudio/product/'+PID+'/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:CHAT})})).json();CHAT.push({role:'assistant',text:d.error?('⚠ '+d.error):d.reply});}catch(e){CHAT.push({role:'assistant',text:'⚠ '+e});}renderChat();}
+function renderChat(p){$('chatlog').innerHTML=CHAT.map(m=>`<div class="msg ${m.role}">${esc(m.text)}</div>`).join('')+(p?'<div class="msg assistant"><span class="spinner"></span></div>':'');$('chatlog').scrollTop=$('chatlog').scrollHeight;}
+async function pullHooksFromChat(){
+  if(!CHAT.length){alert('Chat with Claude to develop some hooks first.');return;}
+  const b=$('btnPullHooks');b.disabled=true;b.innerHTML='<span class="spinner"></span> extracting…';
   try{
-    const r=await fetch('/api/adstudio/product/'+PID+'/chat',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({messages:CHAT})});
-    const d=await r.json();
-    CHAT.push({role:'assistant',text:d.error?('⚠ '+d.error):d.reply});
-  }catch(e){CHAT.push({role:'assistant',text:'⚠ '+e});}
-  renderChat();
-}
-function renderChat(pending){
-  $('chatlog').innerHTML=CHAT.map(m=>`<div class="msg ${m.role}">${esc(m.text)}</div>`).join('')
-    +(pending?'<div class="msg assistant"><span class="spinner"></span></div>':'');
-  $('chatlog').scrollTop=$('chatlog').scrollHeight;
+    const d=await (await fetch('/api/adstudio/product/'+PID+'/extract-hooks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:CHAT,save:true})})).json();
+    if(d.error){alert(d.error);b.textContent='＋ Save hooks from chat';return;}
+    const det=await (await fetch('/api/adstudio/product/'+PID)).json();DETAIL.hooks=det.hooks;renderHooks();
+    b.textContent=`✓ Saved ${d.saved_count} hook${d.saved_count!==1?'s':''}`;setTimeout(()=>b.textContent='＋ Save hooks from chat',2500);
+  }catch(e){alert('Failed: '+e);b.textContent='＋ Save hooks from chat';}finally{b.disabled=false;}
 }
 
-/* ---- GENERATE ---- */
-function renderGen(){
-  if(!DETAIL||!DETAIL.hooks.length){$('genBody').innerHTML='<div class="empty">Add at least one hook in Setup first.</div>';return;}
-  const fmts=CFG.formats;
-  $('genBody').innerHTML=`
-    <div class="row" style="margin-bottom:12px">
-      <label class="fl" style="margin:0">Aspect</label>
-      <select class="f" id="genAspect" style="width:130px">${CFG.aspect_ratios.map(a=>`<option ${a===CFG.default_aspect?'selected':''}>${a}</option>`).join('')}</select>
-      <button class="btn" id="selAll">Select all</button>
-      <button class="btn" id="selNone">Clear</button>
-      <button class="btn btn-p" id="btnGenerate">Generate selected</button>
-      <span class="muted" id="genStatus"></span>
-    </div>
-    <div style="overflow-x:auto"><table class="grid" id="gridTbl">
-      <tr><th class="hk">Hook</th>${fmts.map(f=>`<th title="${esc(f.blurb)}">${esc(f.name)}${f.text?'':' ·'}</th>`).join('')}</tr>
-      ${DETAIL.hooks.map(h=>`<tr><td class="hk">${esc(h.headline||h.hook_text)}</td>
-        ${fmts.map(f=>`<td><input type="checkbox" data-h="${h.id}" data-f="${f.key}"></td>`).join('')}</tr>`).join('')}
-    </table></div>
-    <div class="muted" style="margin-top:8px">Formats marked · render with no baked-in text (clean product image).</div>`;
-  $('selAll').onclick=()=>document.querySelectorAll('#gridTbl input').forEach(c=>c.checked=true);
-  $('selNone').onclick=()=>document.querySelectorAll('#gridTbl input').forEach(c=>c.checked=false);
-  $('btnGenerate').onclick=runBatch;
-}
-
-async function runBatch(){
-  const boxes=[...document.querySelectorAll('#gridTbl input:checked')];
-  if(!boxes.length){alert('Select at least one cell.');return;}
-  if(!DETAIL.photos.length && !confirm('No reference photo uploaded — the model will invent the product. Continue?'))return;
-  const pairs=boxes.map(c=>({hook_id:+c.dataset.h,format_key:c.dataset.f}));
-  const aspect=$('genAspect').value;
-  const btn=$('btnGenerate'); btn.disabled=true;
-  const st=$('genStatus');
-  st.textContent='Queuing…';
-  const q=await (await fetch('/api/adstudio/queue',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({product_id:PID,pairs,aspect_ratio:aspect})})).json();
-  const ids=q.queued||[];
+/* ---------- IMAGES ---------- */
+async function genImages(){
+  if(!PID){alert('Pick a product');return;}
+  if(!DETAIL.photos.length && !confirm('No reference photo — the model will invent the product. Continue?'))return;
+  const btn=$('btnGenImages');btn.disabled=true;const st=$('imgStatus');
+  st.innerHTML='<span class="spinner"></span> Claude inventing concepts…';
+  const q=await (await fetch('/api/adstudio/product/'+PID+'/gen-images',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({n:+$('imgN').value,aspect_ratio:$('imgAspect').value})})).json();
+  if(q.error){st.textContent='⚠ '+q.error;btn.disabled=false;return;}
+  const ids=(q.queued||[]).map(x=>x.id);await loadImages();
   let done=0,failed=0;
   for(let i=0;i<ids.length;i++){
-    st.innerHTML=`<span class="spinner"></span> ${i+1}/${ids.length} (done ${done}, failed ${failed})`;
+    st.innerHTML=`<span class="spinner"></span> rendering ${i+1}/${ids.length} (done ${done}${failed?', failed '+failed:''})`;
     let ok=false;
-    for(let attempt=0;attempt<3 && !ok;attempt++){
-      const r=await fetch('/api/adstudio/ad/'+ids[i]+'/run',{method:'POST'});
-      if(r.status===429){st.innerHTML=`⏳ rate-limited, waiting… ${i+1}/${ids.length}`;await sleep(15000);continue;}
-      const d=await r.json(); ok=(d.status==='done'); if(!ok)break;
-    }
-    ok?done++:failed++;
+    for(let a=0;a<3&&!ok;a++){const r=await fetch('/api/adstudio/image/'+ids[i]+'/run',{method:'POST'});if(r.status===429){st.innerHTML=`⏳ rate-limited, waiting… ${i+1}/${ids.length}`;await sleep(15000);continue;}const d=await r.json();ok=d.status==='done';if(!ok)break;}
+    ok?done++:failed++; await loadImages();
   }
-  st.textContent=`✅ ${done} generated${failed?`, ${failed} failed`:''}.`;
-  btn.disabled=false;
-  document.querySelector('.tab[data-pane="pGal"]').click();
+  st.textContent=`✅ ${done} new image${done!==1?'s':''}${failed?`, ${failed} failed (use ↻ to retry)`:''}.`;btn.disabled=false;
+}
+async function runPending(){
+  if(!PID){alert('Pick a product');return;}
+  const btn=$('btnRunPending'), st=$('imgStatus');
+  const all=(await (await fetch('/api/adstudio/images?product_id='+PID)).json()).images;
+  const ids=all.filter(x=>x.status==='failed'||x.status==='queued').map(x=>x.id);
+  if(!ids.length){st.textContent='Nothing pending — all images are done.';return;}
+  btn.disabled=true; let done=0,failed=0;
+  for(let i=0;i<ids.length;i++){
+    st.innerHTML=`<span class="spinner"></span> running ${i+1}/${ids.length} (done ${done}${failed?', failed '+failed:''})`;
+    let ok=false;
+    for(let a=0;a<3&&!ok;a++){const r=await fetch('/api/adstudio/image/'+ids[i]+'/run',{method:'POST'});if(r.status===429){st.innerHTML=`⏳ rate-limited, waiting… ${i+1}/${ids.length}`;await sleep(15000);continue;}const d=await r.json();ok=d.status==='done';if(!ok)break;}
+    ok?done++:failed++; await loadImages();
+  }
+  st.textContent=`✅ ${done} rendered${failed?`, ${failed} still failed (try again)`:''}.`; btn.disabled=false;
+}
+async function loadImages(){
+  if(!PID){$('imgBody').innerHTML='<div class="empty">Select a product.</div>';return;}
+  const d=await (await fetch('/api/adstudio/images?product_id='+PID)).json();
+  $('imgBody').innerHTML=d.images.map(im=>`<div class="ad"><div class="imgwrap">${im.has_image?`<img src="/api/adstudio/image-file/${im.id}?t=${Date.now()}">`:`<span class="ph">${im.status==='failed'?'✕ '+(im.error_message||'failed').slice(0,60):im.status}</span>`}</div>
+    <div class="meta"><span class="ttl">${esc(im.title||'')}</span> <span class="badge b-${im.status}">${im.status}</span><div class="muted">${esc(im.archetype||'')}</div></div>
+    <div class="acts"><button data-regen="${im.id}">↻ fix / retry</button><button data-fav="${im.id}">${im.is_favorite?'★':'☆'}</button>${im.has_image?`<button data-use="${im.id}">✏️ compose</button>`:''}<button data-del="${im.id}">🗑</button></div></div>`).join('')||'<div class="empty">No images yet — click “Generate fresh”.</div>';
+  document.querySelectorAll('[data-regen]').forEach(b=>b.onclick=async()=>{
+    const fix=prompt("What's wrong with this image? Tell the app what to fix — e.g.\n\"the label is wrong; the cherries should be Rainier (blush-yellow), not solid red\"\n\nLeave blank to just retry as-is.");
+    if(fix===null)return;
+    b.textContent='…';
+    await fetch('/api/adstudio/image/'+b.dataset.regen+'/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fix:fix||''})});
+    loadImages();});
+  document.querySelectorAll('#imgBody [data-fav]').forEach(b=>b.onclick=async()=>{await fetch('/api/adstudio/image/'+b.dataset.fav+'/favorite',{method:'POST'});loadImages();});
+  document.querySelectorAll('#imgBody [data-del]').forEach(b=>b.onclick=async()=>{await fetch('/api/adstudio/image/'+b.dataset.del+'/delete',{method:'POST'});loadImages();});
+  document.querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{COMPOSE.imageId=+b.dataset.use;document.querySelector('.tab[data-pane="pCompose"]').click();});
 }
 
-/* ---- GALLERY ---- */
+/* ---------- COMPOSE ---------- */
+async function renderCompose(){
+  if(!PID){$('composeBody').innerHTML='<div class="empty">Select a product.</div>';return;}
+  const imgs=(await (await fetch('/api/adstudio/images?product_id='+PID)).json()).images.filter(i=>i.has_image);
+  const hooks=DETAIL.hooks;
+  if(!imgs.length){$('composeBody').innerHTML='<div class="empty">Generate some images first (Images tab).</div>';return;}
+  if(!COMPOSE.imageId)COMPOSE.imageId=imgs[0].id;
+  const L=COMPOSE.layout;
+  $('composeBody').innerHTML=`
+    <label class="fl">1 · Pick a base image</label>
+    <div class="strip" id="strip">${imgs.map(i=>`<div class="pick ${i.id===COMPOSE.imageId?'sel':''}" data-id="${i.id}"><img src="/api/adstudio/image-file/${i.id}"></div>`).join('')}</div>
+    <div class="compose-grid" style="margin-top:14px">
+      <div>
+        <label class="fl">2 · Copy</label>
+        <select class="f" id="c_hook"><option value="">— pick a saved hook —</option>${hooks.map(h=>`<option value="${h.id}">${esc((h.headline||h.hook_text||'').slice(0,50))}</option>`).join('')}</select>
+        <label class="fl">Headline</label><input class="f" id="c_head">
+        <label class="fl">Subhead</label><input class="f" id="c_sub">
+        <label class="fl">CTA (optional button)</label><input class="f" id="c_cta">
+        <label class="fl">3 · Layout</label>
+        <div class="muted" style="margin-bottom:4px">Position</div><div class="seg" id="seg_pos">${['top','center','bottom'].map(p=>`<button data-v="${p}" class="${L.position===p?'on':''}">${p}</button>`).join('')}</div>
+        <div class="muted" style="margin:8px 0 4px">Text color</div><div class="seg" id="seg_col">${['auto','light','dark'].map(p=>`<button data-v="${p}" class="${L.color===p?'on':''}">${p}</button>`).join('')}</div>
+        <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:12px"><input type="checkbox" id="c_scrim" ${L.scrim?'checked':''}> legibility scrim</label>
+        <button class="btn btn-p" id="btnCompose" style="width:100%;margin-top:14px">Compose →</button>
+        <div class="muted" id="composeStatus" style="margin-top:6px"></div>
+      </div>
+      <div><label class="fl">Result</label><img class="preview" id="composePreview" style="display:none"><div class="muted" id="composeHint">Set copy and hit Compose. It saves to Gallery.</div></div>
+    </div>`;
+  document.querySelectorAll('#strip .pick').forEach(el=>el.onclick=()=>{COMPOSE.imageId=+el.dataset.id;document.querySelectorAll('#strip .pick').forEach(x=>x.classList.toggle('sel',x===el));});
+  $('c_hook').onchange=e=>{const h=hooks.find(x=>x.id==e.target.value);if(h){$('c_head').value=h.headline||h.hook_text||'';$('c_sub').value=h.subhead||'';$('c_cta').value=h.cta||'';}};
+  document.querySelectorAll('#seg_pos button').forEach(b=>b.onclick=()=>{L.position=b.dataset.v;document.querySelectorAll('#seg_pos button').forEach(x=>x.classList.toggle('on',x===b));});
+  document.querySelectorAll('#seg_col button').forEach(b=>b.onclick=()=>{L.color=b.dataset.v;document.querySelectorAll('#seg_col button').forEach(x=>x.classList.toggle('on',x===b));});
+  $('btnCompose').onclick=doCompose;
+}
+async function doCompose(){
+  const L=COMPOSE.layout; L.scrim=$('c_scrim').checked;
+  const body={image_id:COMPOSE.imageId,headline:$('c_head').value,subhead:$('c_sub').value,cta:$('c_cta').value,hook_id:$('c_hook').value||undefined,layout:L};
+  const st=$('composeStatus');st.innerHTML='<span class="spinner"></span>';
+  const d=await (await fetch('/api/adstudio/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  if(d.error){st.textContent='⚠ '+d.error;return;}
+  st.textContent='✅ Saved to Gallery';$('composeHint').style.display='none';
+  const pv=$('composePreview');pv.src='/api/adstudio/composite/'+d.id+'/image?t='+Date.now();pv.style.display='block';
+}
+
+/* ---------- GALLERY (composites) ---------- */
 async function loadGallery(){
   if(!PID){$('galBody').innerHTML='<div class="empty">Select a product.</div>';return;}
-  $('btnDownloadAll').href='/api/adstudio/export?product_id='+PID;
-  const d=await (await fetch('/api/adstudio/ads?product_id='+PID)).json();
-  $('galCount').textContent=d.ads.length+' ads';
-  const fmtName=k=>{const f=CFG.formats.find(x=>x.key===k);return f?f.name:k;};
-  $('galBody').innerHTML=d.ads.map(a=>`
-    <div class="ad">
-      <div class="imgwrap">${a.has_image?`<img src="/api/adstudio/ad/${a.id}/image?t=${Date.now()}">`:`<span class="ph">${a.status==='failed'?'✕ failed':'…'}</span>`}</div>
-      <div class="meta"><span class="fmt">${esc(fmtName(a.format_key))}</span>
-        <span class="badge b-${a.status}">${a.status}</span>
-        <div class="muted" style="margin-top:3px">${esc(a.headline||a.hook_text||'')}</div>
-        ${a.error_message?`<div class="muted" style="color:var(--red)">${esc(a.error_message.slice(0,90))}</div>`:''}
-      </div>
-      <div class="acts">
-        ${a.has_image?`<a href="/api/adstudio/ad/${a.id}/image" download="ad${a.id}.png">⬇</a>`:''}
-        <button data-fav="${a.id}">${a.is_favorite?'★':'☆'}</button>
-        <button data-del="${a.id}">🗑</button>
-      </div>
-    </div>`).join('')||'<div class="empty">No ads yet — generate some.</div>';
-  document.querySelectorAll('[data-fav]').forEach(b=>b.onclick=async()=>{await fetch('/api/adstudio/ad/'+b.dataset.fav+'/favorite',{method:'POST'});loadGallery();});
-  document.querySelectorAll('.ad [data-del]').forEach(b=>b.onclick=async()=>{await fetch('/api/adstudio/ad/'+b.dataset.del+'/delete',{method:'POST'});loadGallery();});
+  $('btnDownloadAll').href='/api/adstudio/export-composites?product_id='+PID;
+  const d=await (await fetch('/api/adstudio/composites?product_id='+PID)).json();
+  $('galCount').textContent=d.composites.length+' ads';
+  $('galBody').innerHTML=d.composites.map(a=>`<div class="ad"><div class="imgwrap">${a.has_image?`<img src="/api/adstudio/composite/${a.id}/image?t=${Date.now()}">`:'<span class="ph">…</span>'}</div>
+    <div class="meta"><div class="muted">${esc(a.headline||'')}</div></div>
+    <div class="acts">${a.has_image?`<a href="/api/adstudio/composite/${a.id}/image" download="ad${a.id}.png">⬇</a>`:''}<button data-fav="${a.id}">${a.is_favorite?'★':'☆'}</button><button data-del="${a.id}">🗑</button></div></div>`).join('')||'<div class="empty">No finished ads yet — Compose some.</div>';
+  document.querySelectorAll('#galBody [data-fav]').forEach(b=>b.onclick=async()=>{await fetch('/api/adstudio/composite/'+b.dataset.fav+'/favorite',{method:'POST'});loadGallery();});
+  document.querySelectorAll('#galBody [data-del]').forEach(b=>b.onclick=async()=>{await fetch('/api/adstudio/composite/'+b.dataset.del+'/delete',{method:'POST'});loadGallery();});
 }
-
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 boot();

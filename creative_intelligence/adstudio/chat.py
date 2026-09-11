@@ -63,11 +63,16 @@ def _image_blocks(data_uris: list[str]) -> list[dict[str, Any]]:
 def _product_line(product: dict[str, Any]) -> str:
     bits = [f"Product: {product.get('name','(unnamed)')}"]
     if product.get("scent_notes"):
-        bits.append(f"Scent/notes: {product['scent_notes']}")
-    if product.get("description"):
-        bits.append(f"Description: {product['description']}")
+        bits.append(f"Scent notes (the ONLY ingredients): {product['scent_notes']}")
     if product.get("physical_desc"):
         bits.append(f"Looks like: {product['physical_desc']}")
+    if product.get("description"):
+        bits.append(f"Description: {product['description']}")
+    if product.get("notes"):
+        bits.append(
+            "OPERATOR CONTEXT & NOTES (authoritative — honor these exactly, and "
+            "elaborate them into concrete photographic detail in your scenes):\n"
+            f"{product['notes']}")
     return "\n".join(bits)
 
 
@@ -106,6 +111,34 @@ def suggest_hooks(product: dict[str, Any], n: int = 4,
     content: list[dict[str, Any]] = list(imgs) + [{"type": "text", "text": ask}]
     r = c.messages.create(
         model=MODEL, max_tokens=2000, system=SYSTEM,
+        messages=[{"role": "user", "content": content}],
+    )
+    text = "".join(b.text for b in r.content if getattr(b, "type", "") == "text")
+    return _parse_hooks(text)
+
+
+def extract_hooks(product: dict[str, Any], messages: list[dict[str, str]],
+                  image_data_uris: list[str] | None = None) -> list[dict]:
+    """Pull every distinct hook already written in a chat into structured JSON.
+
+    Uses the exact wording from the conversation — does not invent new hooks.
+    """
+    c = _client()
+    convo = "\n\n".join(f"{m['role'].upper()}: {m['text']}" for m in messages)
+    ask = (
+        f"{_product_line(product)}\n\n"
+        "Below is a brainstorming conversation. Extract EVERY distinct ad hook that "
+        "was written in it into structured JSON. Preserve the EXACT wording of the "
+        "hook line, body, and CTA in hook_text / body / cta — do not invent new hooks "
+        "or reword them. The one exception: if a hook has no short on-image headline, "
+        "distill a punchy ≤6-word `headline` from that hook (concise phrasing of your "
+        "own is fine here) so it's ready to place on an image; still keep the full "
+        "original line in `hook_text`. Leave body/cta empty only if truly absent.\n\n"
+        f"CONVERSATION:\n{convo}\n\n{_HOOK_SCHEMA}"
+    )
+    content = _image_blocks(image_data_uris or []) + [{"type": "text", "text": ask}]
+    r = c.messages.create(
+        model=MODEL, max_tokens=3000, system=SYSTEM,
         messages=[{"role": "user", "content": content}],
     )
     text = "".join(b.text for b in r.content if getattr(b, "type", "") == "text")

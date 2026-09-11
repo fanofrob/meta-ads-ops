@@ -201,8 +201,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     description   TEXT DEFAULT '',
     scent_notes   TEXT DEFAULT '',
     physical_desc TEXT DEFAULT '',
+    notes         TEXT DEFAULT '',
     created_at    TEXT DEFAULT (datetime('now'))
 )""",
+        # add notes to existing DBs (no-op / silently ignored where it exists)
+        "ALTER TABLE adstudio_products ADD COLUMN notes TEXT DEFAULT ''",
         """CREATE TABLE IF NOT EXISTS adstudio_photos (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     product_id  INTEGER NOT NULL,
@@ -245,6 +248,39 @@ def _migrate(conn: sqlite3.Connection) -> None:
 )""",
         """CREATE INDEX IF NOT EXISTS idx_adstudio_ads_product
    ON adstudio_ads(product_id, created_at DESC)""",
+        # Ad Studio v2 — text-free image library (diversity seeds) + composites.
+        """CREATE TABLE IF NOT EXISTS adstudio_images (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id    INTEGER NOT NULL,
+    archetype     TEXT DEFAULT '',
+    title         TEXT DEFAULT '',
+    concept       TEXT NOT NULL DEFAULT '',
+    prompt        TEXT NOT NULL DEFAULT '',
+    aspect_ratio  TEXT NOT NULL DEFAULT '4:5',
+    model         TEXT DEFAULT '',
+    status        TEXT NOT NULL DEFAULT 'queued',
+    image_path    TEXT,
+    error_message TEXT,
+    is_favorite   INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT DEFAULT (datetime('now'))
+)""",
+        """CREATE INDEX IF NOT EXISTS idx_adstudio_images_product
+   ON adstudio_images(product_id, created_at DESC)""",
+        """CREATE TABLE IF NOT EXISTS adstudio_composites (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id   INTEGER NOT NULL,
+    image_id     INTEGER NOT NULL,
+    hook_id      INTEGER,
+    headline     TEXT DEFAULT '',
+    subhead      TEXT DEFAULT '',
+    cta          TEXT DEFAULT '',
+    layout_json  TEXT DEFAULT '{}',
+    output_path  TEXT,
+    is_favorite  INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT DEFAULT (datetime('now'))
+)""",
+        """CREATE INDEX IF NOT EXISTS idx_adstudio_composites_product
+   ON adstudio_composites(product_id, created_at DESC)""",
     ]
     for stmt in migrations:
         try:
