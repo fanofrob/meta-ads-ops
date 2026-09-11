@@ -316,7 +316,10 @@ async function renderCompose(){
         <div class="muted" style="margin-bottom:4px">Position</div><div class="seg" id="seg_pos">${['top','center','bottom'].map(p=>`<button data-v="${p}" class="${L.position===p?'on':''}">${p}</button>`).join('')}</div>
         <div class="muted" style="margin:8px 0 4px">Text color</div><div class="seg" id="seg_col">${['auto','light','dark'].map(p=>`<button data-v="${p}" class="${L.color===p?'on':''}">${p}</button>`).join('')}</div>
         <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:12px"><input type="checkbox" id="c_scrim" ${L.scrim?'checked':''}> legibility scrim</label>
-        <button class="btn btn-p" id="btnCompose" style="width:100%;margin-top:14px">Compose →</button>
+        <button class="btn btn-p" id="btnCompose" style="width:100%;margin-top:14px">Compose → this image</button>
+        <label class="fl" style="margin-top:12px">Bulk</label>
+        <button class="btn" id="btnComposeAll" style="width:100%">↧ This copy → all ${imgs.length} images</button>
+        <button class="btn" id="btnComposeMatrix" style="width:100%;margin-top:6px">⊞ Every hook × every image (${hooks.length}×${imgs.length}=${hooks.length*imgs.length})</button>
         <div class="muted" id="composeStatus" style="margin-top:6px"></div>
       </div>
       <div><label class="fl">Result</label><img class="preview" id="composePreview" style="display:none"><div class="muted" id="composeHint">Set copy and hit Compose. It saves to Gallery.</div></div>
@@ -326,6 +329,29 @@ async function renderCompose(){
   document.querySelectorAll('#seg_pos button').forEach(b=>b.onclick=()=>{L.position=b.dataset.v;document.querySelectorAll('#seg_pos button').forEach(x=>x.classList.toggle('on',x===b));});
   document.querySelectorAll('#seg_col button').forEach(b=>b.onclick=()=>{L.color=b.dataset.v;document.querySelectorAll('#seg_col button').forEach(x=>x.classList.toggle('on',x===b));});
   $('btnCompose').onclick=doCompose;
+  $('btnComposeAll').onclick=()=>doComposeBulk('all');
+  $('btnComposeMatrix').onclick=()=>doComposeBulk('matrix');
+}
+async function doComposeBulk(mode){
+  const L=COMPOSE.layout; L.scrim=$('c_scrim').checked;
+  const imgs=(await (await fetch('/api/adstudio/images?product_id='+PID)).json()).images.filter(i=>i.has_image);
+  const image_ids=imgs.map(i=>i.id);
+  if(!image_ids.length){alert('No finished images yet.');return;}
+  const body={product_id:PID,layout:L,image_ids};
+  if(mode==='matrix'){
+    body.hook_ids=DETAIL.hooks.map(h=>h.id);
+    if(!body.hook_ids.length){alert('Save some hooks first (Setup tab).');return;}
+    if(!confirm(`Make ${body.hook_ids.length} hooks × ${image_ids.length} images = ${body.hook_ids.length*image_ids.length} ads?`))return;
+  }else{
+    if(!$('c_head').value.trim() && !$('c_sub').value.trim()){alert('Enter copy (or pick a hook) first.');return;}
+    body.copies=[{headline:$('c_head').value,subhead:$('c_sub').value,cta:$('c_cta').value,hook_id:$('c_hook').value||undefined}];
+    if(!confirm(`Apply this copy to all ${image_ids.length} images?`))return;
+  }
+  const st=$('composeStatus');st.innerHTML='<span class="spinner"></span> composing…';
+  const d=await (await fetch('/api/adstudio/compose-bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  if(d.error){st.textContent='⚠ '+d.error;return;}
+  st.textContent=`✅ Made ${d.made} ads → Gallery`;
+  document.querySelector('.tab[data-pane="pGal"]').click();
 }
 async function doCompose(){
   const L=COMPOSE.layout; L.scrim=$('c_scrim').checked;

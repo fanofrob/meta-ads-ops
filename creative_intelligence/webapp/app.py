@@ -4151,6 +4151,79 @@ def adstudio_compose() -> Any:
         return jsonify({"error": str(exc)[:300]}), 500
 
 
+@app.post("/api/adstudio/compose-bulk")
+def adstudio_compose_bulk() -> Any:
+    """Compose copy onto many images at once.
+
+    Body: {product_id, layout, image_ids?(default: all done images),
+           copies?[{headline,subhead,cta,hook_id}] OR hook_ids?[...] OR single
+           headline/subhead/cta}. Every copy is drawn onto every image.
+    """
+    from creative_intelligence.adstudio.overlay import compose
+    from creative_intelligence.adstudio.store import composites_dir
+    import json as _json
+    d = request.get_json(force=True, silent=True) or {}
+    pid = int(d.get("product_id", 0))
+    layout = d.get("layout") or {}
+    conn = _db()
+
+    if d.get("image_ids"):
+        ids = [int(x) for x in d["image_ids"]]
+        q = ("SELECT id, image_path FROM adstudio_images WHERE image_path IS NOT NULL"
+             " AND id IN (%s)" % ",".join("?" * len(ids)))
+        imgs = [dict(r) for r in conn.execute(q, ids).fetchall()]
+    else:
+        imgs = [dict(r) for r in conn.execute(
+            "SELECT id, image_path FROM adstudio_images WHERE product_id=?"
+            " AND image_path IS NOT NULL", (pid,)).fetchall()]
+
+    copies = d.get("copies")
+    if not copies:
+        if d.get("hook_ids"):
+            hooks = {r["id"]: dict(r) for r in conn.execute(
+                "SELECT * FROM adstudio_hooks WHERE product_id=?", (pid,)).fetchall()}
+            copies = [{
+                "hook_id": hid,
+                "headline": hooks[hid].get("headline") or hooks[hid].get("hook_text") or "",
+                "subhead": hooks[hid].get("subhead", ""),
+                "cta": hooks[hid].get("cta", ""),
+            } for hid in d["hook_ids"] if hid in hooks]
+        else:
+            copies = [{"headline": d.get("headline", ""), "subhead": d.get("subhead", ""),
+                       "cta": d.get("cta", "")}]
+
+    total = len(imgs) * len(copies)
+    if total == 0:
+        conn.close(); return jsonify({"error": "nothing to compose"}), 400
+    if total > 300:
+        conn.close(); return jsonify({"error": f"{total} composites is too many at once (max 300)"}), 400
+
+    made = 0
+    for im in imgs:
+        if not Path(im["image_path"]).exists():
+            continue
+        for cp in copies:
+            with conn:
+                cur = conn.execute(
+                    "INSERT INTO adstudio_composites (product_id, image_id, hook_id,"
+                    " headline, subhead, cta, layout_json) VALUES (?,?,?,?,?,?,?)",
+                    (pid, im["id"], cp.get("hook_id"), cp.get("headline", ""),
+                     cp.get("subhead", ""), cp.get("cta", ""), _json.dumps(layout)))
+            cid = cur.lastrowid
+            out = str(composites_dir() / f"comp{cid}.png")
+            try:
+                compose(im["image_path"], out, headline=cp.get("headline", ""),
+                        subhead=cp.get("subhead", ""), cta=cp.get("cta", ""), layout=layout)
+                with conn:
+                    conn.execute("UPDATE adstudio_composites SET output_path=? WHERE id=?",
+                                 (out, cid))
+                made += 1
+            except Exception:
+                app.logger.exception("bulk compose item failed")
+    conn.close()
+    return jsonify({"made": made, "total": total})
+
+
 @app.get("/api/adstudio/composites")
 def adstudio_list_composites() -> Any:
     pid = request.args.get("product_id")
