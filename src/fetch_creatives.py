@@ -65,11 +65,11 @@ def _latest_raw_file(prefix: str) -> Path | None:
     return max(candidates, key=lambda x: x[0])[1]
 
 
-def _load_active_creative_ids(fetch_all: bool = False) -> list[str]:
+def _load_active_creative_ids(fetch_all: bool = False, window: str = "7d") -> list[str]:
     """Return creative IDs to fetch.
 
-    By default: only creatives from ads that have spend in the latest 7d
-    insights file — keeps the fetch small and focused.
+    By default: only creatives from ads that have spend in the latest
+    insights_<window> file (7d or 30d) — keeps the fetch small and focused.
     With fetch_all=True: all creative IDs from the latest ads file.
     """
     ads_file = _latest_raw_file("ads")
@@ -89,17 +89,17 @@ def _load_active_creative_ids(fetch_all: bool = False) -> list[str]:
         print(f"  Using all {len(ids)} unique creative IDs")
         return ids
 
-    # Filter to ads with spend in the latest 7d insights file
-    insights_file = _latest_raw_file("insights_7d")
+    # Filter to ads with spend in the latest insights file for the window
+    insights_file = _latest_raw_file(f"insights_{window}")
     if not insights_file:
-        print("[WARN] No insights_7d_*.json found — falling back to all ads.")
+        print(f"[WARN] No insights_{window}_*.json found — falling back to all ads.")
         ids = list({a["creative"]["id"] for a in ads if a.get("creative", {}).get("id")})
         print(f"  Using {len(ids)} creative IDs (no insights filter)")
         return ids
 
     insights = json.loads(insights_file.read_text())
     active_ad_ids = {row["ad_id"] for row in insights if row.get("ad_id")}
-    print(f"  {len(active_ad_ids)} ads have 7d spend (from {insights_file.name})")
+    print(f"  {len(active_ad_ids)} ads have {window} spend (from {insights_file.name})")
 
     ad_id_to_creative = {
         a["id"]: a["creative"]["id"]
@@ -153,6 +153,12 @@ def main() -> None:
         help="Fetch creatives for ALL ads, not just 7d-active ads.",
     )
     parser.add_argument(
+        "--window",
+        choices=["7d", "30d"],
+        default="7d",
+        help="Which insights window decides the 'active' ads (default 7d).",
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=None,
@@ -166,7 +172,7 @@ def main() -> None:
     print(f"  Account ID : {env['META_AD_ACCOUNT_ID']}")
     print(f"  API version: {env['META_API_VERSION']}\n")
 
-    creative_ids = _load_active_creative_ids(fetch_all=args.all)
+    creative_ids = _load_active_creative_ids(fetch_all=args.all, window=args.window)
 
     if args.limit:
         creative_ids = creative_ids[: args.limit]

@@ -161,3 +161,11 @@ def test_no_patterns_and_no_idea_is_rejected(client):
     pid = client.post("/api/adstudio/products", json={"name": "Mango"}).get_json()["id"]
     r = client.post(f"/api/adstudio/product/{pid}/suggest-hooks", json={"pattern": "auto"})
     assert r.status_code == 400 and "sync from Meta" in r.get_json()["error"]
+
+
+def test_sync_steps_read_env_fresh(tmp_path, monkeypatch):
+    """A token pasted into .env while the server runs beats the stale inherited one."""
+    (tmp_path / ".env").write_text("META_ACCESS_TOKEN=new-token\n")
+    monkeypatch.setattr(meta_sync, "ROOT", tmp_path)
+    monkeypatch.setenv("META_ACCESS_TOKEN", "old-token")
+    assert meta_sync._step_env()["META_ACCESS_TOKEN"] == "new-token"

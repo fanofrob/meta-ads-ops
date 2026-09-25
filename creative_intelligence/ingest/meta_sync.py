@@ -5,7 +5,8 @@ Chains the existing read-only pipeline:
 
   src/fetch_campaigns.py, fetch_adsets.py, fetch_ads.py, fetch_insights.py
       → data/raw/*.json                      (GET only, logged to outputs/api.log)
-  ci ingest   → creatives + creative_performance (also fetches ad copy, GET only)
+  src/fetch_creatives.py --window 30d → ad copy for ads that spent in the window
+  ci ingest --skip-copy-fetch → creatives + creative_performance (from data/raw)
   ci tag      → rule-based tags
   ci extract-patterns --date-range 30d → creative_patterns
 
@@ -15,6 +16,7 @@ write endpoint. Progress is recorded in meta_sync_runs so the UI can poll it.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import threading
@@ -32,7 +34,8 @@ STEPS: list[tuple[str, list[str]]] = [
     ("Fetching yesterday's results", ["src/fetch_insights.py"]),
     ("Fetching 7-day results", ["src/fetch_insights.py", "--last7d"]),
     ("Fetching 30-day results", ["src/fetch_insights.py", "--historical"]),
-    ("Importing ads + copy", ["-m", "creative_intelligence.cli", "ingest"]),
+    ("Fetching ad copy", ["src/fetch_creatives.py", "--window", DATE_RANGE]),
+    ("Importing ads + copy", ["-m", "creative_intelligence.cli", "ingest", "--skip-copy-fetch"]),
     ("Tagging ads", ["-m", "creative_intelligence.cli", "tag"]),
     ("Finding winning patterns", ["-m", "creative_intelligence.cli", "extract-patterns",
                                   "--date-range", DATE_RANGE]),
@@ -73,9 +76,21 @@ def repair_null_ids(conn: Any) -> int:
     return cur.rowcount
 
 
+def _step_env() -> dict[str, str]:
+    """
+    The web server's environment with .env re-read on top, so a token pasted
+    into .env while the app is running is used. (load_dotenv in the child
+    never overrides a variable it inherited, so the stale value would win.)
+    """
+    from dotenv import dotenv_values
+    env = os.environ.copy()
+    env.update({k: v for k, v in dotenv_values(ROOT / ".env").items() if v is not None})
+    return env
+
+
 def _run_step(argv: list[str]) -> tuple[int, str]:
     p = subprocess.run([sys.executable, *argv], cwd=ROOT, capture_output=True, text=True,
-                       timeout=1800)
+                       timeout=1800, env=_step_env())
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 
@@ -96,7 +111,7 @@ def run_sync(conn_factory: Callable[[], Any], run_id: int,
             if code != 0:
                 update(status="failed", finished_at=_now(), message=f"{label}: {friendly_error(out)}")
                 return
-            if argv[-1] == "ingest":
+            if "ingest" in argv:
                 conn = conn_factory()
                 repair_null_ids(conn)
                 conn.close()

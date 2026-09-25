@@ -43,7 +43,8 @@ def pattern_label(pattern_name: str) -> str:
     return " · ".join(parts)
 
 
-def _examples(conn: Any, ids_json: str, limit: int = 3) -> list[dict[str, Any]]:
+def _examples(conn: Any, ids_json: str, limit: int = 3,
+              date_range: str = "30d") -> list[dict[str, Any]]:
     """
     The real winning ads behind a pattern. Joined through creative_performance
     by ad_id, which also works for legacy rows whose creatives.id was lost.
@@ -58,7 +59,8 @@ def _examples(conn: Any, ids_json: str, limit: int = 3) -> list[dict[str, Any]]:
             "SELECT c.ad_name, c.headline, c.hook_text, c.primary_text, p.roas, p.cpa, p.spend"
             " FROM creative_performance p JOIN creatives c ON c.ad_id = p.ad_id"
             " WHERE p.creative_id = ? AND (c.primary_text <> '' OR c.headline <> '')"
-            " ORDER BY p.snapshot_date DESC LIMIT 1", (cid,)).fetchone()
+            " ORDER BY p.date_range = ? DESC, p.snapshot_date DESC LIMIT 1",
+            (cid, date_range)).fetchone()
         key = ((r["headline"] or "") + (r["primary_text"] or ""))[:200] if r else None
         if r and key not in seen:
             seen.add(key)
@@ -119,7 +121,8 @@ def current_patterns(conn: Any, limit: int = 12, with_examples: bool = True) -> 
             break
         p["label"] = pattern_label(p["pattern_name"])
         if with_examples:
-            p["examples"] = _examples(conn, p.get("example_creative_ids"))
+            p["examples"] = _examples(conn, p.get("example_creative_ids"),
+                                      date_range=(last_ok or {}).get("date_range") or "7d")
         out.append(p)
     return out
 
