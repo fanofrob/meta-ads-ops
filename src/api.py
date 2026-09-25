@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import requests
@@ -36,9 +37,20 @@ _RETRYABLE_CODES = {1, 2, 4, 17, 341}  # unknown/service unavailable/rate limit
 _MAX_RETRIES = 4
 
 
+API_LOG = Path("outputs/api.log")
+
+
+def _log_call(url: str) -> None:
+    """Append timestamp + endpoint to outputs/api.log (no query string, so no token)."""
+    API_LOG.parent.mkdir(parents=True, exist_ok=True)
+    with API_LOG.open("a") as f:
+        f.write(f"{datetime.now().isoformat()} GET {url.split('?', 1)[0]}\n")
+
+
 def _get(url: str, params: dict) -> dict:
     """Make a single GET request with exponential backoff for transient errors."""
     for attempt in range(_MAX_RETRIES):
+        _log_call(url)
         try:
             response = requests.get(url, params=params, timeout=60)
         except requests.exceptions.ConnectionError:
