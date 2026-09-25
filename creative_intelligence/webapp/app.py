@@ -4148,10 +4148,18 @@ def adstudio_list_images() -> Any:
 
 def _bulk_apply(table: str, action: str, ids: list[int]) -> int:
     """Apply a bulk action to rows of a table; returns affected count."""
+    from datetime import datetime as _dt
     ids = [int(x) for x in ids if str(x).isdigit()]
     if not ids:
         return 0
     ph = ",".join("?" * len(ids))
+    if table == "adstudio_composites" and action in _REVIEW_SQL:
+        conn = _db()
+        with conn:
+            cur = conn.execute(f"UPDATE adstudio_composites SET {_REVIEW_SQL[action]},"
+                               f" reviewed_at=? WHERE id IN ({ph})", [_dt.utcnow().isoformat(), *ids])
+        conn.close()
+        return cur.rowcount
     ops = {
         "favorite":   f"UPDATE {table} SET is_favorite=1 WHERE id IN ({ph})",
         "unfavorite": f"UPDATE {table} SET is_favorite=0 WHERE id IN ({ph})",
@@ -4166,6 +4174,51 @@ def _bulk_apply(table: str, action: str, ids: list[int]) -> int:
         cur = conn.execute(ops[action], ids)
     conn.close()
     return cur.rowcount
+
+
+# Gallery review states. Ready implies approved; rejecting clears ready.
+_REVIEW_SQL = {
+    "approve": "review_status='approved'",
+    "reject":  "review_status='rejected', is_ready=0",
+    "ready":   "review_status='approved', is_ready=1",
+    "unready": "is_ready=0",
+    "clear":   "review_status='', is_ready=0",
+}
+
+
+@app.post("/api/adstudio/composite/<int:comp_id>/review")
+def adstudio_review_composite(comp_id: int) -> Any:
+    """
+    Body: {action: approve|reject|ready|clear, notes?}. approve / reject /
+    ready toggle: repeating the current state clears it (as in Render).
+    """
+    from datetime import datetime as _dt
+    d = request.get_json(force=True, silent=True) or {}
+    action = d.get("action", "")
+    conn = _db()
+    row = conn.execute("SELECT review_status, is_ready FROM adstudio_composites WHERE id=?",
+                       (comp_id,)).fetchone()
+    if row is None:
+        conn.close(); return jsonify({"error": "not found"}), 404
+    if action == "approve" and row["review_status"] == "approved" and not row["is_ready"]:
+        action = "clear"
+    elif action == "reject" and row["review_status"] == "rejected":
+        action = "clear"
+    elif action == "ready" and row["is_ready"]:
+        action = "unready"
+    if action and action not in _REVIEW_SQL:
+        conn.close(); return jsonify({"error": f"bad action {action!r}"}), 400
+    with conn:
+        if action:
+            conn.execute(f"UPDATE adstudio_composites SET {_REVIEW_SQL[action]}, reviewed_at=?"
+                         " WHERE id=?", (_dt.utcnow().isoformat(), comp_id))
+        if "notes" in d:
+            conn.execute("UPDATE adstudio_composites SET review_notes=? WHERE id=?",
+                         ((d.get("notes") or "").strip(), comp_id))
+    r = dict(conn.execute("SELECT id, review_status, is_ready, review_notes FROM adstudio_composites"
+                          " WHERE id=?", (comp_id,)).fetchone())
+    conn.close()
+    return jsonify(r)
 
 
 @app.post("/api/adstudio/images/bulk")
@@ -4371,17 +4424,34 @@ def adstudio_list_composites() -> Any:
     pid = request.args.get("product_id")
     include_archived = request.args.get("include_archived") == "1"
     conn = _db()
-    sql = ("SELECT id, product_id, image_id, headline, is_favorite, archived, created_at,"
-           " output_path IS NOT NULL AS has_image FROM adstudio_composites WHERE 1=1")
+    review = request.args.get("review", "")
+    sql = ("SELECT c.id, c.product_id, c.image_id, c.hook_id, c.headline, c.subhead, c.cta,"
+           " c.is_favorite, c.archived, c.created_at, c.review_status, c.is_ready, c.review_notes,"
+           " c.output_path IS NOT NULL AS has_image, h.source AS hook_source,"
+           " h.archetype AS hook_archetype, h.pattern_id, i.core_id"
+           " FROM adstudio_composites c LEFT JOIN adstudio_hooks h ON h.id = c.hook_id"
+           " LEFT JOIN adstudio_images i ON i.id = c.image_id WHERE 1=1")
     params: list[Any] = []
     if pid:
-        sql += " AND product_id=?"; params.append(int(pid))
+        sql += " AND c.product_id=?"; params.append(int(pid))
     if not include_archived:
-        sql += " AND archived=0"
-    sql += " ORDER BY id DESC LIMIT 400"
+        sql += " AND c.archived=0"
+    review_where = {"unreviewed": " AND COALESCE(c.review_status,'')=''",
+                    "approved": " AND c.review_status='approved'",
+                    "ready": " AND c.is_ready=1",
+                    "rejected": " AND c.review_status='rejected'"}
+    sql += review_where.get(review, "")
+    sql += " ORDER BY c.id DESC LIMIT 400"
     rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    csql = ("SELECT COALESCE(review_status,'') AS s, is_ready FROM adstudio_composites"
+            " WHERE (? IS NULL OR product_id=?)" + ("" if include_archived else " AND archived=0"))
+    counts = {"all": 0, "unreviewed": 0, "approved": 0, "ready": 0, "rejected": 0}
+    for r in conn.execute(csql, (pid, int(pid) if pid else None)).fetchall():
+        counts["all"] += 1
+        counts[r["s"] or "unreviewed"] = counts.get(r["s"] or "unreviewed", 0) + 1
+        counts["ready"] += 1 if r["is_ready"] else 0
     conn.close()
-    return jsonify({"composites": rows})
+    return jsonify({"composites": rows, "counts": counts})
 
 
 @app.get("/api/adstudio/composite/<int:comp_id>/image")
@@ -4418,21 +4488,46 @@ def adstudio_del_composite(comp_id: int) -> Any:
 
 @app.get("/api/adstudio/export-composites")
 def adstudio_export_composites() -> Any:
-    import io, zipfile
+    """
+    Zip a product's finished ads. ?ready=1 → launch kit: only ads marked
+    ready, plus manifest.csv (file, copy, primary text, pattern, notes) for
+    uploading to Ads Manager.
+    """
+    import csv, io, re as _re, zipfile
     pid = request.args.get("product_id")
+    ready = request.args.get("ready") == "1"
     conn = _db()
-    rows = conn.execute(
-        "SELECT id, output_path FROM adstudio_composites WHERE product_id=? AND output_path IS NOT NULL",
-        (int(pid),)).fetchall() if pid else []
+    rows = [dict(r) for r in conn.execute(
+        "SELECT c.id, c.output_path, c.headline, c.subhead, c.cta, c.review_notes,"
+        " h.body, h.hook_text, h.archetype, h.source, i.core_id"
+        " FROM adstudio_composites c LEFT JOIN adstudio_hooks h ON h.id = c.hook_id"
+        " LEFT JOIN adstudio_images i ON i.id = c.image_id"
+        " WHERE c.product_id=? AND c.output_path IS NOT NULL"
+        + (" AND c.is_ready=1" if ready else "") + " ORDER BY c.id",
+        (int(pid),)).fetchall()] if pid else []
+    prod = _product_dict(conn, int(pid)) if pid else None
     conn.close()
+    slug = _re.sub(r"[^a-z0-9]+", "-", ((prod or {}).get("name") or "product").lower()).strip("-")
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        manifest = io.StringIO()
+        w = csv.writer(manifest)
+        w.writerow(["file", "headline", "subhead", "cta", "primary_text", "hook",
+                    "pattern", "base", "notes"])
         for r in rows:
-            if r["output_path"] and Path(r["output_path"]).exists():
-                z.write(r["output_path"], arcname=f"ad_{r['id']}.png")
+            if not Path(r["output_path"]).exists():
+                continue
+            name = f"{slug}_ad_{r['id']}.png"
+            z.write(r["output_path"], arcname=name)
+            pattern = r["archetype"] if (r["source"] or "").startswith("pattern") else ""
+            w.writerow([name, r["headline"], r["subhead"], r["cta"], r["body"] or "",
+                        r["hook_text"] or "", pattern, "core shot" if r["core_id"] else "image",
+                        r["review_notes"] or ""])
+        if ready:
+            z.writestr("manifest.csv", manifest.getvalue())
     buf.seek(0)
     return send_file(buf, mimetype="application/zip", as_attachment=True,
-                     download_name="adstudio_composites.zip")
+                     download_name=f"{slug}_{'launch_kit' if ready else 'ads'}.zip")
 
 
 # ── Core photos (core1-3) + box-size infographics ───────────────────────────

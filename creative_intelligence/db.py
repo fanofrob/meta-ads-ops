@@ -315,6 +315,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
    WHERE product_type IS NULL OR product_type = ''""",
         # which winning pattern (creative_patterns.id) a hook was written from
         "ALTER TABLE adstudio_hooks ADD COLUMN pattern_id INTEGER",
+        # Gallery review: approve / reject / ready-to-launch + notes (as in Render)
+        "ALTER TABLE adstudio_composites ADD COLUMN review_status TEXT DEFAULT ''",
+        "ALTER TABLE adstudio_composites ADD COLUMN is_ready INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE adstudio_composites ADD COLUMN review_notes TEXT DEFAULT ''",
+        "ALTER TABLE adstudio_composites ADD COLUMN reviewed_at TEXT",
         # a Core shot used as a Compose base gets a mirror adstudio_images row
         "ALTER TABLE adstudio_images ADD COLUMN core_id INTEGER",
         # Meta → patterns refresh runs (read-only pull; see ingest/meta_sync.py)

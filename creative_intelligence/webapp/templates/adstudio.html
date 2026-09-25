@@ -90,6 +90,12 @@ textarea.f{min-height:52px;resize:vertical;}
 .pat .ex{font-size:11px;color:var(--text2);margin-top:5px;padding-left:8px;border-left:2px solid var(--border);white-space:pre-wrap;max-height:4.6em;overflow:hidden;}
 .tagb{display:inline-block;font-size:10px;padding:1px 7px;border-radius:9px;margin-right:4px;border:1px solid var(--border);}
 .tagb.pat-b{color:var(--green);border-color:#166534;}.tagb.idea-b{color:var(--gold);border-color:#854d0e;}
+.rv{position:absolute;top:6px;right:6px;z-index:2;font-size:10px;font-weight:700;padding:2px 7px;border-radius:9px;letter-spacing:.3px;}
+.rv.approved{background:#14532d;color:#bbf7d0;}.rv.rejected{background:#7f1d1d;color:#fecaca;}.rv.ready{background:#4f46e5;color:#fff;}
+.ad.rejected .imgwrap img{opacity:.35;}
+.ad.hot{box-shadow:0 0 0 1px var(--accent2);}
+.ad .acts button.on{background:var(--accent);border-color:var(--accent);color:#fff;}
+.ad .note{font-size:11px;color:var(--gold);padding:0 9px 6px;white-space:pre-wrap;}
 .warn{color:var(--gold);}.err{color:var(--red);}
 .hint{font-size:11.5px;color:var(--text2);background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:7px 10px;margin-top:8px;line-height:1.5;}
 </style>
@@ -145,11 +151,15 @@ textarea.f{min-height:52px;resize:vertical;}
 
     <!-- GALLERY -->
     <div class="pane" id="pGal">
+      <div class="row" style="margin-bottom:8px">
+        <div class="chips" id="galFilter" style="margin:0"></div>
+        <label class="arch-toggle" style="margin-left:auto"><input type="checkbox" id="galArch"> show archived</label>
+      </div>
       <div class="row" style="margin-bottom:12px">
         <button class="btn" id="btnRefreshGal">↻ Refresh</button>
+        <a class="btn btn-p" id="btnLaunchKit" href="#">🚀 Download launch kit</a>
         <a class="btn" id="btnDownloadAll" href="#">⬇ Download all (zip)</a>
-        <span class="muted" id="galCount"></span>
-        <label class="arch-toggle" style="margin-left:auto"><input type="checkbox" id="galArch"> show archived</label>
+        <span class="muted">Hover an ad: <b>A</b> approve · <b>R</b> reject · <b>T</b> ready to launch · <b>F</b> favorite</span>
       </div>
       <div id="galBulk" class="bulkbar"></div>
       <div class="gal" id="galBody"></div>
@@ -197,6 +207,10 @@ function renderBulkBar(kind){
   if(!set.size){bar.style.display='none';bar.innerHTML='';return;}
   bar.style.display='flex';
   bar.innerHTML=`<b>${set.size} selected</b>
+    ${kind==='gal'?`<button class="btn sm" data-a="approve">👍 Approve</button>
+    <button class="btn sm" data-a="ready">🚀 Ready</button>
+    <button class="btn sm" data-a="reject">👎 Reject</button>
+    <button class="btn sm" data-a="clear">↺ Unreview</button>`:''}
     <button class="btn sm" data-a="favorite">★ Favorite</button>
     <button class="btn sm" data-a="unfavorite">☆ Unfavorite</button>
     <button class="btn sm" data-a="archive">🗄 Archive</button>
@@ -587,20 +601,64 @@ async function doCompose(){
 }
 
 /* ---------- GALLERY (composites) ---------- */
+let GAL_FILTER='all', GAL_ITEMS=[], GAL_HOT=null;
+const GAL_TABS=[['all','All'],['unreviewed','To review'],['approved','👍 Approved'],['ready','🚀 Ready'],['rejected','👎 Rejected']];
 async function loadGallery(){
   if(!PID){$('galBody').innerHTML='<div class="empty">Select a product.</div>';return;}
   $('btnDownloadAll').href='/api/adstudio/export-composites?product_id='+PID;
+  $('btnLaunchKit').href='/api/adstudio/export-composites?ready=1&product_id='+PID;
   const arch=($('galArch')&&$('galArch').checked)?'&include_archived=1':'';
-  const d=await (await fetch('/api/adstudio/composites?product_id='+PID+arch)).json();
-  GAL_IDS=d.composites.map(x=>x.id);
-  $('galCount').textContent=d.composites.length+' ads';
-  $('galBody').innerHTML=d.composites.map((a,i)=>`<div class="ad selectable" data-id="${a.id}" data-idx="${i}"><div class="imgwrap">${a.has_image?`<img src="/api/adstudio/composite/${a.id}/image?t=${Date.now()}">`:'<span class="ph">…</span>'}</div>
-    <div class="meta"><div class="muted">${esc(a.headline||'')}</div></div>
-    <div class="acts">${a.has_image?`<a href="/api/adstudio/composite/${a.id}/image" download="ad${a.id}.png">⬇</a>`:''}<button data-fav="${a.id}">${a.is_favorite?'★':'☆'}</button><button data-del="${a.id}">🗑</button></div></div>`).join('')||'<div class="empty">No finished ads yet — Compose some.</div>';
+  const d=await (await fetch('/api/adstudio/composites?product_id='+PID+arch+'&review='+(GAL_FILTER==='all'?'':GAL_FILTER))).json();
+  GAL_ITEMS=d.composites; GAL_IDS=GAL_ITEMS.map(x=>x.id);
+  $('galFilter').innerHTML=GAL_TABS.map(([k,l])=>`<button class="chip ${GAL_FILTER===k?'on':''}" data-gf="${k}">${l} ${d.counts[k]||0}</button>`).join('');
+  $('galFilter').querySelectorAll('[data-gf]').forEach(b=>b.onclick=()=>{GAL_FILTER=b.dataset.gf;SEL.gal.clear();loadGallery();});
+  const nReady=d.counts.ready||0;
+  $('btnLaunchKit').textContent=`🚀 Download launch kit (${nReady})`;
+  $('btnLaunchKit').style.opacity=nReady?1:.5; $('btnLaunchKit').style.pointerEvents=nReady?'':'none';
+  const empty={all:'No finished ads yet — Compose some.',unreviewed:'Nothing left to review 🎉',approved:'No approved ads yet.',ready:'Nothing marked ready to launch yet — hover an ad and press T.',rejected:'No rejected ads.'}[GAL_FILTER];
+  $('galBody').innerHTML=GAL_ITEMS.map((a,i)=>galCard(a,i)).join('')||`<div class="empty">${empty}</div>`;
+  document.querySelectorAll('#galBody [data-rv]').forEach(b=>b.onclick=()=>galReview(+b.dataset.id,b.dataset.rv));
+  document.querySelectorAll('#galBody [data-note]').forEach(b=>b.onclick=()=>galNote(+b.dataset.note));
   document.querySelectorAll('#galBody [data-fav]').forEach(b=>b.onclick=async()=>{await fetch('/api/adstudio/composite/'+b.dataset.fav+'/favorite',{method:'POST'});loadGallery();});
-  document.querySelectorAll('#galBody [data-del]').forEach(b=>b.onclick=async()=>{await fetch('/api/adstudio/composite/'+b.dataset.del+'/delete',{method:'POST'});loadGallery();});
+  document.querySelectorAll('#galBody [data-del]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this ad?'))return;await fetch('/api/adstudio/composite/'+b.dataset.del+'/delete',{method:'POST'});loadGallery();});
+  document.querySelectorAll('#galBody .ad').forEach(el=>{el.onmouseenter=()=>{GAL_HOT=+el.dataset.id;el.classList.add('hot');};el.onmouseleave=()=>{if(GAL_HOT===+el.dataset.id)GAL_HOT=null;el.classList.remove('hot');};});
   bindSel('gal');
 }
+function galCard(a,i){
+  const st=a.is_ready?'ready':(a.review_status||'');
+  const rv=st?`<span class="rv ${st}">${ {ready:'🚀 READY',approved:'👍 APPROVED',rejected:'👎 REJECTED'}[st] }</span>`:'';
+  const tags=hookBadges({source:a.hook_source||'',archetype:a.hook_archetype,pattern_id:a.pattern_id})+(a.core_id?'<span class="tagb">📸 core shot</span>':'');
+  return `<div class="ad selectable ${st}" data-id="${a.id}" data-idx="${i}"><div class="imgwrap">${rv}${a.has_image?`<img src="/api/adstudio/composite/${a.id}/image?t=${Date.now()}">`:'<span class="ph">…</span>'}</div>
+    <div class="meta"><div style="font-weight:600;font-size:12px">${esc(a.headline||'')}</div>${a.subhead?`<div class="muted">${esc(a.subhead)}</div>`:''}${tags?`<div style="margin-top:4px">${tags}</div>`:''}</div>
+    ${a.review_notes?`<div class="note">📝 ${esc(a.review_notes)}</div>`:''}
+    <div class="acts">
+      <button data-rv="approve" data-id="${a.id}" class="${st==='approved'?'on':''}" title="Approve (A)">👍</button>
+      <button data-rv="reject" data-id="${a.id}" class="${st==='rejected'?'on':''}" title="Reject (R)">👎</button>
+      <button data-rv="ready" data-id="${a.id}" class="${st==='ready'?'on':''}" title="Ready to launch (T)">🚀</button>
+      <button data-fav="${a.id}" title="Favorite (F)">${a.is_favorite?'★':'☆'}</button>
+      <button data-note="${a.id}" title="Review note">📝</button>
+      ${a.has_image?`<a href="/api/adstudio/composite/${a.id}/image" download="ad${a.id}.png" title="Download">⬇</a>`:''}
+      <button data-del="${a.id}" title="Delete">🗑</button></div></div>`;
+}
+async function galReview(id,action){
+  await fetch('/api/adstudio/composite/'+id+'/review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action})});
+  await loadGallery();
+  if(GAL_HOT===id){const el=document.querySelector(`#galBody .ad[data-id="${id}"]`);if(el)el.classList.add('hot');else GAL_HOT=null;}
+}
+async function galNote(id){
+  const a=GAL_ITEMS.find(x=>x.id===id)||{};
+  const notes=prompt('Review note for this ad (clear to remove):',a.review_notes||'');
+  if(notes===null)return;
+  await fetch('/api/adstudio/composite/'+id+'/review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({notes})});
+  loadGallery();
+}
+document.addEventListener('keydown',e=>{
+  if(!$('pGal').classList.contains('active')||GAL_HOT==null||e.metaKey||e.ctrlKey||e.altKey)return;
+  if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName))return;
+  const k=e.key.toLowerCase(), map={a:'approve',r:'reject',t:'ready'};
+  if(map[k]){e.preventDefault();galReview(GAL_HOT,map[k]);}
+  else if(k==='f'){e.preventDefault();fetch('/api/adstudio/composite/'+GAL_HOT+'/favorite',{method:'POST'}).then(loadGallery);}
+});
 
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}

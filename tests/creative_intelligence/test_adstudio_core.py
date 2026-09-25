@@ -272,3 +272,44 @@ def test_core_shots_compose_like_images(client, tmp_path):
     conn = app_module._db()
     assert conn.execute("SELECT COUNT(*) FROM adstudio_images WHERE core_id=?", (cid,)).fetchone()[0] == 1
     conn.close()
+
+
+def test_gallery_review_and_launch_kit(client, tmp_path):
+    """Approve / reject / ready (as in Render), filtered counts, and the ready-only launch kit."""
+    import csv, io, zipfile
+    import creative_intelligence.webapp.app as app_module
+    pid = client.post("/api/adstudio/products", json={"name": "Pink Mango", "product_type": "fruit"}).get_json()["id"]
+    hid = client.post(f"/api/adstudio/product/{pid}/hook", json={
+        "headline": "Tastes like honey", "body": "Tree-ripened, shipped overnight.",
+        "archetype": "Social proof hook · Fear angle", "source": "pattern"}).get_json()["id"]
+    base = tmp_path / "base.png"
+    Image.new("RGB", (500, 500), (240, 180, 60)).save(base)
+    conn = app_module._db()
+    with conn:
+        iid = conn.execute("INSERT INTO adstudio_images (product_id, status, image_path)"
+                           " VALUES (?, 'done', ?)", (pid, str(base))).lastrowid
+    conn.close()
+    made = client.post("/api/adstudio/compose-bulk", json={
+        "product_id": pid, "image_ids": [iid], "hook_ids": [hid]}).get_json()
+    assert made["made"] == 1
+    extra = client.post("/api/adstudio/compose-bulk", json={
+        "product_id": pid, "image_ids": [iid], "copies": [{"headline": "B"}, {"headline": "C"}]}).get_json()
+    assert extra["made"] == 2
+    a, b, c = sorted(x["id"] for x in client.get(f"/api/adstudio/composites?product_id={pid}").get_json()["composites"])
+
+    review = lambda cid, **kw: client.post(f"/api/adstudio/composite/{cid}/review", json=kw).get_json()
+    assert review(a, action="ready")["is_ready"] == 1 and review(a, notes="lead ad")["review_notes"] == "lead ad"
+    assert review(b, action="approve")["review_status"] == "approved"
+    assert review(b, action="approve")["review_status"] == ""          # toggles off
+    assert client.post("/api/adstudio/composites/bulk", json={"action": "reject", "ids": [b, c]}).get_json()["affected"] == 2
+
+    d = client.get(f"/api/adstudio/composites?product_id={pid}&review=ready").get_json()
+    assert [x["id"] for x in d["composites"]] == [a]
+    assert d["counts"] == {"all": 3, "unreviewed": 0, "approved": 1, "ready": 1, "rejected": 2}
+    assert d["composites"][0]["hook_source"] == "pattern"
+
+    z = zipfile.ZipFile(io.BytesIO(client.get(f"/api/adstudio/export-composites?ready=1&product_id={pid}").data))
+    assert sorted(z.namelist()) == ["manifest.csv", f"pink-mango_ad_{a}.png"]
+    row = next(csv.DictReader(io.StringIO(z.read("manifest.csv").decode())))
+    assert (row["headline"], row["primary_text"], row["pattern"], row["notes"]) == (
+        "Tastes like honey", "Tree-ripened, shipped overnight.", "Social proof hook · Fear angle", "lead ad")
