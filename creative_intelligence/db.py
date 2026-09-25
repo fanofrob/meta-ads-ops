@@ -206,6 +206,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
 )""",
         # add notes to existing DBs (no-op / silently ignored where it exists)
         "ALTER TABLE adstudio_products ADD COLUMN notes TEXT DEFAULT ''",
+        "ALTER TABLE adstudio_images ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE adstudio_composites ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
         """CREATE TABLE IF NOT EXISTS adstudio_photos (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     product_id  INTEGER NOT NULL,
@@ -281,6 +283,35 @@ def _migrate(conn: sqlite3.Connection) -> None:
 )""",
         """CREATE INDEX IF NOT EXISTS idx_adstudio_composites_product
    ON adstudio_composites(product_id, created_at DESC)""",
+        # Core photos (core1-3) + box-size infographics (PDP / Build-a-Box).
+        "ALTER TABLE adstudio_products ADD COLUMN varieties TEXT DEFAULT ''",
+        "ALTER TABLE adstudio_products ADD COLUMN shopify_url TEXT DEFAULT ''",
+        "ALTER TABLE adstudio_products ADD COLUMN info_json TEXT DEFAULT '{}'",
+        """CREATE TABLE IF NOT EXISTS adstudio_core (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id    INTEGER NOT NULL,
+    kind          TEXT NOT NULL,
+    variant       INTEGER NOT NULL DEFAULT 0,
+    prompt        TEXT NOT NULL DEFAULT '',
+    aspect_ratio  TEXT NOT NULL DEFAULT '1:1',
+    status        TEXT NOT NULL DEFAULT 'queued',
+    image_path    TEXT,
+    error_message TEXT,
+    is_favorite   INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT DEFAULT (datetime('now'))
+)""",
+        """CREATE INDEX IF NOT EXISTS idx_adstudio_core_product
+   ON adstudio_core(product_id, kind, created_at DESC)""",
+        # photo role: core1|core2|core3|infographic|other ('' = untagged)
+        "ALTER TABLE adstudio_photos ADD COLUMN role TEXT DEFAULT ''",
+        # Claude's per-shot brief + operator fix note, folded into the prompt at run time
+        "ALTER TABLE adstudio_core ADD COLUMN brief TEXT DEFAULT ''",
+        "ALTER TABLE adstudio_core ADD COLUMN fix TEXT DEFAULT ''",
+        # product type drives the workflow: fruit | candle | other
+        "ALTER TABLE adstudio_products ADD COLUMN product_type TEXT DEFAULT ''",
+        """UPDATE adstudio_products SET product_type =
+   CASE WHEN lower(name) LIKE '%candle%' THEN 'candle' ELSE 'fruit' END
+   WHERE product_type IS NULL OR product_type = ''""",
     ]
     for stmt in migrations:
         try:

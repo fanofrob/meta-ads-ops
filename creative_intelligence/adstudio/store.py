@@ -51,6 +51,12 @@ def composites_dir() -> Path:
     return d
 
 
+def core_dir() -> Path:
+    d = _base_dir() / "core"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def save_generated_image(source: str, product_id: int, image_id: int) -> str:
     """Persist a generated text-free image; return absolute path."""
     dest = images_dir() / f"img{image_id}_p{product_id}_{int(time.time())}.png"

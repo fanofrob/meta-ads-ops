@@ -3534,16 +3534,26 @@ def adstudio_page() -> Any:
     return render_template("adstudio.html")
 
 
+@app.get("/core")
+def core_page() -> Any:
+    return render_template("core.html")
+
+
 @app.get("/api/adstudio/config")
 def adstudio_config() -> Any:
     from creative_intelligence.adstudio.formats import format_list, ASPECT_RATIOS, DEFAULT_ASPECT
+    from creative_intelligence.adstudio.profiles import PROFILES
+    types = {k: {"label": v["label"], "notes_label": v["notes_label"],
+                 "archetypes": [x["name"] for x in v["formats"].values()]}
+             for k, v in PROFILES.items()}
     return jsonify({"formats": format_list(), "aspect_ratios": ASPECT_RATIOS,
-                    "default_aspect": DEFAULT_ASPECT})
+                    "default_aspect": DEFAULT_ASPECT, "product_types": types})
 
 
 # ── Products ─────────────────────────────────────────────────────────────
 @app.post("/api/adstudio/products")
 def adstudio_create_product() -> Any:
+    from creative_intelligence.adstudio.profiles import normalize_type
     d = request.get_json(force=True, silent=True) or {}
     name = (d.get("name") or "").strip()
     if not name:
@@ -3551,10 +3561,11 @@ def adstudio_create_product() -> Any:
     conn = _db()
     with conn:
         cur = conn.execute(
-            "INSERT INTO adstudio_products (name, description, scent_notes, physical_desc, notes)"
-            " VALUES (?,?,?,?,?)",
+            "INSERT INTO adstudio_products (name, description, scent_notes, physical_desc, notes,"
+            " varieties, product_type) VALUES (?,?,?,?,?,?,?)",
             (name, d.get("description", ""), d.get("scent_notes", ""),
-             d.get("physical_desc", ""), d.get("notes", "")),
+             d.get("physical_desc", ""), d.get("notes", ""), d.get("varieties", ""),
+             normalize_type(d.get("product_type"))),
         )
     pid = cur.lastrowid
     conn.close()
@@ -3563,10 +3574,14 @@ def adstudio_create_product() -> Any:
 
 @app.post("/api/adstudio/product/<int:pid>/update")
 def adstudio_update_product(pid: int) -> Any:
-    """Update editable product fields (name, scent_notes, physical_desc, description, notes)."""
+    """Update editable product fields (name, scent_notes, physical_desc, description, notes, …)."""
+    from creative_intelligence.adstudio.profiles import normalize_type
     d = request.get_json(force=True, silent=True) or {}
+    if "product_type" in d:
+        d["product_type"] = normalize_type(d["product_type"])
     sets, vals = [], []
-    for k in ("name", "scent_notes", "physical_desc", "description", "notes"):
+    for k in ("name", "scent_notes", "physical_desc", "description", "notes",
+              "varieties", "shopify_url", "info_json", "product_type"):
         if k in d:
             sets.append(f"{k}=?"); vals.append(d[k])
     if not sets:
@@ -3598,7 +3613,7 @@ def adstudio_get_product(pid: int) -> Any:
         conn.close()
         return jsonify({"error": "not found"}), 404
     photos = [dict(r) for r in conn.execute(
-        "SELECT id, is_primary FROM adstudio_photos WHERE product_id=? ORDER BY id", (pid,)).fetchall()]
+        "SELECT id, is_primary, role FROM adstudio_photos WHERE product_id=? ORDER BY id", (pid,)).fetchall()]
     hooks = [dict(r) for r in conn.execute(
         "SELECT * FROM adstudio_hooks WHERE product_id=? ORDER BY id DESC", (pid,)).fetchall()]
     conn.close()
@@ -4062,17 +4077,62 @@ def adstudio_regen_image(img_id: int) -> Any:
 @app.get("/api/adstudio/images")
 def adstudio_list_images() -> Any:
     pid = request.args.get("product_id")
+    include_archived = request.args.get("include_archived") == "1"
     conn = _db()
-    sql = ("SELECT id, product_id, archetype, title, status, is_favorite, aspect_ratio,"
-           " error_message, created_at, image_path IS NOT NULL AS has_image"
-           " FROM adstudio_images")
+    sql = ("SELECT id, product_id, archetype, title, status, is_favorite, archived,"
+           " aspect_ratio, error_message, created_at, image_path IS NOT NULL AS has_image"
+           " FROM adstudio_images WHERE 1=1")
     params: list[Any] = []
     if pid:
-        sql += " WHERE product_id=?"; params.append(int(pid))
-    sql += " ORDER BY id DESC LIMIT 300"
+        sql += " AND product_id=?"; params.append(int(pid))
+    if not include_archived:
+        sql += " AND archived=0"
+    sql += " ORDER BY id DESC LIMIT 400"
     rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
     conn.close()
     return jsonify({"images": rows})
+
+
+def _bulk_apply(table: str, action: str, ids: list[int]) -> int:
+    """Apply a bulk action to rows of a table; returns affected count."""
+    ids = [int(x) for x in ids if str(x).isdigit()]
+    if not ids:
+        return 0
+    ph = ",".join("?" * len(ids))
+    ops = {
+        "favorite":   f"UPDATE {table} SET is_favorite=1 WHERE id IN ({ph})",
+        "unfavorite": f"UPDATE {table} SET is_favorite=0 WHERE id IN ({ph})",
+        "archive":    f"UPDATE {table} SET archived=1 WHERE id IN ({ph})",
+        "unarchive":  f"UPDATE {table} SET archived=0 WHERE id IN ({ph})",
+        "delete":     f"DELETE FROM {table} WHERE id IN ({ph})",
+    }
+    if action not in ops:
+        raise ValueError(f"bad action {action!r}")
+    conn = _db()
+    with conn:
+        cur = conn.execute(ops[action], ids)
+    conn.close()
+    return cur.rowcount
+
+
+@app.post("/api/adstudio/images/bulk")
+def adstudio_images_bulk() -> Any:
+    d = request.get_json(force=True, silent=True) or {}
+    try:
+        n = _bulk_apply("adstudio_images", d.get("action", ""), d.get("ids", []))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"affected": n})
+
+
+@app.post("/api/adstudio/composites/bulk")
+def adstudio_composites_bulk() -> Any:
+    d = request.get_json(force=True, silent=True) or {}
+    try:
+        n = _bulk_apply("adstudio_composites", d.get("action", ""), d.get("ids", []))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"affected": n})
 
 
 @app.get("/api/adstudio/image-file/<int:img_id>")
@@ -4227,13 +4287,16 @@ def adstudio_compose_bulk() -> Any:
 @app.get("/api/adstudio/composites")
 def adstudio_list_composites() -> Any:
     pid = request.args.get("product_id")
+    include_archived = request.args.get("include_archived") == "1"
     conn = _db()
-    sql = ("SELECT id, product_id, image_id, headline, is_favorite, created_at,"
-           " output_path IS NOT NULL AS has_image FROM adstudio_composites")
+    sql = ("SELECT id, product_id, image_id, headline, is_favorite, archived, created_at,"
+           " output_path IS NOT NULL AS has_image FROM adstudio_composites WHERE 1=1")
     params: list[Any] = []
     if pid:
-        sql += " WHERE product_id=?"; params.append(int(pid))
-    sql += " ORDER BY id DESC LIMIT 300"
+        sql += " AND product_id=?"; params.append(int(pid))
+    if not include_archived:
+        sql += " AND archived=0"
+    sql += " ORDER BY id DESC LIMIT 400"
     rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
     conn.close()
     return jsonify({"composites": rows})
@@ -4288,6 +4351,379 @@ def adstudio_export_composites() -> Any:
     buf.seek(0)
     return send_file(buf, mimetype="application/zip", as_attachment=True,
                      download_name="adstudio_composites.zip")
+
+
+# ── Core photos (core1-3) + box-size infographics ───────────────────────────
+def _core_row(conn, cid: int) -> dict[str, Any] | None:
+    r = conn.execute("SELECT * FROM adstudio_core WHERE id=?", (cid,)).fetchone()
+    return dict(r) if r else None
+
+
+def _uri(path: str) -> str | None:
+    from creative_intelligence.adstudio.store import to_data_uri
+    try:
+        return to_data_uri(path)
+    except Exception:
+        return None
+
+
+def _core_refs(conn, pid: int, kind: str) -> tuple[list[str], list[str]]:
+    """
+    (layout_uris, fruit_uris) for a core shot. Layout = this product's photo
+    tagged with the same role, else up to 2 from other products (house
+    examples). Fruit = this product's remaining real photos. Infographics and
+    other-fruit photos are never sent.
+    """
+    rows = [dict(r) for r in conn.execute(
+        "SELECT id, path, role FROM adstudio_photos WHERE product_id=?"
+        " ORDER BY is_primary DESC, id", (pid,)).fetchall()]
+    rows = [r for r in rows if (r["role"] or "") not in ("infographic", "other")]
+    own = [r for r in rows if r["role"] == kind][:1]
+    layout = own or [dict(r) for r in conn.execute(
+        "SELECT MIN(id) AS id, path FROM adstudio_photos WHERE role=? AND product_id!=?"
+        " GROUP BY product_id ORDER BY id LIMIT 2", (kind, pid)).fetchall()]
+    used = {r["id"] for r in own}
+    order = {"core1": 0, "core2": 1, "core3": 2, "": 3}
+    fruit = sorted((r for r in rows if r["id"] not in used),
+                   key=lambda r: order.get(r["role"] or "", 3))[:max(0, 5 - len(layout))]
+    to = lambda rs: [u for u in (_uri(r["path"]) for r in rs) if u]
+    return to(layout), to(fruit)
+
+
+def _tag_photos(conn, pid: int, name: str) -> dict[int, str]:
+    """Claude assigns a role to each of the product's photos; primary = core1."""
+    from creative_intelligence.adstudio.core import classify_photos
+    rows = [dict(r) for r in conn.execute(
+        "SELECT id, path FROM adstudio_photos WHERE product_id=? ORDER BY id", (pid,)).fetchall()]
+    rows = [r for r in rows if _uri(r["path"])]
+    roles = classify_photos(name, [_uri(r["path"]) for r in rows])
+    with conn:
+        for r, role in zip(rows, roles):
+            conn.execute("UPDATE adstudio_photos SET role=? WHERE id=?", (role, r["id"]))
+        hero = next((r["id"] for r, role in zip(rows, roles) if role == "core1"), None)
+        if hero:
+            conn.execute("UPDATE adstudio_photos SET is_primary=(id=?) WHERE product_id=?", (hero, pid))
+    return {r["id"]: role for r, role in zip(rows, roles)}
+
+
+@app.post("/api/adstudio/import-shopify")
+def adstudio_import_shopify() -> Any:
+    """Create/refresh a product from its Shopify URL: name, copy, variants, photos."""
+    from urllib.request import Request, urlopen
+    from creative_intelligence.adstudio import core as C
+    from creative_intelligence.adstudio.store import save_reference_photo
+    d = request.get_json(force=True, silent=True) or {}
+    url = (d.get("url") or "").strip()
+    n_photos = max(0, min(int(d.get("photos", 8)), 10))
+    try:
+        sp = C.fetch_shopify_product(url)
+    except Exception as exc:
+        return jsonify({"error": f"Shopify fetch failed: {str(exc)[:200]}"}), 400
+    rows, estimate = C.rows_from_variants(sp["variants"])
+    info = {"name": C.short_name(sp["title"]), "rows": rows, "estimate": estimate,
+            "bab": C.bab_row([r for r in rows if r["on"]] or rows)}
+
+    conn = _db()
+    pid = d.get("product_id")
+    if not pid:
+        hit = conn.execute("SELECT id FROM adstudio_products WHERE shopify_url LIKE ?",
+                           (f"%/products/{sp['handle']}%",)).fetchone()
+        pid = hit["id"] if hit else None
+    with conn:
+        if pid:
+            conn.execute("UPDATE adstudio_products SET description=?, shopify_url=?, info_json=?"
+                         " WHERE id=?", (sp["description"], url, json.dumps(info), int(pid)))
+        else:
+            cur = conn.execute(
+                "INSERT INTO adstudio_products (name, description, shopify_url, info_json,"
+                " product_type) VALUES (?,?,?,?, 'fruit')",
+                (sp["title"], sp["description"], url, json.dumps(info)))
+            pid = cur.lastrowid
+    pid = int(pid)
+    has_photos = conn.execute("SELECT 1 FROM adstudio_photos WHERE product_id=? LIMIT 1",
+                              (pid,)).fetchone()
+    added = 0
+    if not has_photos:
+        for i, src in enumerate(sp["images"][:n_photos]):
+            try:
+                sized = src + ("&" if "?" in src else "?") + "width=1200"
+                raw = urlopen(Request(sized, headers={"User-Agent": "GHF-AdStudio/1.0"}),  # noqa: S310
+                              timeout=30).read()
+                path = save_reference_photo(raw, f"shopify{i}.jpg", pid)
+                with conn:
+                    conn.execute("INSERT INTO adstudio_photos (product_id, path, is_primary)"
+                                 " VALUES (?,?,?)", (pid, path, 1 if added == 0 else 0))
+                added += 1
+            except Exception:
+                app.logger.exception("shopify image download failed: %s", src)
+    roles: dict[int, str] = {}
+    if added:
+        try:
+            roles = _tag_photos(conn, pid, sp["title"])
+        except Exception:
+            app.logger.exception("photo tagging failed")
+    conn.close()
+    return jsonify({"id": pid, "photos_added": added, "roles": roles, "info": info})
+
+
+@app.post("/api/adstudio/product/<int:pid>/tag-photos")
+def adstudio_tag_photos(pid: int) -> Any:
+    conn = _db()
+    prod = _product_dict(conn, pid)
+    if prod is None:
+        conn.close(); return jsonify({"error": "product not found"}), 404
+    try:
+        roles = _tag_photos(conn, pid, prod["name"])
+    except Exception as exc:
+        conn.close()
+        app.logger.exception("tag-photos failed")
+        return jsonify({"error": str(exc)[:300]}), 500
+    conn.close()
+    return jsonify({"roles": roles})
+
+
+@app.post("/api/adstudio/photo/<int:photo_id>/role")
+def adstudio_photo_role(photo_id: int) -> Any:
+    from creative_intelligence.adstudio.core import PHOTO_ROLES
+    role = (request.get_json(force=True, silent=True) or {}).get("role", "")
+    if role and role not in PHOTO_ROLES:
+        return jsonify({"error": "bad role"}), 400
+    conn = _db()
+    with conn:
+        conn.execute("UPDATE adstudio_photos SET role=? WHERE id=?", (role, photo_id))
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@app.post("/api/adstudio/product/<int:pid>/describe-fruit")
+def adstudio_describe_fruit(pid: int) -> Any:
+    """Claude drafts the fruit's whole/cut look (+ varieties) from its photos."""
+    from creative_intelligence.adstudio.core import describe_fruit
+    conn = _db()
+    prod = _product_dict(conn, pid)
+    uris = _primary_photo_uris(conn, pid, limit=4)
+    conn.close()
+    if prod is None:
+        return jsonify({"error": "product not found"}), 404
+    try:
+        return jsonify(describe_fruit(prod, uris))
+    except Exception as exc:
+        app.logger.exception("describe-fruit failed")
+        return jsonify({"error": str(exc)[:300]}), 500
+
+
+@app.post("/api/adstudio/product/<int:pid>/core/queue")
+def adstudio_core_queue(pid: int) -> Any:
+    """
+    Queue core shots: {"kinds": ["core1","core2","core3"], "n": 1}. Claude writes
+    a shot brief from the layout + fruit references (one per kind; one per
+    lifestyle setup for core3) before anything reaches the image model.
+    """
+    from creative_intelligence.adstudio.core import (
+        CORE_KINDS, DEFAULT_ASPECT, build_core_prompt, write_shot_brief)
+    d = request.get_json(force=True, silent=True) or {}
+    kinds = [k for k in (d.get("kinds") or list(CORE_KINDS)) if k in CORE_KINDS]
+    n = max(1, min(int(d.get("n", 1)), 6))
+    conn = _db()
+    prod = _product_dict(conn, pid)
+    if prod is None:
+        conn.close(); return jsonify({"error": "product not found"}), 404
+    queued = []
+    for k in kinds:
+        layout, fruit = _core_refs(conn, pid, k)
+        base = conn.execute("SELECT COUNT(*) FROM adstudio_core WHERE product_id=? AND kind=?",
+                            (pid, k)).fetchone()[0]
+        briefs: dict[int, str] = {}
+        for i in range(n):
+            variant = base + i
+            key = variant % 5 if k == "core3" else 0
+            if key not in briefs:
+                try:
+                    briefs[key] = write_shot_brief(prod, k, variant, layout, fruit)
+                except Exception:
+                    app.logger.exception("shot brief failed (%s)", k)
+                    briefs[key] = ""
+            prompt = build_core_prompt(prod, k, variant, brief=briefs[key],
+                                       n_layout=len(layout), n_fruit=len(fruit))
+            with conn:
+                cur = conn.execute(
+                    "INSERT INTO adstudio_core (product_id, kind, variant, brief, prompt, aspect_ratio)"
+                    " VALUES (?,?,?,?,?,?)", (pid, k, variant, briefs[key], prompt, DEFAULT_ASPECT))
+            queued.append({"id": cur.lastrowid, "kind": k})
+    conn.close()
+    return jsonify({"queued": queued})
+
+
+@app.post("/api/adstudio/core/<int:cid>/run")
+def adstudio_core_run(cid: int) -> Any:
+    from creative_intelligence.adstudio.core import build_core_prompt
+    from creative_intelligence.adstudio.generate import generate_ad, AdGenError
+    from creative_intelligence.adstudio.store import save_generated_image, core_dir
+    conn = _db()
+    row = _core_row(conn, cid)
+    if row is None or row["kind"].startswith("info_"):
+        conn.close(); return jsonify({"error": "not found"}), 404
+    # rebuilt at run time so the image labels always match what is actually sent
+    layout, fruit = _core_refs(conn, row["product_id"], row["kind"])
+    prompt = build_core_prompt(_product_dict(conn, row["product_id"]) or {}, row["kind"],
+                               row["variant"], row.get("fix") or "", row.get("brief") or "",
+                               len(layout), len(fruit))
+    with conn:
+        conn.execute("UPDATE adstudio_core SET status='generating', prompt=? WHERE id=?",
+                     (prompt, cid))
+    conn.close()
+    try:
+        url = generate_ad(prompt, layout + fruit, row["aspect_ratio"])
+        saved = save_generated_image(url, row["product_id"], cid)
+        dest = core_dir() / f"{row['kind']}_{cid}_p{row['product_id']}.png"
+        Path(saved).replace(dest)
+        conn = _db()
+        with conn:
+            conn.execute("UPDATE adstudio_core SET status='done', image_path=?, error_message=NULL"
+                         " WHERE id=?", (str(dest), cid))
+        conn.close()
+        return jsonify({"id": cid, "status": "done"})
+    except (AdGenError, Exception) as exc:
+        msg = str(exc)[:400]
+        conn = _db()
+        with conn:
+            conn.execute("UPDATE adstudio_core SET status='failed', error_message=? WHERE id=?",
+                         (msg, cid))
+        conn.close()
+        code = 429 if "429" in msg or "throttled" in msg.lower() else 500
+        return jsonify({"id": cid, "status": "failed", "error": msg}), code
+
+
+@app.post("/api/adstudio/core/<int:cid>/regenerate")
+def adstudio_core_regen(cid: int) -> Any:
+    """Re-run a core shot with an operator fix note (kept for later reruns)."""
+    d = request.get_json(force=True, silent=True) or {}
+    conn = _db()
+    row = _core_row(conn, cid)
+    if row is None or row["kind"].startswith("info_"):
+        conn.close(); return jsonify({"error": "not found"}), 404
+    with conn:
+        conn.execute("UPDATE adstudio_core SET status='queued', error_message=NULL, fix=?"
+                     " WHERE id=?", ((d.get("fix") or "").strip(), cid))
+    conn.close()
+    return adstudio_core_run(cid)
+
+
+@app.post("/api/adstudio/product/<int:pid>/infographic")
+def adstudio_infographic(pid: int) -> Any:
+    """
+    Render a box-size infographic. Body: {"kind": "pdp"|"bab", "info": {...},
+    "thumb": "core:<id>" | "photo:<id>" | ""}. `info` is saved on the product.
+    """
+    from creative_intelligence.adstudio.infographic import render_pdp, render_bab
+    from creative_intelligence.adstudio.store import core_dir
+    d = request.get_json(force=True, silent=True) or {}
+    kind = d.get("kind")
+    if kind not in ("pdp", "bab"):
+        return jsonify({"error": "kind must be pdp or bab"}), 400
+    info = d.get("info") or {}
+    conn = _db()
+    if _product_dict(conn, pid) is None:
+        conn.close(); return jsonify({"error": "product not found"}), 404
+    with conn:
+        conn.execute("UPDATE adstudio_products SET info_json=? WHERE id=?", (json.dumps(info), pid))
+
+    thumb_path = None
+    src, _, sid = (d.get("thumb") or "").partition(":")
+    if src == "core" and sid.isdigit():
+        r = conn.execute("SELECT image_path FROM adstudio_core WHERE id=?", (int(sid),)).fetchone()
+        thumb_path = r["image_path"] if r else None
+    elif src == "photo" and sid.isdigit():
+        r = conn.execute("SELECT path FROM adstudio_photos WHERE id=?", (int(sid),)).fetchone()
+        thumb_path = r["path"] if r else None
+
+    cur = None
+    with conn:
+        cur = conn.execute("INSERT INTO adstudio_core (product_id, kind, status) VALUES (?,?, 'queued')",
+                           (pid, f"info_{kind}"))
+    cid = cur.lastrowid
+    out = str(core_dir() / f"info_{kind}_{cid}_p{pid}.png")
+    name = info.get("name") or ""
+    estimate = info.get("estimate", "pieces")
+    try:
+        if kind == "pdp":
+            rows = [r for r in info.get("rows", []) if r.get("on", True)]
+            render_pdp(name, rows, out, thumb_path=thumb_path, estimate=estimate)
+        else:
+            render_bab(name, info.get("bab") or {}, out, thumb_path=thumb_path, estimate=estimate)
+    except Exception as exc:
+        with conn:
+            conn.execute("DELETE FROM adstudio_core WHERE id=?", (cid,))
+        conn.close()
+        return jsonify({"error": str(exc)[:300]}), 400
+    with conn:
+        conn.execute("UPDATE adstudio_core SET status='done', image_path=? WHERE id=?", (out, cid))
+    conn.close()
+    return jsonify({"id": cid})
+
+
+@app.get("/api/adstudio/core")
+def adstudio_core_list() -> Any:
+    pid = request.args.get("product_id")
+    conn = _db()
+    rows = [dict(r) for r in conn.execute(
+        "SELECT id, kind, variant, status, is_favorite, error_message, created_at, brief, fix,"
+        " image_path IS NOT NULL AS has_image FROM adstudio_core WHERE product_id=?"
+        " ORDER BY id DESC LIMIT 400", (int(pid or 0),)).fetchall()]
+    conn.close()
+    return jsonify({"items": rows})
+
+
+@app.get("/api/adstudio/core/<int:cid>/image")
+def adstudio_core_image(cid: int) -> Any:
+    conn = _db()
+    row = conn.execute("SELECT image_path FROM adstudio_core WHERE id=?", (cid,)).fetchone()
+    conn.close()
+    if row is None or not row["image_path"] or not Path(row["image_path"]).exists():
+        return ("", 404)
+    return send_file(row["image_path"], conditional=True)
+
+
+@app.post("/api/adstudio/core/<int:cid>/favorite")
+def adstudio_core_fav(cid: int) -> Any:
+    conn = _db()
+    with conn:
+        conn.execute("UPDATE adstudio_core SET is_favorite=1-is_favorite WHERE id=?", (cid,))
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@app.post("/api/adstudio/core/<int:cid>/delete")
+def adstudio_core_delete(cid: int) -> Any:
+    conn = _db()
+    with conn:
+        conn.execute("DELETE FROM adstudio_core WHERE id=?", (cid,))
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@app.get("/api/adstudio/export-core")
+def adstudio_export_core() -> Any:
+    """Zip a product's core set: favorites if any, else everything done."""
+    import io, re as _re, zipfile
+    pid = int(request.args.get("product_id") or 0)
+    conn = _db()
+    prod = _product_dict(conn, pid) or {"name": "product"}
+    rows = conn.execute("SELECT id, kind, is_favorite, image_path FROM adstudio_core"
+                        " WHERE product_id=? AND image_path IS NOT NULL ORDER BY kind, id",
+                        (pid,)).fetchall()
+    conn.close()
+    if any(r["is_favorite"] for r in rows):
+        rows = [r for r in rows if r["is_favorite"]]
+    slug = _re.sub(r"[^a-z0-9]+", "-", prod["name"].lower()).strip("-") or "product"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for r in rows:
+            if Path(r["image_path"]).exists():
+                z.write(r["image_path"], arcname=f"{slug}_{r['kind']}_{r['id']}.png")
+    buf.seek(0)
+    return send_file(buf, mimetype="application/zip", as_attachment=True,
+                     download_name=f"{slug}_core.zip")
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ import re
 from typing import Any
 
 from creative_intelligence.adstudio import formats as F
+from creative_intelligence.adstudio.profiles import normalize_type, profile
 from creative_intelligence.adstudio.chat import (
     _client, _image_blocks, _product_line, MODEL,
 )
@@ -27,10 +28,6 @@ You are an art director generating DIVERSE static ad IMAGE concepts (pure photog
 Your single objective is maximum visual diversity. Meta fingerprints visually similar images into one "Entity ID" and caps their audience reach; only substantially DIFFERENT compositions (flat-lay vs eye-level vs extreme macro vs human-in-frame vs wide environmental) each reach fresh audiences. So every concept must be a different composition family AND a different concrete scene.
 
 You are given a menu of archetype directions and a log of concepts ALREADY generated for this product. Do NOT repeat, re-skin, or lightly vary anything in the log. Pick under-used directions and invent genuinely new scenes. Deliberately vary: camera angle and distance, indoor vs outdoor, day vs night, the surface and setting, the props, the palette, and whether a human hand or body is present.
-
-INGREDIENT ACCURACY: when a scene uses the product's scent/flavor ingredients as props, name the EXACT variety and describe its true real-world appearance so the render doesn't default to a generic look — e.g. a "Rainier cherry" is blush-yellow with a red cheek (NOT a solid-red cherry); a "pink guava" has green-yellow skin and rose-pink flesh. Never substitute a generic version of a named specialty ingredient.
-
-THE NAME IS NOT AN INGREDIENT LIST: use ONLY the product's explicitly named scent/flavor notes as ingredient props. Do NOT invent ingredients from wordplay in the product's NAME. Critically, "Rosé" means rosé WINE — a blush-pink, fruity, lightly effervescent, celebratory character — it is NOT the rose flower. Treat such wordplay as a palette/mood cue (blush and wine tones, an effervescent celebratory feel), NEVER as a literal ingredient. Do not add roses, rose petals, or rose blossoms unless the named notes actually list rose (they may be used occasionally as a deliberate accent, but never as an automatic default or a stand-in for the real ingredients).
 """
 
 
@@ -52,9 +49,11 @@ def generate_concepts(product: dict[str, Any], n: int,
                       image_data_uris: list[str] | None = None) -> list[dict]:
     """Return n distinct {archetype, title, scene} concepts avoiding prior ones."""
     c = _client()
+    prof = profile(product)
     seeds = "\n".join(
-        f"- {k}: {v['name']} — {v['blurb']}" for k, v in F.FORMATS.items()
+        f"- {k}: {v['name']} — {v['blurb']}" for k, v in prof["formats"].items()
     )
+    system = CONCEPT_SYSTEM + ("\n" + prof["concept_rules"] if prof["concept_rules"] else "")
     if prior_concepts:
         log = "\n".join(
             f"- [{x.get('archetype', '')}] {x.get('title', '')}: "
@@ -73,7 +72,7 @@ def generate_concepts(product: dict[str, Any], n: int,
     )
     content = _image_blocks(image_data_uris or []) + [{"type": "text", "text": ask}]
     r = c.messages.create(
-        model=MODEL, max_tokens=2600, system=CONCEPT_SYSTEM,
+        model=MODEL, max_tokens=2600, system=system,
         messages=[{"role": "user", "content": content}],
     )
     text = "".join(b.text for b in r.content if getattr(b, "type", "") == "text")
@@ -89,11 +88,13 @@ def build_image_prompt(product: dict[str, Any], scene: str,
     the cherries should be Rainier — blush-yellow, not red"). Placed at the very
     top as highest-priority instructions so the model actually fixes them.
     """
+    prof = profile(product)
+    is_candle = normalize_type(product.get("product_type")) == "candle"
     name = product.get("name", "the product")
     scent = (product.get("scent_notes") or "").strip()
     subject = name + (f" ({scent})" if scent else "")
 
-    parts = [f"Create a premium {aspect_ratio} product photograph. {F.REFERENCE_LOCK}"]
+    parts = [f"Create a premium {aspect_ratio} product photograph. {prof['reference_lock']}"]
     if corrections.strip():
         parts.append(
             "CORRECTIONS — HIGHEST PRIORITY\n"
@@ -103,7 +104,13 @@ def build_image_prompt(product: dict[str, Any], scene: str,
         )
     parts.append(f"SUBJECT\n{subject}, unmistakably the hero of the image.")
     parts.append(f"SCENE / COMPOSITION\n{scene}")
-    if scent:
+    look = (product.get("physical_desc") or "").strip()
+    varieties = (product.get("varieties") or "").strip()
+    if not is_candle and look:
+        parts.append(f"WHAT IT LOOKS LIKE\n{look}")
+    if not is_candle and varieties:
+        parts.append(f"VARIETIES — show these, clearly distinguishable\n{varieties}")
+    if is_candle and scent:
         parts.append(
             "INGREDIENT ACCURACY\n"
             f"Any fruit or scent ingredients shown as props must be the product's "
@@ -117,13 +124,13 @@ def build_image_prompt(product: dict[str, Any], scene: str,
             f"rose."
         )
     parts.append(f"LIGHT & MOOD\n{F.LIGHT_MOOD}")
-    parts.append(f"TECHNICAL\n{F.TECHNICAL}")
+    parts.append(f"TECHNICAL\n{prof['technical']}")
     parts.append(
         "NO TEXT of any kind anywhere in the image — no words, letters, numbers, "
         "logos, captions, or watermarks (the product's own printed label is fine). "
         "This is a clean photograph; ad copy is composited on later."
     )
-    parts.append(F.NEGATIVE)
+    parts.append(prof["negative"])
     return "\n\n".join(parts)
 
 

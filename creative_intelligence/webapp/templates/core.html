@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Core Photos</title>
+<style>
+:root{--bg:#0d0d14;--surface:#13131e;--surface2:#1a1a2a;--border:#252535;--text:#e8e8f0;--text2:#b0b0c8;--muted:#6a6a88;--accent:#4f46e5;--accent2:#818cf8;--green:#4ade80;--gold:#fbbf24;--red:#f87171;}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);font-size:14px;}
+header{display:flex;align-items:center;gap:12px;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--surface);}
+header h1{font-size:15px;font-weight:700;}
+header .sub{font-size:12px;color:var(--muted);}
+.layout{display:flex;height:calc(100vh - 44px);overflow:hidden;}
+.rail{width:210px;flex-shrink:0;border-right:1px solid var(--border);overflow-y:auto;padding:10px;}
+.rail h3{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin:6px 4px;}
+.prod{padding:8px 10px;border-radius:6px;cursor:pointer;border:1px solid transparent;}
+.prod:hover{background:var(--surface2);}.prod.active{background:var(--surface2);border-color:var(--accent);}
+.prod .pn{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.prod .pm{font-size:10.5px;color:var(--muted);margin-top:2px;}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+.tabs{display:flex;gap:4px;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--surface);align-items:center;}
+.tab{padding:5px 12px;font-size:12px;border-radius:5px;cursor:pointer;color:var(--text2);}
+.tab:hover{background:var(--surface2);}.tab.active{background:var(--surface2);color:var(--text);border:1px solid var(--border);}
+.pane{flex:1;overflow-y:auto;padding:18px;display:none;}.pane.active{display:block;}
+label.fl{display:block;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:10px 0 4px;}
+input.f,textarea.f,select.f{width:100%;padding:8px 10px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;}
+textarea.f{min-height:52px;resize:vertical;}
+.btn{padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;}
+.btn:hover{background:#23233a;}.btn-p{background:var(--accent);border-color:var(--accent);color:#fff;}.btn-p:hover{background:#4338ca;}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+.btn.sm{padding:3px 8px;font-size:11px;}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px;}
+.muted{color:var(--muted);font-size:12px;}
+.photos{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+.photo{position:relative;width:88px;height:110px;border-radius:6px;overflow:hidden;border:1px solid var(--border);background:#fff;}
+.photo img{width:100%;height:100%;object-fit:cover;}
+.photo .del{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:4px;font-size:11px;padding:1px 5px;cursor:pointer;}
+.photo .pri{position:absolute;bottom:0;left:0;right:0;background:rgba(79,70,229,.85);color:#fff;font-size:9px;text-align:center;padding:1px;}
+.hook{border-left:2px solid var(--accent);padding:8px 10px;background:var(--surface2);border-radius:0 6px 6px 0;margin-bottom:8px;}
+.hook .ht{font-size:13px;font-weight:600;}.hook .hd{font-size:11px;color:var(--text2);margin-top:3px;}
+.hook .hx{font-size:10px;color:var(--muted);margin-top:3px;}
+.dcp{display:flex;gap:10px;font-size:10.5px;margin-top:4px;flex-wrap:wrap;}.dcp b{color:var(--accent2);}
+.chat{display:flex;flex-direction:column;height:300px;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-top:8px;}
+.chatlog{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px;}
+.msg{max-width:85%;padding:7px 10px;border-radius:8px;font-size:12.5px;line-height:1.5;white-space:pre-wrap;}
+.msg.user{align-self:flex-end;background:var(--accent);color:#fff;}.msg.assistant{align-self:flex-start;background:var(--surface2);}
+.chatin{display:flex;gap:6px;padding:8px;border-top:1px solid var(--border);}.chatin input{flex:1;}
+.gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;}
+.ad{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.ad .imgwrap{aspect-ratio:4/5;background:#0a0a12;display:flex;align-items:center;justify-content:center;position:relative;}
+.ad .imgwrap img{width:100%;height:100%;object-fit:cover;}
+.ad .ph{color:var(--muted);font-size:11px;text-align:center;padding:8px;}
+.ad .meta{padding:7px 9px;font-size:11px;}
+.ad .ttl{color:var(--accent2);font-weight:600;}
+.ad .acts{display:flex;gap:6px;padding:0 9px 9px;flex-wrap:wrap;}
+.ad .acts a,.ad .acts button{font-size:11px;text-decoration:none;color:var(--text2);background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:3px 7px;cursor:pointer;}
+.badge{font-size:10px;padding:1px 6px;border-radius:8px;border:1px solid var(--border);}
+.b-done{color:var(--green);border-color:#166534;}.b-failed{color:var(--red);border-color:#7c2d12;}.b-generating,.b-queued{color:var(--gold);}
+.spinner{display:inline-block;width:12px;height:12px;border:2px solid var(--muted);border-top-color:var(--accent2);border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.empty{color:var(--muted);text-align:center;padding:40px;font-size:13px;}
+/* core */
+.core-sec{margin-top:14px;}.core-sec h4{font-size:12px;color:var(--text2);margin-bottom:8px;}
+.core .imgwrap{aspect-ratio:1/1;background:#fff;}
+table.vt{width:100%;border-collapse:collapse;margin-top:6px;}
+table.vt td,table.vt th{padding:3px 4px;font-size:11px;color:var(--muted);text-align:left;}
+table.vt input.f{padding:5px 7px;font-size:12px;}
+.refs{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+.ref{width:120px;}.ref img{width:120px;height:120px;object-fit:cover;border-radius:6px;border:1px solid var(--border);display:block;}
+.ref select{width:100%;margin-top:4px;padding:3px;font-size:11px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:5px;}
+.ref.off img{opacity:.35;}
+.brief{font-size:10.5px;color:var(--text2);padding:0 9px 8px;white-space:pre-wrap;}
+.brief summary{cursor:pointer;color:var(--muted);}
+.prod .pt{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>📸 Core</h1>
+  <span class="sub">Fruit PDP set — box + board, close-up, lifestyle, box-size infographics</span>
+  {% include "_nav.html" %}
+</header>
+
+<div class="layout">
+  <div class="rail">
+    <h3>Fruit</h3>
+    <div id="prodList"></div>
+    <button class="btn" style="width:100%;margin-top:8px" id="btnImportShop">🛒 Import from Shopify</button>
+    <a class="btn" style="display:block;text-align:center;text-decoration:none;margin-top:6px" href="/adstudio">+ New product in Ad Studio</a>
+  </div>
+  <div class="main">
+    <div class="tabs"><span style="font-weight:600;font-size:13px" id="ctxName">Select a fruit</span><a class="muted" id="toStudio" style="margin-left:auto;display:none;color:var(--accent2);text-decoration:none" href="#">Open in Ad Studio →</a></div>
+    <div class="pane active" id="pCore"><div id="coreBody"><div class="empty">Select a fruit on the left, or import one from Shopify.</div></div></div>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+let PID=null, DETAIL=null;
+
+async function boot(){
+  $('btnImportShop').onclick=importShopify;
+  await loadProducts();
+  const want=+new URLSearchParams(location.search).get('product_id');
+  if(want)selectProduct(want);
+}
+async function loadProducts(){
+  const d=await (await fetch('/api/adstudio/products')).json();
+  const fruit=d.products.filter(p=>p.product_type==='fruit');
+  $('prodList').innerHTML=fruit.map(p=>`<div class="prod ${p.id===PID?'active':''}" data-id="${p.id}"><div class="pn">${esc(p.name)}</div><div class="pm">${p.photo_count} photo</div></div>`).join('')||'<div class="muted" style="padding:8px">No fruit products yet — import one from Shopify, or create one in Ad Studio with type Fruit.</div>';
+  document.querySelectorAll('.prod').forEach(el=>el.onclick=()=>selectProduct(+el.dataset.id));
+}
+async function selectProduct(id){
+  PID=id;
+  document.querySelectorAll('.prod').forEach(el=>el.classList.toggle('active',+el.dataset.id===id));
+  const r=await fetch('/api/adstudio/product/'+id); if(!r.ok){PID=null;return;}
+  DETAIL=await r.json();
+  $('ctxName').textContent=DETAIL.product.name;
+  $('toStudio').href='/adstudio?product_id='+id; $('toStudio').style.display='';
+  history.replaceState(null,'','/core?product_id='+id);
+  if(DETAIL.product.product_type!=='fruit'){
+    $('coreBody').innerHTML=`<div class="empty">Core photos are the fruit product-page set.<br>${esc(DETAIL.product.name)} isn't set as Fruit — change its type in <a style="color:var(--accent2)" href="/adstudio?product_id=${id}">Ad Studio → Setup</a>.</div>`;
+    return;
+  }
+  renderCore();
+}
+async function importShopify(){
+  const url=prompt('Shopify product URL (e.g. https://shop.goodhillfarms.com/products/cherimoya)');
+  if(!url)return;
+  const b=$('btnImportShop');b.disabled=true;b.innerHTML='<span class="spinner"></span> importing…';
+  try{
+    const d=await (await fetch('/api/adstudio/import-shopify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})})).json();
+    if(d.error){alert(d.error);return;}
+    await loadProducts(); await selectProduct(d.id);
+  }finally{b.disabled=false;b.textContent='🛒 Import from Shopify';}
+}
+async function uploadPhoto(e){const f=e.target.files[0];if(!f)return;const fd=new FormData();fd.append('file',f);await fetch('/api/adstudio/product/'+PID+'/photo',{method:'POST',body:fd});await selectProduct(PID);}
+
+/* ---------- CORE PHOTOS + INFOGRAPHICS ---------- */
+const CORE_KINDS={core1:'Core 1 · White box + cut & uncut on board',core2:'Core 2 · Close-up focus, box blurred behind',core3:'Core 3 · Lifestyle / hand'};
+let INFO=null, CORE_ITEMS=[];
+function parseInfo(){
+  let i={};try{i=JSON.parse(DETAIL.product.info_json||'{}')}catch(e){}
+  i.name=i.name||DETAIL.product.name;
+  i.estimate=i.estimate||'pieces';
+  i.rows=i.rows&&i.rows.length?i.rows:[{on:true,size:'SAMPLE',weight:'2 LBS',pieces:''},{on:true,size:'MEDIUM',weight:'5 LBS',pieces:''},{on:true,size:'LARGE',weight:'8 LBS',pieces:''}];
+  i.bab=i.bab||{size:'SMALL',weight:'2 LBS',pieces:''};
+  return i;
+}
+async function renderCore(){
+  if(!PID||!DETAIL){$('coreBody').innerHTML='<div class="empty">Select a product.</div>';return;}
+  const p=DETAIL.product; INFO=parseInfo();
+  $('coreBody').innerHTML=`
+    <div class="card"><div class="row" style="justify-content:space-between"><strong>🍈 The fruit</strong>
+      <div class="row">${p.shopify_url?`<a class="muted" href="${esc(p.shopify_url)}" target="_blank">Shopify ↗</a>`:''}<button class="btn sm" id="btnDescribe">✨ Draft from photos with Claude</button></div></div>
+      <label class="fl">What it looks like — whole, cut, and how it's eaten (goes into every core prompt)</label>
+      <textarea class="f" id="cPhys" style="min-height:70px" placeholder="Heart-shaped, pale green skin with scale-like indents… cut in half lengthwise shows creamy white custard flesh with glossy black seeds…">${esc(p.physical_desc||'')}</textarea>
+      <label class="fl">Variety box? List each variety (name — skin — flesh). Leave blank for single-variety fruit.</label>
+      <textarea class="f" id="cVar" placeholder="Pink guava — green skin — rose-pink flesh&#10;Ruby guava — purple-brown skin — magenta flesh">${esc(p.varieties||'')}</textarea>
+      <div class="row" style="margin-top:6px"><button class="btn sm" id="btnSaveFruit">Save</button></div>
+      <div class="row" style="margin-top:14px;justify-content:space-between"><label class="fl" style="margin:0">Reference photos — the role tells the generator what each one is for</label><button class="btn sm" id="btnTag">🏷 Auto-tag with Claude</button></div>
+      <div class="muted">Core 1 / Core 2 layout = the real shot whose framing gets copied. A fruit with no layout photo of its own borrows another fruit's. Infographics and other fruits are never sent to the image model.</div>
+      <div class="refs" id="refs"></div><input type="file" id="photoInput" accept="image/*" style="margin-top:8px;font-size:12px"></div>
+
+    <div class="card"><div class="row"><strong>📸 Core photos</strong>
+      ${Object.keys(CORE_KINDS).map(k=>`<label class="arch-toggle"><input type="checkbox" class="ck" value="${k}" checked> ${k}</label>`).join('')}
+      <select class="f" id="coreN" style="width:64px"><option>1</option><option selected>2</option><option>3</option><option>4</option></select><span class="muted">each</span>
+      <button class="btn btn-p" id="btnCoreGen">✨ Generate</button>
+      <a class="btn" href="/api/adstudio/export-core?product_id=${PID}">⬇ Download set (zip)</a>
+      <span class="muted" id="coreStatus"></span></div>
+      <div class="muted" style="margin-top:4px">Locked house style — only the fruit changes. ★ your picks; the zip takes favorites if any are starred.</div>
+      <div id="coreGrid"></div></div>
+
+    <div class="card"><div class="row" style="justify-content:space-between"><strong>📊 Box-size infographics</strong><span class="muted">drawn exactly — no AI</span></div>
+      <div class="row" style="margin-top:6px">
+        <div style="flex:1;min-width:180px"><label class="fl">Fruit name on graphic</label><input class="f" id="iName" value="${esc(INFO.name)}"></div>
+        <div style="width:200px"><label class="fl">Asterisk / footnote</label><select class="f" id="iEst"><option value="pieces" ${INFO.estimate!=='weight'?'selected':''}>Pieces* — count varies</option><option value="weight" ${INFO.estimate==='weight'?'selected':''}>Weight* — weight varies</option></select></div>
+        <div style="width:220px"><label class="fl">Thumbnail</label><select class="f" id="iThumb"></select></div></div>
+      <div class="row" style="align-items:flex-start;gap:24px;margin-top:6px">
+        <div style="flex:1;min-width:320px"><label class="fl">PDP variants (tick the ones to show)</label>
+          <table class="vt"><thead><tr><th></th><th>Size</th><th>Weight</th><th>Pieces</th><th></th></tr></thead><tbody id="iRows"></tbody></table>
+          <div class="row" style="margin-top:6px"><button class="btn sm" id="btnAddRow">+ Row</button><button class="btn btn-p" id="btnPdp">Render PDP infographic</button></div></div>
+        <div style="width:300px"><label class="fl">Build-a-Box sample variant</label>
+          <table class="vt"><thead><tr><th>Box</th><th>Weight</th><th>Pieces</th></tr></thead><tbody><tr>
+            <td><input class="f" id="bSize" value="${esc(INFO.bab.size)}"></td><td><input class="f" id="bWeight" value="${esc(INFO.bab.weight)}"></td><td><input class="f" id="bPieces" value="${esc(INFO.bab.pieces)}"></td></tr></tbody></table>
+          <button class="btn btn-p" id="btnBab" style="margin-top:6px">Render BaB infographic</button></div></div>
+      <div id="infoGrid"></div></div>`;
+  renderRows(); renderRefs(); $('photoInput').onchange=uploadPhoto;
+  $('btnTag').onclick=tagPhotos;
+  $('btnSaveFruit').onclick=saveFruit; $('btnDescribe').onclick=describeFruit;
+  $('btnCoreGen').onclick=genCore; $('btnAddRow').onclick=()=>{readInfo();INFO.rows.push({on:true,size:'',weight:'',pieces:''});renderRows();};
+  $('btnPdp').onclick=()=>renderInfo('pdp'); $('btnBab').onclick=()=>renderInfo('bab');
+  await loadCore();
+}
+const ROLES={'':'(untagged)',core1:'Core 1 layout',core2:'Core 2 layout',core3:'Lifestyle',infographic:'Infographic — not sent',other:'Other fruit — not sent'};
+function renderRefs(){
+  $('refs').innerHTML=DETAIL.photos.map(ph=>`<div class="ref ${['infographic','other'].includes(ph.role)?'off':''}"><img src="/api/adstudio/photo/${ph.id}"><select data-role="${ph.id}">${Object.entries(ROLES).map(([k,l])=>`<option value="${k}" ${(ph.role||'')===k?'selected':''}>${l}</option>`).join('')}</select></div>`).join('')||'<div class="muted">No reference photos yet — upload below or import from Shopify.</div>';
+  document.querySelectorAll('[data-role]').forEach(sel=>sel.onchange=async()=>{
+    await fetch('/api/adstudio/photo/'+sel.dataset.role+'/role',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:sel.value})});
+    DETAIL.photos.find(p=>p.id===+sel.dataset.role).role=sel.value; renderRefs();
+  });
+}
+async function tagPhotos(){
+  const b=$('btnTag');b.disabled=true;b.innerHTML='<span class="spinner"></span> tagging…';
+  try{const d=await (await fetch('/api/adstudio/product/'+PID+'/tag-photos',{method:'POST'})).json();
+    if(d.error){alert(d.error);return;}
+    DETAIL=await (await fetch('/api/adstudio/product/'+PID)).json(); renderRefs();
+  }finally{b.disabled=false;b.textContent='🏷 Auto-tag with Claude';}
+}
+function renderRows(){
+  $('iRows').innerHTML=INFO.rows.map((r,i)=>`<tr><td><input type="checkbox" data-on="${i}" ${r.on!==false?'checked':''}></td>
+    <td><input class="f" data-k="size" data-i="${i}" value="${esc(r.size||'')}"></td><td><input class="f" data-k="weight" data-i="${i}" value="${esc(r.weight||'')}"></td>
+    <td><input class="f" data-k="pieces" data-i="${i}" value="${esc(r.pieces||'')}"></td><td><button class="btn sm" data-rm="${i}">✕</button></td></tr>`).join('');
+  document.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{readInfo();INFO.rows.splice(+b.dataset.rm,1);renderRows();});
+}
+function readInfo(){
+  INFO.name=$('iName').value.trim(); INFO.estimate=$('iEst').value;
+  document.querySelectorAll('#iRows [data-k]').forEach(el=>INFO.rows[+el.dataset.i][el.dataset.k]=el.value);
+  document.querySelectorAll('#iRows [data-on]').forEach(el=>INFO.rows[+el.dataset.on].on=el.checked);
+  INFO.bab={size:$('bSize').value,weight:$('bWeight').value,pieces:$('bPieces').value};
+  return INFO;
+}
+async function saveFruit(){
+  const body={physical_desc:$('cPhys').value,varieties:$('cVar').value};
+  await fetch('/api/adstudio/product/'+PID+'/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  Object.assign(DETAIL.product,body); const b=$('btnSaveFruit');b.textContent='Saved ✓';setTimeout(()=>b.textContent='Save',1500);
+}
+async function describeFruit(){
+  const b=$('btnDescribe');b.disabled=true;b.innerHTML='<span class="spinner"></span> looking…';
+  try{const d=await (await fetch('/api/adstudio/product/'+PID+'/describe-fruit',{method:'POST'})).json();
+    if(d.error){alert(d.error);return;}
+    if(d.physical_desc)$('cPhys').value=d.physical_desc; if(d.varieties&&!$('cVar').value.trim())$('cVar').value=d.varieties;
+  }finally{b.disabled=false;b.textContent='✨ Draft from photos with Claude';}
+}
+async function genCore(){
+  const kinds=[...document.querySelectorAll('.ck:checked')].map(x=>x.value); if(!kinds.length)return;
+  if(!DETAIL.photos.length&&!confirm('No reference photos — the model will invent the fruit. Continue?'))return;
+  if(($('cPhys').value||'')!==(DETAIL.product.physical_desc||'')||($('cVar').value||'')!==(DETAIL.product.varieties||''))await saveFruit();
+  const btn=$('btnCoreGen'),st=$('coreStatus');btn.disabled=true;
+  st.innerHTML='<span class="spinner"></span> Claude is studying the references and writing shot briefs…';
+  const q=await (await fetch('/api/adstudio/product/'+PID+'/core/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kinds,n:+$('coreN').value})})).json();
+  if(q.error){st.textContent='⚠ '+q.error;btn.disabled=false;return;}
+  await runCoreIds(q.queued.map(x=>x.id)); btn.disabled=false;
+}
+async function runCoreIds(ids,fixes){
+  const st=$('coreStatus'); let done=0,failed=0; await loadCore();
+  for(let i=0;i<ids.length;i++){
+    st.innerHTML=`<span class="spinner"></span> rendering ${i+1}/${ids.length} (done ${done}${failed?', failed '+failed:''})`;
+    let ok=false;
+    for(let a=0;a<3&&!ok;a++){
+      const r=fixes!==undefined?await fetch('/api/adstudio/core/'+ids[i]+'/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fix:fixes})})
+                   :await fetch('/api/adstudio/core/'+ids[i]+'/run',{method:'POST'});
+      if(r.status===429){st.innerHTML='⏳ rate-limited, waiting…';await sleep(15000);continue;}
+      ok=(await r.json()).status==='done'; if(!ok)break;
+    }
+    ok?done++:failed++; await loadCore();
+  }
+  st.textContent=`✅ ${done} done${failed?`, ${failed} failed (↻ to retry)`:''}.`;
+}
+function coreCard(it){
+  const img=`/api/adstudio/core/${it.id}/image`;
+  return `<div class="ad core"><div class="imgwrap">${it.has_image?`<img src="${img}?t=${Date.now()}">`:`<span class="ph">${it.status==='failed'?'✕ '+esc((it.error_message||'failed').slice(0,60)):it.status}</span>`}</div>
+    <div class="meta"><span class="ttl">#${it.id}</span> <span class="muted">${esc((it.created_at||'').slice(5,16))}</span></div>
+    <div class="acts">${it.has_image?`<a href="${img}" download="${it.kind}_${it.id}.png">⬇</a>`:''}<button data-cfav="${it.id}">${it.is_favorite?'★':'☆'}</button>
+    ${it.kind.startsWith('info_')?'':`<button data-cregen="${it.id}">↻ fix / retry</button>`}<button data-cdel="${it.id}">🗑</button></div>
+    ${it.brief?`<details class="brief"><summary>shot brief${it.fix?' + fix':''}</summary>${esc(it.brief)}${it.fix?'\n\nFIX: '+esc(it.fix):''}</details>`:''}</div>`;
+}
+async function loadCore(){
+  if(!$('coreGrid'))return;
+  CORE_ITEMS=(await (await fetch('/api/adstudio/core?product_id='+PID)).json()).items;
+  $('coreGrid').innerHTML=Object.entries(CORE_KINDS).map(([k,label])=>{const xs=CORE_ITEMS.filter(x=>x.kind===k);
+    return `<div class="core-sec"><h4>${label}</h4>${xs.length?`<div class="gal">${xs.map(coreCard).join('')}</div>`:'<div class="muted">None yet.</div>'}</div>`;}).join('');
+  const infos=CORE_ITEMS.filter(x=>x.kind.startsWith('info_'));
+  $('infoGrid').innerHTML=[['info_pdp','PDP'],['info_bab','Build-a-Box']].map(([k,l])=>{const xs=infos.filter(x=>x.kind===k);
+    return xs.length?`<div class="core-sec"><h4>${l}</h4><div class="gal">${xs.map(coreCard).join('')}</div></div>`:'';}).join('');
+  // thumbnail options: done core1 (favorites first), then other core shots, then reference photos
+  const keep=$('iThumb').value;
+  const shots=CORE_ITEMS.filter(x=>x.has_image&&!x.kind.startsWith('info_')).sort((a,b)=>(a.kind!=='core1')-(b.kind!=='core1')||b.is_favorite-a.is_favorite);
+  $('iThumb').innerHTML=shots.map(x=>`<option value="core:${x.id}">${x.kind} #${x.id}${x.is_favorite?' ★':''}</option>`).join('')
+    +DETAIL.photos.map(ph=>`<option value="photo:${ph.id}">reference photo #${ph.id}</option>`).join('')+'<option value="">(no thumbnail)</option>';
+  if(keep&&[...$('iThumb').options].some(o=>o.value===keep))$('iThumb').value=keep;
+  document.querySelectorAll('[data-cfav]').forEach(b=>b.onclick=async()=>{await fetch('/api/adstudio/core/'+b.dataset.cfav+'/favorite',{method:'POST'});loadCore();});
+  document.querySelectorAll('[data-cdel]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this image?'))return;await fetch('/api/adstudio/core/'+b.dataset.cdel+'/delete',{method:'POST'});loadCore();});
+  document.querySelectorAll('[data-cregen]').forEach(b=>b.onclick=async()=>{
+    const it=CORE_ITEMS.find(x=>x.id===+b.dataset.cregen)||{};
+    const fix=prompt('What should change? (kept for future retries; clear it to remove)\ne.g. "flesh should be deeper pink; show the seeds"',it.fix||'');
+    if(fix===null)return; await runCoreIds([+b.dataset.cregen],fix);
+  });
+}
+async function renderInfo(kind){
+  readInfo(); const b=kind==='pdp'?$('btnPdp'):$('btnBab'); const t=b.textContent; b.disabled=true; b.innerHTML='<span class="spinner"></span>';
+  try{const d=await (await fetch('/api/adstudio/product/'+PID+'/infographic',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,info:INFO,thumb:$('iThumb').value})})).json();
+    if(d.error){alert(d.error);return;}
+    DETAIL.product.info_json=JSON.stringify(INFO); await loadCore();
+  }finally{b.disabled=false;b.textContent=t;}
+}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+boot();
+</script>
+</body>
+</html>

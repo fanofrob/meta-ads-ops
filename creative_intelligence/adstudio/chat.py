@@ -14,6 +14,8 @@ import json
 import re
 from typing import Any
 
+from creative_intelligence.adstudio.profiles import profile
+
 # Sonnet for copy quality; verified working on this account.
 MODEL = "claude-sonnet-4-5"
 
@@ -23,9 +25,12 @@ You are a senior DTC performance-creative director for Good Hill Farms, helping 
 Every hook = Desire + Conflict + Partial Solution (D+C+PS): name what the buyer wants (D), reveal what's in the way (C), tease that a solution exists without completing the loop (PS). Never complete the loop.
 
 Rules: these are PAID ads — make someone click to BUY, not to learn. Use ONE specific, ownable claim (never a line that could fit a competitor). Use the product name at most once. No placeholder brackets. Reject rage-bait, "easy steps," vague curiosity ("this changed everything"), and generic hooks.
-
-For a candle/home product the Desire is usually ATMOSPHERE, MEMORY, or FEELING — not taste. Keep a quiet-luxury, warm, real tone. Be concrete and physical.
 """
+
+
+def _system(product: dict[str, Any]) -> str:
+    """SYSTEM plus the product type's take on what the buyer desires."""
+    return SYSTEM + "\n" + profile(product)["hook_desire"] + "\n"
 
 _HOOK_SCHEMA = (
     'Return ONLY JSON: {"hooks":[{'
@@ -61,11 +66,14 @@ def _image_blocks(data_uris: list[str]) -> list[dict[str, Any]]:
 
 
 def _product_line(product: dict[str, Any]) -> str:
-    bits = [f"Product: {product.get('name','(unnamed)')}"]
+    prof = profile(product)
+    bits = [f"Product: {product.get('name','(unnamed)')} (type: {prof['label']})"]
     if product.get("scent_notes"):
-        bits.append(f"Scent notes (the ONLY ingredients): {product['scent_notes']}")
+        bits.append(f"{prof['notes_label']}: {product['scent_notes']}")
     if product.get("physical_desc"):
         bits.append(f"Looks like: {product['physical_desc']}")
+    if product.get("varieties"):
+        bits.append(f"Varieties: {product['varieties']}")
     if product.get("description"):
         bits.append(f"Description: {product['description']}")
     if product.get("notes"):
@@ -91,7 +99,7 @@ def chat_reply(messages: list[dict[str, str]], product: dict[str, Any],
 
     r = c.messages.create(
         model=MODEL, max_tokens=1200,
-        system=SYSTEM + "\n\n" + _product_line(product),
+        system=_system(product) + "\n" + _product_line(product),
         messages=api_msgs,
     )
     return "".join(b.text for b in r.content if getattr(b, "type", "") == "text").strip()
@@ -110,7 +118,7 @@ def suggest_hooks(product: dict[str, Any], n: int = 4,
     )
     content: list[dict[str, Any]] = list(imgs) + [{"type": "text", "text": ask}]
     r = c.messages.create(
-        model=MODEL, max_tokens=2000, system=SYSTEM,
+        model=MODEL, max_tokens=2000, system=_system(product),
         messages=[{"role": "user", "content": content}],
     )
     text = "".join(b.text for b in r.content if getattr(b, "type", "") == "text")
@@ -138,7 +146,7 @@ def extract_hooks(product: dict[str, Any], messages: list[dict[str, str]],
     )
     content = _image_blocks(image_data_uris or []) + [{"type": "text", "text": ask}]
     r = c.messages.create(
-        model=MODEL, max_tokens=3000, system=SYSTEM,
+        model=MODEL, max_tokens=3000, system=_system(product),
         messages=[{"role": "user", "content": content}],
     )
     text = "".join(b.text for b in r.content if getattr(b, "type", "") == "text")
