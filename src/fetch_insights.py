@@ -69,6 +69,30 @@ def fetch_7d(env: dict) -> None:
     print(f"  Saved to {out_path}")
 
 
+def fetch_90d(env: dict) -> None:
+    """Fetch last 90 days aggregated — one row per ad. Feeds winning-pattern
+    extraction, which needs more purchases than a 7- or 30-day window holds.
+    """
+    print(f"  Date preset: last_90d")
+    print(f"  Level      : ad\n")
+
+    insights = paginated_get(
+        url=base_url(env, "insights"),
+        params={
+            "fields": FIELDS,
+            "level": "ad",
+            "date_preset": "last_90d",
+            "limit": 100,
+            "access_token": env["META_ACCESS_TOKEN"],
+        },
+        label="insight rows",
+    )
+
+    out_path = save_raw(insights, f"insights_90d_{date.today().isoformat()}.json")
+    print(f"\n[OK] Fetched {len(insights)} insight rows (90-day aggregated).")
+    print(f"  Saved to {out_path}")
+
+
 def fetch_historical(env: dict) -> None:
     """Fetch last 30 days with time_increment=1 — one row per ad per day.
     Required for trend detection: CTR drops, CPA spikes, frequency growth, spend pacing.
@@ -104,6 +128,11 @@ def main():
         help="Fetch last 7 days aggregated (primary metrics source).",
     )
     parser.add_argument(
+        "--last90d",
+        action="store_true",
+        help="Fetch last 90 days aggregated (winning-pattern extraction).",
+    )
+    parser.add_argument(
         "--historical",
         action="store_true",
         help="Fetch last 30 days with daily breakdowns (trend engine).",
@@ -118,6 +147,8 @@ def main():
 
     if args.last7d:
         fetch_7d(env)
+    elif args.last90d:
+        fetch_90d(env)
     elif args.historical:
         fetch_historical(env)
     else:

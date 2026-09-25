@@ -9,6 +9,7 @@ winning ads behind each one so Claude can see what the pattern sounds like.
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime
 from typing import Any
 
@@ -82,7 +83,8 @@ def data_status(conn: Any) -> dict[str, Any]:
     last = latest_run(conn)
     rng = (last_ok or {}).get("date_range") or "7d"
     row = conn.execute(
-        "SELECT MAX(snapshot_date) AS d, COUNT(*) AS n, COALESCE(SUM(spend),0) AS s"
+        "SELECT MAX(snapshot_date) AS d, COUNT(*) AS n, COALESCE(SUM(spend),0) AS s,"
+        " COALESCE(SUM(revenue),0) AS rev, COALESCE(SUM(purchases),0) AS pur"
         " FROM creative_performance WHERE date_range=? AND snapshot_date ="
         " (SELECT MAX(snapshot_date) FROM creative_performance WHERE date_range=?)",
         (rng, rng)).fetchone()
@@ -93,7 +95,24 @@ def data_status(conn: Any) -> dict[str, Any]:
         "date_range": rng, "snapshot_date": row["d"] if row else None,
         "n_ads": row["n"] if row else 0, "spend": row["s"] if row else 0,
         "age_days": age, "last_run": last,
+        "purchases": row["pur"] if row else 0,
+        "account_roas": (row["rev"] / row["s"]) if row and row["s"] else None,
+        **_creative_baseline(conn, rng),
     }
+
+
+def _creative_baseline(conn: Any, date_range: str) -> dict[str, Any]:
+    """The bar patterns are measured against: written-creative ads only."""
+    from creative_intelligence.analysis.patterns import creative_rows
+    _, info = creative_rows(date_range, conn)
+    return info
+
+
+def _strength(p: dict[str, Any]) -> float:
+    """Rank key: lift over the account ROAS, scaled by how many purchases back it."""
+    if p.get("roas_lift") is not None:
+        return (p["roas_lift"] - 1) * math.sqrt(p.get("total_purchases") or 0)
+    return float(p.get("winner_count") or 0)          # legacy (count-based) patterns
 
 
 def current_patterns(conn: Any, limit: int = 12, with_examples: bool = True) -> list[dict[str, Any]]:
@@ -109,10 +128,9 @@ def current_patterns(conn: Any, limit: int = 12, with_examples: bool = True) -> 
     if last_ok:
         sql += " AND updated_at >= ?"
         params.append(last_ok["started_at"])
-    sql += " ORDER BY winner_count DESC, avg_roas DESC"
     out, seen = [], set()
-    for r in conn.execute(sql, params).fetchall():
-        p = dict(r)
+    for p in sorted((dict(r) for r in conn.execute(sql, params).fetchall()),
+                    key=lambda p: (_strength(p), p.get("avg_roas") or 0), reverse=True):
         key = tuple(sorted(json.loads(p.get("example_creative_ids") or "[]")))
         if key in seen:
             continue
@@ -139,14 +157,22 @@ def get_pattern(conn: Any, pattern_id: int) -> dict[str, Any] | None:
 
 def prompt_block(patterns: list[dict[str, Any]]) -> str:
     """The patterns + their real winning ads, as Claude sees them."""
-    lines = ["WINNING PATTERNS FROM OUR REAL META RESULTS (top 25% of ads by ROAS/CPA). "
-             "Each hook must follow exactly ONE of these — set its pattern_id."]
+    lines = ["WINNING PATTERNS FROM OUR REAL META RESULTS (tag pairs whose pooled, spend-weighted "
+             "ROAS beats the average of all our written-creative ads). Each hook must follow "
+             "exactly ONE of these — set its pattern_id."]
     for p in patterns:
-        stats = f"{p['winner_count']} winning ads of {p.get('creative_count') or '?'}"
-        if p.get("avg_roas"):
-            stats += f", avg ROAS {p['avg_roas']:.2f}"
-        if p.get("avg_cpa"):
-            stats += f", avg CPA ${p['avg_cpa']:.0f}"
+        if p.get("roas_lift") is not None:
+            stats = (f"${p['total_spend']:,.0f} spend, {p['total_purchases']:.0f} purchases, "
+                     f"ROAS {p['avg_roas']:.2f} ({p['roas_lift']:.2f}× our written-creative average), "
+                     f"CPA ${p['avg_cpa']:.0f}, across {p['creative_count']} ads")
+            if (p.get("top_ad_share") or 0) >= 0.8:
+                stats += " — mostly ONE ad, so treat it as that ad's approach"
+        else:
+            stats = f"{p['winner_count']} winning ads of {p.get('creative_count') or '?'}"
+            if p.get("avg_roas"):
+                stats += f", avg ROAS {p['avg_roas']:.2f}"
+            if p.get("avg_cpa"):
+                stats += f", avg CPA ${p['avg_cpa']:.0f}"
         lines.append(f"\n[pattern_id {p['id']}] {p['label']} — {stats}")
         for ex in p.get("examples") or []:
             copy = " / ".join(x for x in (ex["headline"], ex["text"]) if x)

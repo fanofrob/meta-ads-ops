@@ -23,6 +23,7 @@ _PREFIX_MAP = {
     "yesterday": "insights",
     "7d":        "insights_7d",
     "30d":       "insights_30d",
+    "90d":       "insights_90d",
 }
 
 

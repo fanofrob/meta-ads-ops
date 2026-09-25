@@ -193,6 +193,130 @@ def _upsert_pattern(pattern: dict[str, Any], db: sqlite3.Connection) -> None:
         )
 
 
+# Tag pairs analysed by both extractors.
+_COMBOS: list[tuple[str, list[str]]] = [
+    ("hook_type × angle",             ["hook_type", "angle"]),
+    ("hook_type × format",            ["hook_type", "format"]),
+    ("angle × archetype",             ["angle", "archetype"]),
+    ("archetype × format",            ["archetype", "format"]),
+    ("emotional_trigger × angle",     ["emotional_trigger", "angle"]),
+    ("offer_style × hook_type",       ["offer_style", "hook_type"]),
+]
+
+
+def is_catalog_ad(headline: str | None, text: str | None) -> bool:
+    """Catalog / dynamic-product ads ({{product.name}} templates) have no written
+    concept to learn from, and their ROAS is not a creative's doing."""
+    return "{{" in (headline or "") or "{{" in (text or "")
+
+
+def creative_rows(date_range: str, db: sqlite3.Connection) -> tuple[list[dict[str, Any]], dict[str, float]]:
+    """Per-ad results for the window, minus catalog ads, plus what was excluded."""
+    rows = [dict(r) for r in db.execute(
+        "SELECT p.creative_id, p.spend, p.purchases, p.revenue, p.ctr, c.headline, c.primary_text"
+        " FROM creative_performance p LEFT JOIN creatives c ON c.id = p.creative_id"
+        " WHERE p.date_range=? AND p.spend > 0 AND p.snapshot_date = (SELECT MAX(snapshot_date)"
+        " FROM creative_performance WHERE date_range=?)", (date_range, date_range)).fetchall()]
+    keep = [r for r in rows if not is_catalog_ad(r["headline"], r["primary_text"])]
+    dropped = [r for r in rows if is_catalog_ad(r["headline"], r["primary_text"])]
+    spend = sum(r["spend"] or 0 for r in keep)
+    return keep, {
+        "catalog_ads": len(dropped),
+        "catalog_spend": sum(r["spend"] or 0 for r in dropped),
+        "creative_roas": (sum(r["revenue"] or 0 for r in keep) / spend) if spend else 0.0,
+    }
+
+
+def extract_weighted_patterns(
+    date_range: str = "90d",
+    min_spend: float | None = None,
+    min_purchases: float = 8,
+    conn: sqlite3.Connection | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Spend-weighted winning patterns.
+
+    Instead of counting "winner" ads equally (where a $15 ad with one lucky
+    sale weighs as much as a $13k ad with 179), pool every ad's real spend,
+    purchases and revenue per tag pair. A pattern wins when its pooled ROAS
+    beats the pooled ROAS of all written-creative ads in the window (catalog
+    / {{product.name}} ads are left out of both — they have no concept to
+    learn from), with enough spend and purchases behind it to mean something:
+
+      min_spend      default: max($250, 3% of window spend)
+      min_purchases  default: 8
+      and at least 2 ads that spent.
+
+    Stored per pattern: pooled avg_roas / avg_cpa, total spend / purchases /
+    revenue, roas_lift (pooled ROAS ÷ account ROAS), top_ad_share (share of
+    the pattern's spend from its single biggest ad — high means "this is
+    mostly one ad"), winner_count (ads in it beating the account ROAS), and
+    example_creative_ids (its top ads by revenue).
+    """
+    db = conn or _conn()
+    rows, _ = creative_rows(date_range, db)
+    total_spend = sum(r["spend"] or 0 for r in rows)
+    total_rev = sum(r["revenue"] or 0 for r in rows)
+    if not rows or not total_spend or not total_rev:
+        return []
+    base_roas = total_rev / total_spend
+    min_spend = max(250.0, 0.03 * total_spend) if min_spend is None else min_spend
+    tag_map = _get_tags_for_creatives([r["creative_id"] for r in rows], db)
+
+    written: list[dict[str, Any]] = []
+    for combo_label, dims in _COMBOS:
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for r in rows:
+            key = _build_pattern_key(tag_map.get(r["creative_id"], {}), dims)
+            if "unknown" not in key:
+                groups.setdefault(key, []).append(r)
+        for key, ads in groups.items():
+            spend = sum(a["spend"] or 0 for a in ads)
+            purchases = sum(a["purchases"] or 0 for a in ads)
+            revenue = sum(a["revenue"] or 0 for a in ads)
+            if len(ads) < 2 or spend < min_spend or purchases < min_purchases:
+                continue
+            roas = revenue / spend
+            if roas <= base_roas:
+                continue
+            tag_vals = dict(part.split(":", 1) for part in key.split("|"))
+            top = sorted(ads, key=lambda a: ((a["revenue"] or 0), (a["spend"] or 0)), reverse=True)
+            beating = [a for a in ads if (a["spend"] or 0) and (a["revenue"] or 0) / a["spend"] > base_roas]
+            ctr_w = sum((a["ctr"] or 0) * a["spend"] for a in ads) / spend
+            pattern = {
+                "pattern_name":         f"{combo_label}: {key.replace('|', ' + ')}",
+                "description":          (f"Pooled ROAS {roas:.2f} vs {base_roas:.2f} for all written-creative ads over "
+                                         f"${spend:,.0f} / {purchases:.0f} purchases ({date_range})"),
+                "hook_type":            tag_vals.get("hook_type"),
+                "angle":                tag_vals.get("angle"),
+                "format":               tag_vals.get("format"),
+                "archetype":            tag_vals.get("archetype"),
+                "emotional_trigger":    tag_vals.get("emotional_trigger"),
+                "avg_ctr":              ctr_w,
+                "avg_cpa":              spend / purchases,
+                "avg_roas":             roas,
+                "avg_spend":            spend / len(ads),
+                "creative_count":       len(ads),
+                "winner_count":         len(beating),
+                "example_creative_ids": json.dumps([a["creative_id"] for a in top[:5]]),
+                "total_spend":          spend,
+                "total_purchases":      purchases,
+                "total_revenue":        revenue,
+                "roas_lift":            roas / base_roas,
+                "top_ad_share":         max(a["spend"] or 0 for a in ads) / spend,
+                "date_range":           date_range,
+            }
+            _upsert_pattern(pattern, db)
+            db.execute(
+                "UPDATE creative_patterns SET total_spend=?, total_purchases=?, total_revenue=?,"
+                " roas_lift=?, top_ad_share=?, date_range=? WHERE pattern_name=?",
+                (spend, purchases, revenue, pattern["roas_lift"], pattern["top_ad_share"],
+                 date_range, pattern["pattern_name"]))
+            written.append(pattern)
+    db.commit()
+    return written
+
+
 def get_patterns(
     min_winners: int = 1,
     conn: sqlite3.Connection | None = None,

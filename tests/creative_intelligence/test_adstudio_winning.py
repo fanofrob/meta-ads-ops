@@ -25,7 +25,8 @@ def _seed(conn, updated_at="2026-09-01T00:00:00"):
         conn.execute("INSERT INTO creatives (id, ad_id, ad_name, headline, primary_text)"
                      " VALUES ('c1','a1','Mango ad','Best Fruit On Earth','REAL honey mangos')")
         conn.execute("INSERT INTO creative_performance (creative_id, ad_id, date_range, snapshot_date,"
-                     " spend, roas, cpa) VALUES ('c1','a1','30d','2026-09-01', 500, 3.1, 40)")
+                     " spend, roas, cpa) VALUES ('c1','a1',?,'2026-09-01', 500, 3.1, 40)",
+                     (meta_sync.DATE_RANGE,))
         for i, (name, ids) in enumerate([
                 ("hook_type × angle: hook_type:social_proof + angle:fear", ["c1", "c2"]),
                 ("angle × archetype: angle:fear + archetype:direct_response", ["c2", "c1"]),  # same winners
@@ -169,3 +170,48 @@ def test_sync_steps_read_env_fresh(tmp_path, monkeypatch):
     monkeypatch.setattr(meta_sync, "ROOT", tmp_path)
     monkeypatch.setenv("META_ACCESS_TOKEN", "old-token")
     assert meta_sync._step_env()["META_ACCESS_TOKEN"] == "new-token"
+
+
+# ── spend-weighted patterns ─────────────────────────────────────────────────
+def _ad(conn, cid, spend, purchases, revenue, headline="", **tags):
+    conn.execute("INSERT INTO creatives (id, ad_id, headline) VALUES (?,?,?)", (cid, "a" + cid, headline))
+    conn.execute("INSERT INTO creative_performance (creative_id, ad_id, date_range, snapshot_date,"
+                 " spend, purchases, revenue, ctr) VALUES (?,?,'90d','2026-09-25',?,?,?,1.0)",
+                 (cid, "a" + cid, spend, purchases, revenue))
+    for k, v in tags.items():
+        conn.execute("INSERT INTO creative_tags (creative_id, tag_type, tag_value, confidence, source)"
+                     " VALUES (?,?,?,1,'rule')", (cid, k, v))
+
+
+def test_weighted_patterns_pool_real_spend(db):
+    from creative_intelligence.analysis.patterns import extract_weighted_patterns
+    conn = db()
+    with conn:
+        # quality+authenticity: a big workhorse ad + a small one → pooled ROAS 2.5
+        _ad(conn, "big", 10000, 150, 25000, hook_type="quality_authenticity", angle="authenticity_quality")
+        _ad(conn, "q2", 1000, 10, 2500, hook_type="quality_authenticity", angle="authenticity_quality")
+        # social proof + fear: two tiny lucky ads with huge ROAS but ~no spend → dropped
+        _ad(conn, "lucky1", 20, 1, 300, hook_type="social_proof", angle="fear")
+        _ad(conn, "lucky2", 15, 1, 250, hook_type="social_proof", angle="fear")
+        # direct offer + discount: plenty of spend but below the account ROAS → dropped
+        _ad(conn, "d1", 6000, 40, 6000, hook_type="direct_offer", angle="discount")
+        _ad(conn, "d2", 3000, 20, 3000, hook_type="direct_offer", angle="discount")
+        # a catalog ad: huge ROAS, but no written concept — must not set the bar
+        _ad(conn, "cat", 30000, 500, 90000, headline="{{product.name}}",
+            hook_type="quality_authenticity", angle="authenticity_quality")
+    pats = {p["pattern_name"]: p for p in extract_weighted_patterns("90d", conn=conn)}
+    assert list(pats) == ["hook_type × angle: hook_type:quality_authenticity + angle:authenticity_quality"]
+    p = next(iter(pats.values()))
+    base = (25000 + 2500 + 300 + 250 + 6000 + 3000) / (10000 + 1000 + 20 + 15 + 6000 + 3000)
+    assert round(p["avg_roas"], 3) == 2.5 and round(p["roas_lift"], 3) == round(2.5 / base, 3)
+    assert p["total_purchases"] == 160 and round(p["top_ad_share"], 3) == round(10000 / 11000, 3)
+    assert json.loads(p["example_creative_ids"])[0] == "big"
+
+    with conn:
+        conn.execute("INSERT INTO meta_sync_runs (started_at, status, date_range)"
+                     " VALUES ('2000-01-01','done','90d')")
+    ps = winning.current_patterns(conn)
+    assert ps[0]["roas_lift"] > 1 and "mostly ONE ad" in winning.prompt_block(ps)
+    st = winning.data_status(conn)
+    assert st["date_range"] == "90d" and st["catalog_ads"] == 1 and st["catalog_spend"] == 30000
+    assert round(st["creative_roas"], 3) == round(base, 3) and st["account_roas"] > 2

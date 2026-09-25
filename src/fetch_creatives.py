@@ -154,7 +154,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--window",
-        choices=["7d", "30d"],
+        choices=["7d", "30d", "90d"],
         default="7d",
         help="Which insights window decides the 'active' ads (default 7d).",
     )

@@ -4,11 +4,12 @@ Meta → winning patterns refresh, runnable from the web app.
 Chains the existing read-only pipeline:
 
   src/fetch_campaigns.py, fetch_adsets.py, fetch_ads.py, fetch_insights.py
+  (yesterday, 7d, 90d aggregated)
       → data/raw/*.json                      (GET only, logged to outputs/api.log)
-  src/fetch_creatives.py --window 30d → ad copy for ads that spent in the window
+  src/fetch_creatives.py --window 90d → ad copy for ads that spent in the window
   ci ingest --skip-copy-fetch → creatives + creative_performance (from data/raw)
   ci tag      → rule-based tags
-  ci extract-patterns --date-range 30d → creative_patterns
+  ci extract-patterns --date-range 90d --weighted → spend-weighted creative_patterns
 
 Every step runs as a subprocess: the src/ scripts sys.exit() on API errors,
 which must not take the web server down with them. Nothing here calls a Meta
@@ -25,7 +26,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-DATE_RANGE = "30d"
+DATE_RANGE = "90d"
 
 STEPS: list[tuple[str, list[str]]] = [
     ("Fetching campaigns", ["src/fetch_campaigns.py"]),
@@ -33,12 +34,12 @@ STEPS: list[tuple[str, list[str]]] = [
     ("Fetching ads", ["src/fetch_ads.py"]),
     ("Fetching yesterday's results", ["src/fetch_insights.py"]),
     ("Fetching 7-day results", ["src/fetch_insights.py", "--last7d"]),
-    ("Fetching 30-day results", ["src/fetch_insights.py", "--historical"]),
+    ("Fetching 90-day results", ["src/fetch_insights.py", "--last90d"]),
     ("Fetching ad copy", ["src/fetch_creatives.py", "--window", DATE_RANGE]),
     ("Importing ads + copy", ["-m", "creative_intelligence.cli", "ingest", "--skip-copy-fetch"]),
     ("Tagging ads", ["-m", "creative_intelligence.cli", "tag"]),
     ("Finding winning patterns", ["-m", "creative_intelligence.cli", "extract-patterns",
-                                  "--date-range", DATE_RANGE]),
+                                  "--date-range", DATE_RANGE, "--weighted"]),
 ]
 
 _lock = threading.Lock()

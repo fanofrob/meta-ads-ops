@@ -410,17 +410,19 @@ async function loadPatterns(force){
   const {patterns,status}=PATS, st=status, run=st.last_run;
   const keep=$('hkPattern').value;
   $('hkPattern').innerHTML=(patterns.length?`<option value="auto">📈 Top winning patterns (auto)</option>`:'')
-    +patterns.map(p=>`<option value="${p.id}">📈 ${esc(p.label)} — ${p.winner_count} winners${p.avg_roas?`, ROAS ${p.avg_roas.toFixed(1)}`:''}</option>`).join('')
+    +patterns.map(p=>`<option value="${p.id}">📈 ${esc(p.label)} — ${p.roas_lift!=null?`ROAS ${p.avg_roas.toFixed(2)} · ${Math.round(p.total_purchases)} purchases`:`${p.winner_count} winners${p.avg_roas?`, ROAS ${p.avg_roas.toFixed(1)}`:''}`}</option>`).join('')
     +'<option value="none">💡 No pattern — just my idea</option>';
   if(keep&&[...$('hkPattern').options].some(o=>o.value===keep))$('hkPattern').value=keep;
   $('patSummary').textContent=`See the ${patterns.length} winning patterns and the real ads behind them`;
   $('patList').innerHTML=patterns.map(p=>`<div class="pat"><div class="pl">📈 ${esc(p.label)}</div>
-    <div class="ps">${p.winner_count} of ${p.creative_count} ads were winners${p.avg_roas?` · avg ROAS ${p.avg_roas.toFixed(2)}`:''}${p.avg_cpa?` · avg CPA $${p.avg_cpa.toFixed(0)}`:''}${p.winner_count<4?' · <span class="warn">small sample</span>':''}</div>
+    <div class="ps">${patStats(p)}</div>
     ${(p.examples||[]).map(e=>`<div class="ex">${esc([e.headline,e.text].filter(Boolean).join(' — '))}</div>`).join('')}</div>`).join('')||'<div class="muted" style="margin-top:6px">No patterns yet.</div>';
+  const acct=st.account_roas?` · ${Math.round(st.purchases).toLocaleString()} purchases · account ROAS ${st.account_roas.toFixed(2)}`
+    +(st.catalog_ads?` · <b>creative ROAS ${st.creative_roas.toFixed(2)}</b> <span class="muted" title="Catalog / {product.name} ads have no written concept, so they're left out of pattern analysis">(excl. ${st.catalog_ads} catalog ad${st.catalog_ads>1?'s':''}, $${Math.round(st.catalog_spend).toLocaleString()})</span>`:''):'';
   const when=st.snapshot_date?new Date(st.snapshot_date+'T00:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):'—';
   const running=run&&run.status==='running';
   const stale=st.age_days!=null&&st.age_days>14;
-  $('patStatus').innerHTML=`📊 Patterns from <b>${st.n_ads} ads</b> ($${Math.round(st.spend).toLocaleString()} spend) · ${st.date_range==='30d'?'30':'7'}-day window ending <b>${when}</b>`
+  $('patStatus').innerHTML=`📊 Patterns from <b>${st.n_ads} ads</b> ($${Math.round(st.spend).toLocaleString()} spend) · ${parseInt(st.date_range)||7}-day window ending <b>${when}</b>${acct}`
     +(stale?` · <span class="warn">⚠ ${st.age_days} days old</span>`:'')
     +` <button class="btn sm" id="btnSync" style="margin-left:8px" ${running?'disabled':''}>${running?'<span class="spinner"></span> '+esc(run.step||'syncing…'):'🔄 Sync from Meta'}</button>`
     +(run&&run.status==='failed'?`<div class="err" style="margin-top:4px">Last sync failed — ${esc(run.message)}</div>`:'')
@@ -428,8 +430,14 @@ async function loadPatterns(force){
   $('btnSync').onclick=startSync;
   if(running&&!SYNC_POLL)pollSync();
 }
+function patStats(p){
+  if(p.roas_lift==null)return `${p.winner_count} of ${p.creative_count} ads were winners${p.avg_roas?` · avg ROAS ${p.avg_roas.toFixed(2)}`:''}${p.avg_cpa?` · avg CPA $${p.avg_cpa.toFixed(0)}`:''}${p.winner_count<4?' · <span class="warn">small sample</span>':''}`;
+  return `<b>ROAS ${p.avg_roas.toFixed(2)}</b> (${p.roas_lift.toFixed(2)}× creative avg) · CPA $${p.avg_cpa.toFixed(0)} · $${Math.round(p.total_spend).toLocaleString()} spend · ${Math.round(p.total_purchases)} purchases · ${p.creative_count} ads`
+    +(p.top_ad_share>=0.8?` · <span class="warn">${Math.round(p.top_ad_share*100)}% of spend is one ad</span>`:'')
+    +(p.total_purchases<20?' · <span class="warn">few purchases</span>':'');
+}
 async function startSync(){
-  if(!confirm('Pull the last 30 days of results from Meta (read-only) and rebuild the winning patterns? Takes a few minutes.'))return;
+  if(!confirm('Pull the last 90 days of results from Meta (read-only) and rebuild the winning patterns? Takes a few minutes.'))return;
   const r=await fetch('/api/meta/sync',{method:'POST'});const d=await r.json();
   if(d.error){alert(d.error);return;}
   await loadPatterns(true);

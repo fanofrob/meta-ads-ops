@@ -315,6 +315,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
    WHERE product_type IS NULL OR product_type = ''""",
         # which winning pattern (creative_patterns.id) a hook was written from
         "ALTER TABLE adstudio_hooks ADD COLUMN pattern_id INTEGER",
+        # spend-weighted winning patterns (analysis.patterns.extract_weighted_patterns)
+        "ALTER TABLE creative_patterns ADD COLUMN total_spend REAL",
+        "ALTER TABLE creative_patterns ADD COLUMN total_purchases REAL",
+        "ALTER TABLE creative_patterns ADD COLUMN total_revenue REAL",
+        "ALTER TABLE creative_patterns ADD COLUMN roas_lift REAL",
+        "ALTER TABLE creative_patterns ADD COLUMN top_ad_share REAL",
+        "ALTER TABLE creative_patterns ADD COLUMN date_range TEXT",
         # Gallery review: approve / reject / ready-to-launch + notes (as in Render)
         "ALTER TABLE adstudio_composites ADD COLUMN review_status TEXT DEFAULT ''",
         "ALTER TABLE adstudio_composites ADD COLUMN is_ready INTEGER NOT NULL DEFAULT 0",

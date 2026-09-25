@@ -105,7 +105,9 @@ def _ingest(args: argparse.Namespace) -> None:
         if r["ad_id"]
     }
 
-    ranges = ["yesterday", "7d", "30d"] if not args.date_range else [args.date_range]
+    from creative_intelligence.ingest.insights_reader import _PREFIX_MAP, _latest_file
+    ranges = ([r for r in _PREFIX_MAP if r in ("yesterday", "7d", "30d") or _latest_file(_PREFIX_MAP[r])]
+              if not args.date_range else [args.date_range])
     for dr in ranges:
         print(f"  Loading {dr} performance data...")
         perf_rows = parse_insights(dr)
@@ -207,9 +209,10 @@ def _tag(args: argparse.Namespace) -> None:
 
 
 def _extract_patterns(args: argparse.Namespace) -> None:
-    from creative_intelligence.analysis.patterns import extract_patterns
-    print(f"Extracting patterns from {args.date_range} data...")
-    pats = extract_patterns(date_range=args.date_range)
+    from creative_intelligence.analysis.patterns import extract_patterns, extract_weighted_patterns
+    print(f"Extracting {'spend-weighted ' if args.weighted else ''}patterns from {args.date_range} data...")
+    pats = (extract_weighted_patterns(date_range=args.date_range) if args.weighted
+            else extract_patterns(date_range=args.date_range))
     print(f"  {len(pats)} patterns written")
     for p in pats[:5]:
         print(f"  - {p['pattern_name']} ({p['winner_count']} winners)")
@@ -585,7 +588,7 @@ def main() -> None:
     p_ingest = sub.add_parser("ingest", help="Ingest creatives and performance data")
     p_ingest.add_argument("--dry-run", action="store_true", default=False)
     p_ingest.add_argument("--skip-copy-fetch", action="store_true", default=False)
-    p_ingest.add_argument("--date-range", default=None, choices=["yesterday", "7d", "30d"])
+    p_ingest.add_argument("--date-range", default=None, choices=["yesterday", "7d", "30d", "90d"])
 
     # tag
     p_tag = sub.add_parser("tag", help="Tag creatives")
@@ -594,6 +597,8 @@ def main() -> None:
     # extract-patterns
     p_pat = sub.add_parser("extract-patterns", help="Extract winning patterns")
     p_pat.add_argument("--date-range", default="7d")
+    p_pat.add_argument("--weighted", action="store_true", default=False,
+                       help="Spend-weighted patterns (pooled ROAS vs account average)")
 
     # score
     p_score = sub.add_parser("score", help="Score all creatives")
