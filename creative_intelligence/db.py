@@ -315,6 +315,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
    WHERE product_type IS NULL OR product_type = ''""",
         # which winning pattern (creative_patterns.id) a hook was written from
         "ALTER TABLE adstudio_hooks ADD COLUMN pattern_id INTEGER",
+        # a Core shot used as a Compose base gets a mirror adstudio_images row
+        "ALTER TABLE adstudio_images ADD COLUMN core_id INTEGER",
         # Meta → patterns refresh runs (read-only pull; see ingest/meta_sync.py)
         """CREATE TABLE IF NOT EXISTS meta_sync_runs (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,

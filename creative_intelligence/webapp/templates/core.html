@@ -264,7 +264,7 @@ function coreCard(it){
   return `<div class="ad core"><div class="imgwrap">${it.has_image?`<img src="${img}?t=${Date.now()}">`:`<span class="ph">${it.status==='failed'?'✕ '+esc((it.error_message||'failed').slice(0,60)):it.status}</span>`}</div>
     <div class="meta"><span class="ttl">#${it.id}</span> <span class="muted">${esc((it.created_at||'').slice(5,16))}</span></div>
     <div class="acts">${it.has_image?`<a href="${img}" download="${it.kind}_${it.id}.png">⬇</a>`:''}<button data-cfav="${it.id}">${it.is_favorite?'★':'☆'}</button>
-    ${it.kind.startsWith('info_')?'':`<button data-cregen="${it.id}">↻ fix / retry</button>`}<button data-cdel="${it.id}">🗑</button></div>
+    ${it.kind.startsWith('info_')?'':`<button data-cregen="${it.id}">↻ fix / retry</button>`}${it.has_image&&!it.kind.startsWith('info_')?`<a href="/adstudio?product_id=${PID}&compose_core=${it.id}" title="Put ad copy on this shot">✏️ compose</a>`:''}<button data-cdel="${it.id}">🗑</button></div>
     ${it.brief?`<details class="brief"><summary>shot brief${it.fix?' + fix':''}</summary>${esc(it.brief)}${it.fix?'\n\nFIX: '+esc(it.fix):''}</details>`:''}</div>`;
 }
 async function loadCore(){

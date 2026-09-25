@@ -241,3 +241,34 @@ def test_new_fruit_borrows_layout_from_another_product(client, tmp_path, monkeyp
     layout, fruit = app_module._core_refs(conn, b, "core1")
     conn.close()
     assert len(layout) == 1 and len(fruit) == 1   # guava's core1 as layout, lychee photo as fruit
+
+
+def test_core_shots_compose_like_images(client, tmp_path):
+    """A finished Core shot can be a Compose base; its mirror stays out of the Images tab."""
+    import sqlite3
+    import creative_intelligence.webapp.app as app_module
+    pid = client.post("/api/adstudio/products", json={"name": "Mango", "product_type": "fruit"}).get_json()["id"]
+    shot = tmp_path / "core1.png"
+    Image.new("RGB", (600, 600), (240, 200, 60)).save(shot)
+    conn = app_module._db()
+    with conn:
+        cid = conn.execute("INSERT INTO adstudio_core (product_id, kind, status, image_path)"
+                           " VALUES (?, 'core1', 'done', ?)", (pid, str(shot))).lastrowid
+        info = conn.execute("INSERT INTO adstudio_core (product_id, kind, status, image_path)"
+                            " VALUES (?, 'info_pdp', 'done', ?)", (pid, str(shot))).lastrowid
+    conn.close()
+
+    r = client.post("/api/adstudio/compose", json={"core_id": cid, "headline": "Tree-ripened"}).get_json()
+    assert "id" in r
+    assert client.get(f"/api/adstudio/composite/{r['id']}/image").status_code == 200
+    # infographics are not ad bases
+    assert client.post("/api/adstudio/compose", json={"core_id": info, "headline": "x"}).status_code == 404
+
+    assert client.get(f"/api/adstudio/images?product_id={pid}").get_json()["images"] == []
+    b = client.post("/api/adstudio/compose-bulk", json={
+        "product_id": pid, "core_ids": [cid], "copies": [{"headline": "A"}, {"headline": "B"}]}).get_json()
+    assert b == {"made": 2, "total": 2}
+    # the same shot reuses one mirror row
+    conn = app_module._db()
+    assert conn.execute("SELECT COUNT(*) FROM adstudio_images WHERE core_id=?", (cid,)).fetchone()[0] == 1
+    conn.close()

@@ -50,7 +50,7 @@ def friendly_error(output: str) -> str:
     low = output.lower()
     if "code 190" in low or "error validating access token" in low or "session has been invalidated" in low:
         return ("Meta access token is invalid or expired. Create a new token with ads_read "
-                "access and put it in .env as META_ACCESS_TOKEN, then restart the app.")
+                "access and put it in .env as META_ACCESS_TOKEN, then sync again (no restart needed).")
     if "missing required environment variables" in low:
         return "Meta credentials are missing from .env (META_ACCESS_TOKEN, META_AD_ACCOUNT_ID, META_API_VERSION)."
     if "code 17" in low or "code 4)" in low or "rate limit" in low:

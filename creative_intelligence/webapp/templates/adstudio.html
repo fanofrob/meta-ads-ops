@@ -239,8 +239,9 @@ async function boot(){
   $('btnRunPending').onclick=runPending;
   $('imgArch').onchange=loadImages;
   $('galArch').onchange=loadGallery;
-  const want=+new URLSearchParams(location.search).get('product_id');
-  if(want)selectProduct(want);
+  const q=new URLSearchParams(location.search), want=+q.get('product_id');
+  if(want){await selectProduct(want);
+    if(q.get('compose_core')){COMPOSE.imageId='core:'+q.get('compose_core');document.querySelector('.tab[data-pane="pCompose"]').click();}}
 }
 /* ---------- PRODUCT TYPES ---------- */
 const TYPES={
@@ -491,21 +492,37 @@ async function loadImages(){
     loadImages();});
   document.querySelectorAll('#imgBody [data-fav]').forEach(b=>b.onclick=async()=>{await fetch('/api/adstudio/image/'+b.dataset.fav+'/favorite',{method:'POST'});loadImages();});
   document.querySelectorAll('#imgBody [data-del]').forEach(b=>b.onclick=async()=>{await fetch('/api/adstudio/image/'+b.dataset.del+'/delete',{method:'POST'});loadImages();});
-  document.querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{COMPOSE.imageId=+b.dataset.use;document.querySelector('.tab[data-pane="pCompose"]').click();});
+  document.querySelectorAll('[data-use]').forEach(b=>b.onclick=()=>{COMPOSE.imageId='img:'+b.dataset.use;document.querySelector('.tab[data-pane="pCompose"]').click();});
   bindSel('img');
 }
 
 /* ---------- COMPOSE ---------- */
+/* Compose bases: Images-tab pictures plus, for fruit, finished Core shots.
+   COMPOSE.imageId is a key — 'img:<id>' or 'core:<id>'. */
+async function composeBases(){
+  const imgs=(await (await fetch('/api/adstudio/images?product_id='+PID)).json()).images.filter(i=>i.has_image);
+  let cores=[];
+  if(ptype(DETAIL.product)==='fruit'){
+    const items=(await (await fetch('/api/adstudio/core?product_id='+PID)).json()).items;
+    cores=items.filter(x=>x.has_image&&!x.kind.startsWith('info_')).sort((a,b)=>b.is_favorite-a.is_favorite||b.id-a.id);
+  }
+  const starred=cores.filter(c=>c.is_favorite);
+  return {imgs,cores,bulkCores:starred.length?starred:cores,coreNote:starred.length?'★ starred':'all'};
+}
+function pickHtml(key,src,label){return `<div class="pick ${key===COMPOSE.imageId?'sel':''}" data-key="${key}" title="${esc(label||'')}"><img src="${src}"></div>`;}
 async function renderCompose(){
   if(!PID){$('composeBody').innerHTML='<div class="empty">Select a product.</div>';return;}
-  const imgs=(await (await fetch('/api/adstudio/images?product_id='+PID)).json()).images.filter(i=>i.has_image);
+  const {imgs,cores,bulkCores,coreNote}=await composeBases();
   const hooks=DETAIL.hooks;
-  if(!imgs.length){$('composeBody').innerHTML='<div class="empty">Generate some images first (Images tab).</div>';return;}
-  if(!COMPOSE.imageId)COMPOSE.imageId=imgs[0].id;
+  if(!imgs.length&&!cores.length){$('composeBody').innerHTML=`<div class="empty">Generate some images first (Images tab)${ptype(DETAIL.product)==='fruit'?`, or make <a style="color:var(--accent2)" href="/core?product_id=${PID}">📸 Core shots</a>`:''}.</div>`;return;}
+  const keys=[...imgs.map(i=>'img:'+i.id),...cores.map(c=>'core:'+c.id)];
+  if(!keys.includes(COMPOSE.imageId))COMPOSE.imageId=keys[0];
   const L=COMPOSE.layout;
+  const nAll=imgs.length+bulkCores.length;
   $('composeBody').innerHTML=`
     <label class="fl">1 · Pick a base image</label>
-    <div class="strip" id="strip">${imgs.map(i=>`<div class="pick ${i.id===COMPOSE.imageId?'sel':''}" data-id="${i.id}"><img src="/api/adstudio/image-file/${i.id}"></div>`).join('')}</div>
+    ${imgs.length?`${cores.length?'<div class="muted" style="margin-bottom:4px">✨ Images</div>':''}<div class="strip">${imgs.map(i=>pickHtml('img:'+i.id,'/api/adstudio/image-file/'+i.id,i.title)).join('')}</div>`:''}
+    ${cores.length?`<div class="muted" style="margin:8px 0 4px">📸 Core shots — your product-page photography${cores.some(c=>c.is_favorite)?' (★ first)':''}</div><div class="strip">${cores.map(c=>pickHtml('core:'+c.id,'/api/adstudio/core/'+c.id+'/image',c.kind+' #'+c.id+(c.is_favorite?' ★':''))).join('')}</div>`:''}
     <div class="compose-grid" style="margin-top:14px">
       <div>
         <label class="fl">2 · Copy</label>
@@ -519,13 +536,15 @@ async function renderCompose(){
         <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:12px"><input type="checkbox" id="c_scrim" ${L.scrim?'checked':''}> legibility scrim</label>
         <button class="btn btn-p" id="btnCompose" style="width:100%;margin-top:14px">Compose → this image</button>
         <label class="fl" style="margin-top:12px">Bulk</label>
-        <button class="btn" id="btnComposeAll" style="width:100%">↧ This copy → all ${imgs.length} images</button>
-        <button class="btn" id="btnComposeMatrix" style="width:100%;margin-top:6px">⊞ Every hook × every image (${hooks.length}×${imgs.length}=${hooks.length*imgs.length})</button>
+        ${bulkCores.length&&imgs.length?`<label style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:12px"><input type="checkbox" id="c_incCore" checked> include ${bulkCores.length} Core shot${bulkCores.length!==1?'s':''} (${coreNote})</label>`:''}
+        <button class="btn" id="btnComposeAll" style="width:100%">↧ This copy → all <span class="nb">${nAll}</span> images</button>
+        <button class="btn" id="btnComposeMatrix" style="width:100%;margin-top:6px">⊞ Every hook × every image (${hooks.length}×<span class="nb">${nAll}</span>)</button>
         <div class="muted" id="composeStatus" style="margin-top:6px"></div>
       </div>
       <div><label class="fl">Result</label><img class="preview" id="composePreview" style="display:none"><div class="muted" id="composeHint">Set copy and hit Compose. It saves to Gallery.</div></div>
     </div>`;
-  document.querySelectorAll('#strip .pick').forEach(el=>el.onclick=()=>{COMPOSE.imageId=+el.dataset.id;document.querySelectorAll('#strip .pick').forEach(x=>x.classList.toggle('sel',x===el));});
+  document.querySelectorAll('#composeBody .pick').forEach(el=>el.onclick=()=>{COMPOSE.imageId=el.dataset.key;document.querySelectorAll('#composeBody .pick').forEach(x=>x.classList.toggle('sel',x===el));});
+  if($('c_incCore'))$('c_incCore').onchange=()=>document.querySelectorAll('#composeBody .nb').forEach(x=>x.textContent=imgs.length+($('c_incCore').checked?bulkCores.length:0));
   $('c_hook').onchange=e=>{const h=hooks.find(x=>x.id==e.target.value);if(h){$('c_head').value=h.headline||h.hook_text||'';$('c_sub').value=h.subhead||'';$('c_cta').value=h.cta||'';}};
   document.querySelectorAll('#seg_pos button').forEach(b=>b.onclick=()=>{L.position=b.dataset.v;document.querySelectorAll('#seg_pos button').forEach(x=>x.classList.toggle('on',x===b));});
   document.querySelectorAll('#seg_col button').forEach(b=>b.onclick=()=>{L.color=b.dataset.v;document.querySelectorAll('#seg_col button').forEach(x=>x.classList.toggle('on',x===b));});
@@ -535,18 +554,20 @@ async function renderCompose(){
 }
 async function doComposeBulk(mode){
   const L=COMPOSE.layout; L.scrim=$('c_scrim').checked;
-  const imgs=(await (await fetch('/api/adstudio/images?product_id='+PID)).json()).images.filter(i=>i.has_image);
+  const {imgs,bulkCores}=await composeBases();
   const image_ids=imgs.map(i=>i.id);
-  if(!image_ids.length){alert('No finished images yet.');return;}
-  const body={product_id:PID,layout:L,image_ids};
+  const core_ids=(!$('c_incCore')||$('c_incCore').checked)?bulkCores.map(c=>c.id):[];
+  const n=image_ids.length+core_ids.length;
+  if(!n){alert('No finished images yet.');return;}
+  const body={product_id:PID,layout:L,image_ids,core_ids};
   if(mode==='matrix'){
     body.hook_ids=DETAIL.hooks.map(h=>h.id);
     if(!body.hook_ids.length){alert('Save some hooks first (Setup tab).');return;}
-    if(!confirm(`Make ${body.hook_ids.length} hooks × ${image_ids.length} images = ${body.hook_ids.length*image_ids.length} ads?`))return;
+    if(!confirm(`Make ${body.hook_ids.length} hooks × ${n} images = ${body.hook_ids.length*n} ads?`))return;
   }else{
     if(!$('c_head').value.trim() && !$('c_sub').value.trim()){alert('Enter copy (or pick a hook) first.');return;}
     body.copies=[{headline:$('c_head').value,subhead:$('c_sub').value,cta:$('c_cta').value,hook_id:$('c_hook').value||undefined}];
-    if(!confirm(`Apply this copy to all ${image_ids.length} images?`))return;
+    if(!confirm(`Apply this copy to all ${n} images?`))return;
   }
   const st=$('composeStatus');st.innerHTML='<span class="spinner"></span> composing…';
   const d=await (await fetch('/api/adstudio/compose-bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
@@ -556,7 +577,8 @@ async function doComposeBulk(mode){
 }
 async function doCompose(){
   const L=COMPOSE.layout; L.scrim=$('c_scrim').checked;
-  const body={image_id:COMPOSE.imageId,headline:$('c_head').value,subhead:$('c_sub').value,cta:$('c_cta').value,hook_id:$('c_hook').value||undefined,layout:L};
+  const [src,id]=(COMPOSE.imageId||'').split(':');
+  const body={[src==='core'?'core_id':'image_id']:+id,headline:$('c_head').value,subhead:$('c_sub').value,cta:$('c_cta').value,hook_id:$('c_hook').value||undefined,layout:L};
   const st=$('composeStatus');st.innerHTML='<span class="spinner"></span>';
   const d=await (await fetch('/api/adstudio/compose',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
   if(d.error){st.textContent='⚠ '+d.error;return;}

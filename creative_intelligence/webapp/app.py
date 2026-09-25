@@ -4134,7 +4134,7 @@ def adstudio_list_images() -> Any:
     conn = _db()
     sql = ("SELECT id, product_id, archetype, title, status, is_favorite, archived,"
            " aspect_ratio, error_message, created_at, image_path IS NOT NULL AS has_image"
-           " FROM adstudio_images WHERE 1=1")
+           " FROM adstudio_images WHERE core_id IS NULL")
     params: list[Any] = []
     if pid:
         sql += " AND product_id=?"; params.append(int(pid))
@@ -4221,14 +4221,41 @@ def adstudio_del_image(img_id: int) -> Any:
 
 
 # ── Compose: draw copy onto a chosen text-free image ─────────────────────
+def _core_as_image(conn, core_id: int) -> int | None:
+    """
+    The adstudio_images id standing in for a finished Core shot, created on
+    first use, so Compose / Gallery / exports treat it like any base image.
+    Mirror rows are hidden from the Images tab (core_id IS NOT NULL).
+    """
+    from creative_intelligence.adstudio.core import CORE_KINDS
+    hit = conn.execute("SELECT id FROM adstudio_images WHERE core_id=?", (core_id,)).fetchone()
+    if hit:
+        return hit["id"]
+    c = conn.execute("SELECT * FROM adstudio_core WHERE id=? AND image_path IS NOT NULL",
+                     (core_id,)).fetchone()
+    if c is None or c["kind"] not in CORE_KINDS:
+        return None
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO adstudio_images (product_id, archetype, title, concept, prompt,"
+            " aspect_ratio, model, status, image_path, core_id)"
+            " VALUES (?, 'core', ?, '', '', ?, 'core', 'done', ?, ?)",
+            (c["product_id"], f"{CORE_KINDS[c['kind']]} #{core_id}", c["aspect_ratio"],
+             c["image_path"], core_id))
+    return cur.lastrowid
+
+
 @app.post("/api/adstudio/compose")
 def adstudio_compose() -> Any:
+    """Body: {image_id | core_id, headline, subhead, cta, hook_id?, layout}."""
     from creative_intelligence.adstudio.overlay import compose
     from creative_intelligence.adstudio.store import composites_dir
     import json as _json
     d = request.get_json(force=True, silent=True) or {}
-    image_id = int(d.get("image_id", 0))
     conn = _db()
+    image_id = int(d.get("image_id") or 0)
+    if d.get("core_id"):
+        image_id = _core_as_image(conn, int(d["core_id"])) or 0
     img = conn.execute("SELECT * FROM adstudio_images WHERE id=?", (image_id,)).fetchone()
     if img is None or not img["image_path"] or not Path(img["image_path"]).exists():
         conn.close(); return jsonify({"error": "base image not found"}), 404
@@ -4269,8 +4296,9 @@ def adstudio_compose_bulk() -> Any:
     """Compose copy onto many images at once.
 
     Body: {product_id, layout, image_ids?(default: all done images),
-           copies?[{headline,subhead,cta,hook_id}] OR hook_ids?[...] OR single
-           headline/subhead/cta}. Every copy is drawn onto every image.
+           core_ids?[Core shots to include], copies?[{headline,subhead,cta,hook_id}]
+           OR hook_ids?[...] OR single headline/subhead/cta}. Every copy is
+           drawn onto every image.
     """
     from creative_intelligence.adstudio.overlay import compose
     from creative_intelligence.adstudio.store import composites_dir
@@ -4280,15 +4308,16 @@ def adstudio_compose_bulk() -> Any:
     layout = d.get("layout") or {}
     conn = _db()
 
-    if d.get("image_ids"):
-        ids = [int(x) for x in d["image_ids"]]
+    core_img_ids = [i for i in (_core_as_image(conn, int(c)) for c in d.get("core_ids") or []) if i]
+    if d.get("image_ids") or core_img_ids:
+        ids = [int(x) for x in d.get("image_ids") or []] + core_img_ids
         q = ("SELECT id, image_path FROM adstudio_images WHERE image_path IS NOT NULL"
              " AND id IN (%s)" % ",".join("?" * len(ids)))
         imgs = [dict(r) for r in conn.execute(q, ids).fetchall()]
     else:
         imgs = [dict(r) for r in conn.execute(
             "SELECT id, image_path FROM adstudio_images WHERE product_id=?"
-            " AND image_path IS NOT NULL", (pid,)).fetchall()]
+            " AND image_path IS NOT NULL AND core_id IS NULL", (pid,)).fetchall()]
 
     copies = d.get("copies")
     if not copies:
