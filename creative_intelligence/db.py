@@ -206,8 +206,6 @@ def _migrate(conn: sqlite3.Connection) -> None:
 )""",
         # add notes to existing DBs (no-op / silently ignored where it exists)
         "ALTER TABLE adstudio_products ADD COLUMN notes TEXT DEFAULT ''",
-        "ALTER TABLE adstudio_images ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
-        "ALTER TABLE adstudio_composites ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
         """CREATE TABLE IF NOT EXISTS adstudio_photos (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     product_id  INTEGER NOT NULL,
@@ -283,6 +281,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
 )""",
         """CREATE INDEX IF NOT EXISTS idx_adstudio_composites_product
    ON adstudio_composites(product_id, created_at DESC)""",
+        # after the CREATEs above, so fresh DBs get the column too
+        "ALTER TABLE adstudio_images ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE adstudio_composites ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
         # Core photos (core1-3) + box-size infographics (PDP / Build-a-Box).
         "ALTER TABLE adstudio_products ADD COLUMN varieties TEXT DEFAULT ''",
         "ALTER TABLE adstudio_products ADD COLUMN shopify_url TEXT DEFAULT ''",
