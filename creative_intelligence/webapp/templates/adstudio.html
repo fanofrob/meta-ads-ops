@@ -85,6 +85,12 @@ textarea.f{min-height:52px;resize:vertical;}
 .prod .pn .ti{margin-right:5px;}
 .typeseg{max-width:330px;}.typeseg button{font-size:12px;padding:6px 10px;white-space:nowrap;}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:0 14px;}@media(max-width:900px){.two{grid-template-columns:1fr;}}
+.pat{border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-top:6px;background:var(--surface2);}
+.pat .pl{font-size:12.5px;font-weight:600;}.pat .ps{font-size:11px;color:var(--muted);margin-top:2px;}
+.pat .ex{font-size:11px;color:var(--text2);margin-top:5px;padding-left:8px;border-left:2px solid var(--border);white-space:pre-wrap;max-height:4.6em;overflow:hidden;}
+.tagb{display:inline-block;font-size:10px;padding:1px 7px;border-radius:9px;margin-right:4px;border:1px solid var(--border);}
+.tagb.pat-b{color:var(--green);border-color:#166534;}.tagb.idea-b{color:var(--gold);border-color:#854d0e;}
+.warn{color:var(--gold);}.err{color:var(--red);}
 .hint{font-size:11.5px;color:var(--text2);background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:7px 10px;margin-top:8px;line-height:1.5;}
 </style>
 </head>
@@ -327,8 +333,14 @@ function renderSetup(){
       <div class="row" style="margin-top:6px"><button class="btn sm" id="btnSaveNotes">Save details</button>${t==='fruit'?'<button class="btn sm" id="btnDescribe">✨ Draft look from photos with Claude</button>':''}</div>
       <label class="fl" style="margin-top:14px">Reference photos (Nano Banana copies these EXACTLY)</label>
       <div class="photos" id="photos"></div><input type="file" id="photoInput" accept="image/*" style="margin-top:8px;font-size:12px"></div>
-    <div class="card"><div class="row" style="justify-content:space-between"><strong>Hooks</strong>
-      <div class="row"><input class="f" id="suggestBrief" style="width:220px" placeholder="optional steer"><button class="btn" id="btnSuggest">✨ Suggest 4</button></div></div>
+    <div class="card"><strong>Hooks</strong>
+      <div class="hint" id="patStatus"><span class="spinner"></span> loading winning patterns…</div>
+      <div class="row" style="margin-top:4px;align-items:flex-end">
+        <div style="flex:1;min-width:220px"><label class="fl">Build on</label><select class="f" id="hkPattern"></select></div>
+        <div style="flex:1.4;min-width:240px"><label class="fl">💡 Idea to test (optional)</label><input class="f" id="hkIdea" placeholder="e.g. a Mother's Day gift angle · 'for people who think they hate mango'"></div>
+        <select class="f" id="hkN" style="width:64px"><option>2</option><option selected>4</option><option>6</option></select>
+        <button class="btn btn-p" id="btnSuggest">✨ Suggest</button></div>
+      <details style="margin-top:8px"><summary class="muted" style="cursor:pointer" id="patSummary">See the winning patterns and the real ads behind them</summary><div id="patList"></div></details>
       <div id="suggestions"></div><div id="hooks" style="margin-top:10px"></div>
       <details style="margin-top:8px"><summary class="muted" style="cursor:pointer">+ Add hook manually</summary>
         <label class="fl">Hook / headline *</label><input class="f" id="mh_head"><label class="fl">Subhead</label><input class="f" id="mh_sub"><label class="fl">CTA</label><input class="f" id="mh_cta" placeholder="Shop now"><button class="btn" id="btnAddHook" style="margin-top:8px">Add hook</button></details></div>
@@ -347,6 +359,7 @@ function renderSetup(){
       if(d.physical_desc)$('d_phys').value=d.physical_desc; if(d.varieties&&!$('d_var').value.trim())$('d_var').value=d.varieties;
     }finally{b.disabled=false;b.textContent='✨ Draft look from photos with Claude';}};
   $('chatText').placeholder=T.chatPh;
+  loadPatterns();
   $('photoInput').onchange=uploadPhoto; $('btnAddHook').onclick=addHook; $('btnSuggest').onclick=suggestHooks;
   $('chatSend').onclick=chatSend; $('chatText').addEventListener('keydown',e=>{if(e.key==='Enter')chatSend();});
   $('btnPullHooks').onclick=pullHooksFromChat;
@@ -356,19 +369,64 @@ function renderPhotos(){
   document.querySelectorAll('.photo .del').forEach(b=>b.onclick=async()=>{await fetch('/api/adstudio/photo/'+b.dataset.id+'/delete',{method:'POST'});await selectProduct(PID);});
 }
 async function uploadPhoto(e){const f=e.target.files[0];if(!f)return;const fd=new FormData();fd.append('file',f);await fetch('/api/adstudio/product/'+PID+'/photo',{method:'POST',body:fd});await selectProduct(PID);}
+function hookBadges(h){
+  const src=h.source||'', pat=src.startsWith('pattern')||h.pattern_id;
+  return (pat?`<span class="tagb pat-b" title="Written from a winning pattern in our Meta data">📈 ${esc(h.pattern_label||h.archetype||'winning pattern')}</span>`:'')
+    +(src.endsWith('idea')?'<span class="tagb idea-b" title="Your idea — untested">💡 test idea</span>':'');
+}
 function renderHooks(){
-  $('hooks').innerHTML=DETAIL.hooks.map(h=>`<div class="hook"><div class="ht">${esc(h.headline||h.hook_text)}</div>${h.subhead?`<div class="hd">${esc(h.subhead)}</div>`:''}${(h.d||h.c||h.ps)?`<div class="dcp"><span><b>D</b> ${esc(h.d)}</span><span><b>C</b> ${esc(h.c)}</span><span><b>PS</b> ${esc(h.ps)}</span></div>`:''}<div class="row" style="margin-top:5px"><span class="hx">${esc(h.archetype||h.source||'')}</span><button class="btn sm" data-del="${h.id}">delete</button></div></div>`).join('')||'<div class="muted">No hooks yet.</div>';
+  $('hooks').innerHTML=DETAIL.hooks.map(h=>`<div class="hook"><div>${hookBadges(h)}</div><div class="ht">${esc(h.headline||h.hook_text)}</div>${h.subhead?`<div class="hd">${esc(h.subhead)}</div>`:''}${(h.d||h.c||h.ps)?`<div class="dcp"><span><b>D</b> ${esc(h.d)}</span><span><b>C</b> ${esc(h.c)}</span><span><b>PS</b> ${esc(h.ps)}</span></div>`:''}<div class="row" style="margin-top:5px"><span class="hx">${hookBadges(h)?'':esc(h.archetype||h.source||'')}</span><button class="btn sm" data-del="${h.id}">delete</button></div></div>`).join('')||'<div class="muted">No hooks yet.</div>';
   document.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{await fetch('/api/adstudio/hook/'+b.dataset.del+'/delete',{method:'POST'});await selectProduct(PID);});
 }
 async function addHook(){const head=$('mh_head').value.trim();if(!head)return;await fetch('/api/adstudio/product/'+PID+'/hook',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({headline:head,hook_text:head,subhead:$('mh_sub').value,cta:$('mh_cta').value})});['mh_head','mh_sub','mh_cta'].forEach(i=>$(i).value='');await selectProduct(PID);}
 async function suggestHooks(){
   const btn=$('btnSuggest');btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
-  try{const d=await (await fetch('/api/adstudio/product/'+PID+'/suggest-hooks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({n:4,brief:$('suggestBrief').value})})).json();
+  try{const d=await (await fetch('/api/adstudio/product/'+PID+'/suggest-hooks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({n:+$('hkN').value,pattern:$('hkPattern').value,idea:$('hkIdea').value})})).json();
     if(d.error){alert(d.error);return;}
-    $('suggestions').innerHTML='<label class="fl">Suggested — Save to keep</label>'+d.hooks.map((h,i)=>`<div class="hook" id="sg${i}"><div class="ht">${esc(h.headline||h.hook_text)}</div><div class="hd">${esc(h.subhead||'')}</div><div class="dcp"><span><b>D</b> ${esc(h.d||'')}</span><span><b>C</b> ${esc(h.c||'')}</span><span><b>PS</b> ${esc(h.ps||'')}</span></div><button class="btn btn-p sm" style="margin-top:6px" data-save='${i}'>Save</button></div>`).join('');
-    document.querySelectorAll('[data-save]').forEach(b=>b.onclick=async()=>{const h=d.hooks[+b.dataset.save];await fetch('/api/adstudio/product/'+PID+'/hook',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...h,source:'claude'})});$('sg'+b.dataset.save).style.opacity=.4;b.textContent='Saved ✓';b.disabled=true;const det=await (await fetch('/api/adstudio/product/'+PID)).json();DETAIL.hooks=det.hooks;renderHooks();});
-  }finally{btn.disabled=false;btn.textContent='✨ Suggest 4';}
+    $('suggestions').innerHTML='<label class="fl">Suggested — Save to keep</label>'+d.hooks.map((h,i)=>`<div class="hook" id="sg${i}"><div>${hookBadges(h)}</div><div class="ht">${esc(h.headline||h.hook_text)}</div><div class="hd">${esc(h.subhead||'')}</div><div class="dcp"><span><b>D</b> ${esc(h.d||'')}</span><span><b>C</b> ${esc(h.c||'')}</span><span><b>PS</b> ${esc(h.ps||'')}</span></div><button class="btn btn-p sm" style="margin-top:6px" data-save='${i}'>Save</button></div>`).join('');
+    document.querySelectorAll('[data-save]').forEach(b=>b.onclick=async()=>{const h=d.hooks[+b.dataset.save];await fetch('/api/adstudio/product/'+PID+'/hook',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(h)});$('sg'+b.dataset.save).style.opacity=.4;b.textContent='Saved ✓';b.disabled=true;const det=await (await fetch('/api/adstudio/product/'+PID)).json();DETAIL.hooks=det.hooks;renderHooks();});
+  }finally{btn.disabled=false;btn.textContent='✨ Suggest';}
 }
+/* ---------- WINNING PATTERNS (real Meta data) ---------- */
+let PATS=null, SYNC_POLL=null;
+async function loadPatterns(force){
+  if(!PATS||force)PATS=await (await fetch('/api/adstudio/patterns')).json();
+  if(!$('patStatus'))return;
+  const {patterns,status}=PATS, st=status, run=st.last_run;
+  const keep=$('hkPattern').value;
+  $('hkPattern').innerHTML=(patterns.length?`<option value="auto">📈 Top winning patterns (auto)</option>`:'')
+    +patterns.map(p=>`<option value="${p.id}">📈 ${esc(p.label)} — ${p.winner_count} winners${p.avg_roas?`, ROAS ${p.avg_roas.toFixed(1)}`:''}</option>`).join('')
+    +'<option value="none">💡 No pattern — just my idea</option>';
+  if(keep&&[...$('hkPattern').options].some(o=>o.value===keep))$('hkPattern').value=keep;
+  $('patSummary').textContent=`See the ${patterns.length} winning patterns and the real ads behind them`;
+  $('patList').innerHTML=patterns.map(p=>`<div class="pat"><div class="pl">📈 ${esc(p.label)}</div>
+    <div class="ps">${p.winner_count} of ${p.creative_count} ads were winners${p.avg_roas?` · avg ROAS ${p.avg_roas.toFixed(2)}`:''}${p.avg_cpa?` · avg CPA $${p.avg_cpa.toFixed(0)}`:''}${p.winner_count<4?' · <span class="warn">small sample</span>':''}</div>
+    ${(p.examples||[]).map(e=>`<div class="ex">${esc([e.headline,e.text].filter(Boolean).join(' — '))}</div>`).join('')}</div>`).join('')||'<div class="muted" style="margin-top:6px">No patterns yet.</div>';
+  const when=st.snapshot_date?new Date(st.snapshot_date+'T00:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):'—';
+  const running=run&&run.status==='running';
+  const stale=st.age_days!=null&&st.age_days>14;
+  $('patStatus').innerHTML=`📊 Patterns from <b>${st.n_ads} ads</b> ($${Math.round(st.spend).toLocaleString()} spend) · ${st.date_range==='30d'?'30':'7'}-day window ending <b>${when}</b>`
+    +(stale?` · <span class="warn">⚠ ${st.age_days} days old</span>`:'')
+    +` <button class="btn sm" id="btnSync" style="margin-left:8px" ${running?'disabled':''}>${running?'<span class="spinner"></span> '+esc(run.step||'syncing…'):'🔄 Sync from Meta'}</button>`
+    +(run&&run.status==='failed'?`<div class="err" style="margin-top:4px">Last sync failed — ${esc(run.message)}</div>`:'')
+    +(run&&run.status==='done'&&run.message?`<div class="warn" style="margin-top:4px">${esc(run.message)}</div>`:'');
+  $('btnSync').onclick=startSync;
+  if(running&&!SYNC_POLL)pollSync();
+}
+async function startSync(){
+  if(!confirm('Pull the last 30 days of results from Meta (read-only) and rebuild the winning patterns? Takes a few minutes.'))return;
+  const r=await fetch('/api/meta/sync',{method:'POST'});const d=await r.json();
+  if(d.error){alert(d.error);return;}
+  await loadPatterns(true);
+}
+function pollSync(){
+  SYNC_POLL=setInterval(async()=>{
+    const {run}=await (await fetch('/api/meta/sync')).json();
+    if(!run||run.status!=='running'){clearInterval(SYNC_POLL);SYNC_POLL=null;await loadPatterns(true);return;}
+    const b=$('btnSync');if(b)b.innerHTML='<span class="spinner"></span> '+esc(run.step||'syncing…');
+  },3000);
+}
+
 let CHAT=[];
 async function chatSend(){const t=$('chatText').value.trim();if(!t)return;CHAT.push({role:'user',text:t});$('chatText').value='';renderChat(true);
   try{const d=await (await fetch('/api/adstudio/product/'+PID+'/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:CHAT})})).json();CHAT.push({role:'assistant',text:d.error?('⚠ '+d.error):d.reply});}catch(e){CHAT.push({role:'assistant',text:'⚠ '+e});}renderChat();}

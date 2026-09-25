@@ -106,23 +106,54 @@ def chat_reply(messages: list[dict[str, str]], product: dict[str, Any],
 
 
 def suggest_hooks(product: dict[str, Any], n: int = 4,
-                  brief: str = "", image_data_uris: list[str] | None = None) -> list[dict]:
-    """Return n structured, saveable hooks. `brief` = optional steer from the user."""
+                  brief: str = "", image_data_uris: list[str] | None = None,
+                  patterns: list[dict[str, Any]] | None = None,
+                  idea: str = "") -> list[dict]:
+    """
+    Return n structured, saveable hooks.
+
+    patterns — winning patterns (adstudio.winning) to build on; each hook
+               comes back with the pattern_id it follows.
+    idea     — something the operator wants to test; every hook executes it
+               (through a pattern when patterns are given too).
+    brief    — legacy free-text steer.
+    """
+    from creative_intelligence.adstudio.winning import prompt_block
     c = _client()
     imgs = _image_blocks(image_data_uris or [])
-    ask = (
-        f"{_product_line(product)}\n\n"
-        f"Write {n} distinct, strong ad hooks for this product."
-        + (f" Direction from me: {brief}" if brief else "")
-        + f"\n\n{_HOOK_SCHEMA}"
-    )
-    content: list[dict[str, Any]] = list(imgs) + [{"type": "text", "text": ask}]
+    parts = [_product_line(product)]
+    if patterns:
+        parts.append(prompt_block(patterns))
+    if idea.strip():
+        parts.append(
+            "IDEA TO TEST (from the operator — every hook must execute this idea"
+            + (", expressed through one of the winning patterns above" if patterns else "")
+            + f"):\n{idea.strip()}")
+    ask = f"Write {n} distinct, strong ad hooks for this product."
+    if patterns and len(patterns) > 1:
+        ask += " Spread them across different patterns."
+    if brief:
+        ask += f" Direction from me: {brief}"
+    schema = _HOOK_SCHEMA
+    if patterns:
+        schema = schema.replace('"cta":"2-4 word CTA"',
+                                '"cta":"2-4 word CTA","pattern_id":<the pattern_id this hook follows>')
+    parts.append(f"{ask}\n\n{schema}")
+    content: list[dict[str, Any]] = list(imgs) + [{"type": "text", "text": "\n\n".join(parts)}]
     r = c.messages.create(
-        model=MODEL, max_tokens=2000, system=_system(product),
+        model=MODEL, max_tokens=2400, system=_system(product),
         messages=[{"role": "user", "content": content}],
     )
     text = "".join(b.text for b in r.content if getattr(b, "type", "") == "text")
-    return _parse_hooks(text)
+    hooks = _parse_hooks(text)
+    valid = {p["id"] for p in patterns or []}
+    for h in hooks:
+        try:
+            pid = int(h.get("pattern_id"))
+        except (TypeError, ValueError):
+            pid = None
+        h["pattern_id"] = pid if pid in valid else None
+    return hooks
 
 
 def extract_hooks(product: dict[str, Any], messages: list[dict[str, str]],

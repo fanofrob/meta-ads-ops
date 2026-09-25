@@ -312,6 +312,21 @@ def _migrate(conn: sqlite3.Connection) -> None:
         """UPDATE adstudio_products SET product_type =
    CASE WHEN lower(name) LIKE '%candle%' THEN 'candle' ELSE 'fruit' END
    WHERE product_type IS NULL OR product_type = ''""",
+        # which winning pattern (creative_patterns.id) a hook was written from
+        "ALTER TABLE adstudio_hooks ADD COLUMN pattern_id INTEGER",
+        # Meta → patterns refresh runs (read-only pull; see ingest/meta_sync.py)
+        """CREATE TABLE IF NOT EXISTS meta_sync_runs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at   TEXT NOT NULL,
+    finished_at  TEXT,
+    status       TEXT NOT NULL DEFAULT 'running',
+    step         TEXT DEFAULT '',
+    message      TEXT DEFAULT '',
+    date_range   TEXT DEFAULT '30d',
+    n_ads        INTEGER,
+    spend        REAL,
+    n_patterns   INTEGER
+)""",
     ]
     for stmt in migrations:
         try:

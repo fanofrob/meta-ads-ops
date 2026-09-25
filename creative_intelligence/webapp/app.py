@@ -3676,9 +3676,9 @@ def adstudio_add_hook(pid: int) -> Any:
     conn = _db()
     with conn:
         cur = conn.execute(
-            f"INSERT INTO adstudio_hooks (product_id, {', '.join(_HOOK_FIELDS)}, source)"
-            f" VALUES (?{',?'*len(_HOOK_FIELDS)},?)",
-            (pid, *vals, d.get("source", "manual")))
+            f"INSERT INTO adstudio_hooks (product_id, {', '.join(_HOOK_FIELDS)}, source, pattern_id)"
+            f" VALUES (?{',?'*len(_HOOK_FIELDS)},?,?)",
+            (pid, *vals, d.get("source", "manual"), d.get("pattern_id") or None))
     hid = cur.lastrowid
     conn.close()
     return jsonify({"id": hid})
@@ -3772,20 +3772,73 @@ def adstudio_extract_hooks(pid: int) -> Any:
 
 @app.post("/api/adstudio/product/<int:pid>/suggest-hooks")
 def adstudio_suggest_hooks(pid: int) -> Any:
+    """
+    Body: {n, pattern: "auto" | "none" | <pattern id>, idea?, brief?}.
+    "auto" builds on the top winning patterns from our Meta data.
+    """
     from creative_intelligence.adstudio.chat import suggest_hooks
+    from creative_intelligence.adstudio.winning import current_patterns, get_pattern
     d = request.get_json(force=True, silent=True) or {}
+    mode = str(d.get("pattern", "auto"))
+    idea = (d.get("idea") or "").strip()
     conn = _db()
     prod = _product_dict(conn, pid)
     uris = _primary_photo_uris(conn, pid)
+    if mode == "none":
+        patterns = []
+    elif mode.isdigit():
+        one = get_pattern(conn, int(mode))
+        patterns = [one] if one else []
+    else:
+        patterns = current_patterns(conn, limit=4)
     conn.close()
     if prod is None:
         return jsonify({"error": "product not found"}), 404
+    if not patterns and not idea and mode != "none":
+        return jsonify({"error": "No winning patterns yet — sync from Meta, or type an idea to test."}), 400
     try:
-        hooks = suggest_hooks(prod, int(d.get("n", 4)), d.get("brief", ""), uris)
+        hooks = suggest_hooks(prod, int(d.get("n", 4)), d.get("brief", ""), uris,
+                              patterns=patterns, idea=idea)
+        labels = {p["id"]: p["label"] for p in patterns}
+        for h in hooks:
+            h["pattern_label"] = labels.get(h.get("pattern_id"), "")
+            if h["pattern_label"]:
+                h["archetype"] = h["pattern_label"]
+            h["source"] = ("pattern+idea" if h["pattern_label"] and idea else
+                           "pattern" if h["pattern_label"] else "idea" if idea else "claude")
         return jsonify({"hooks": hooks})
     except Exception as exc:
         app.logger.exception("adstudio suggest-hooks failed")
         return jsonify({"error": str(exc)[:300]}), 500
+
+
+# ── Winning patterns (real Meta results) + Meta sync ───────────────────────
+@app.get("/api/adstudio/patterns")
+def adstudio_patterns() -> Any:
+    from creative_intelligence.adstudio.winning import current_patterns, data_status
+    conn = _db()
+    out = {"patterns": current_patterns(conn, limit=12), "status": data_status(conn)}
+    conn.close()
+    return jsonify(out)
+
+
+@app.post("/api/meta/sync")
+def meta_sync_start() -> Any:
+    """Pull fresh results from Meta (read-only GETs) and rebuild winning patterns."""
+    from creative_intelligence.ingest.meta_sync import start_sync
+    run_id, reason = start_sync(_db)
+    if run_id is None:
+        return jsonify({"error": reason}), 409
+    return jsonify({"run_id": run_id})
+
+
+@app.get("/api/meta/sync")
+def meta_sync_status() -> Any:
+    from creative_intelligence.ingest.meta_sync import latest_run
+    conn = _db()
+    run = latest_run(conn)
+    conn.close()
+    return jsonify({"run": run})
 
 
 # ── Prompt preview (free) ────────────────────────────────────────────────
