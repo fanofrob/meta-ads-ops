@@ -1,199 +1,224 @@
 """
-AI-assisted creative tagger (LLM-based).
+AI creative tagger (Claude) with a fruit-specific taxonomy.
 
-Uses OpenAI to classify creatives across the same tag dimensions as rule_tagger,
-but with richer understanding of nuanced copy.
+The keyword rule_tagger puts most of our ads into one bucket ("quality /
+authenticity" hook + angle), so tag-pair patterns can barely differ from the
+average ad. This tagger has Claude read each ad's name, headline and primary
+text and classify it on labels that actually separate our concepts — taste vs
+rarity vs vs-supermarket vs farm origin vs gifting, avatar vs listicle vs
+unboxing, and so on.
 
-Only runs when:
-  - config.AI_TAGGING_ENABLED is True (CI_AI_TAGGING=1)
-  - OPENAI_API_KEY is set
-  - The creative has meaningful copy text
-
-Outputs the same tag dict format as rule_tagger so the two can be composed:
-  {creative_id, tag_type, tag_value, confidence, source}
-
-The AI tagger runs AFTER the rule tagger. It only re-classifies tags where
-the rule tagger returned "unknown" or low-confidence results.
+- Re-tags every ad it is given; its tags replace the rule tags for the same
+  tag types (creative_tags is UNIQUE(creative_id, tag_type)). `format` and
+  `cta_type` stay rule-based — they come from the ad's own data, not copy.
+- Each distinct copy is classified once: results are cached in ai_tag_cache,
+  keyed by taxonomy version + copy, so re-syncs only pay for new ads.
+- Ads are sent in batches with a strict JSON schema (every value is an enum),
+  so the output always parses and never invents labels.
+- Catalog / {{product.name}} ads are skipped — there is no copy to read.
 """
 from __future__ import annotations
 
+import hashlib
 import json
-from typing import Any
+import sqlite3
+from typing import Any, Callable
 
-from creative_intelligence import config
+MODEL = "claude-opus-5"
+TAXONOMY_VERSION = "ghf-fruit-v1"
+BATCH_SIZE = 25
 
-_TAG_TYPES = [
-    "hook_type",
-    "angle",
-    "format",
-    "archetype",
-    "emotional_trigger",
-    "offer_style",
-    "cta_type",
-]
-
-_VALID_VALUES: dict[str, list[str]] = {
-    "hook_type":         ["curiosity", "pain_point", "social_proof", "authority",
-                          "direct_offer", "story", "shock", "transformation", "question", "unknown"],
-    "angle":             ["problem_solution", "aspiration", "fear", "authority_demo",
-                          "ugc_testimonial", "comparison", "lifestyle", "urgency", "discount", "unknown"],
-    "format":            ["image", "video", "carousel", "collection", "dco", "unknown"],
-    "archetype":         ["direct_response", "brand", "ugc", "demo", "testimonial",
-                          "educational", "social_proof", "lifestyle", "unknown"],
-    "emotional_trigger": ["fear", "curiosity", "desire", "trust", "urgency", "social_proof", "pride", "unknown"],
-    "offer_style":       ["hard_offer", "soft_offer", "brand", "free_trial", "discount",
-                          "bundle", "guarantee", "no_offer", "unknown"],
-    "cta_type":          ["shop_now", "learn_more", "get_offer", "sign_up", "book_now",
-                          "download", "watch_more", "contact", "order_now", "other"],
+# tag_type → {value: what it means}. "other" is the escape hatch for each type.
+TAXONOMY: dict[str, dict[str, str]] = {
+    "hook_type": {
+        "taste_sensory": "opens on flavour, texture, juiciness, sweetness — what it's like to eat",
+        "discovery_new_fruit": "a fruit most people have never tried / 'have you ever seen this?'",
+        "rarity_scarcity": "hard to find, tiny harvest, short season, 'once it's gone it's gone'",
+        "vs_supermarket": "contrasts with grocery-store fruit ('this is how X is SUPPOSED to taste')",
+        "social_proof": "reviews, customer counts, testimonials, star ratings lead the hook",
+        "offer_price": "leads with a discount, deal, bundle or free shipping",
+        "curiosity_question": "a question or teaser that withholds the answer",
+        "story_pov": "a personal story, founder/farmer/avatar POV, 'I…' narrative",
+        "education": "explains how to eat / pick / cut / what it is",
+        "gift_occasion": "leads with gifting, a holiday or an occasion",
+        "other": "none of the above clearly dominates",
+    },
+    "angle": {
+        "flavor_experience": "the core promise is how it tastes / feels to eat",
+        "tree_ripened_quality": "picked ripe, peak freshness, premium quality vs normal fruit",
+        "seasonal_limited": "limited season / window / availability",
+        "farm_origin": "where and how it's grown, the grower, the farm",
+        "exotic_discovery": "novelty — trying something new and unusual",
+        "variety_box": "a curated mix / assortment / variety box",
+        "gifting": "a gift for someone else",
+        "health": "nutrition, wellness, clean eating",
+        "value_deal": "price, savings, discount",
+        "convenience_delivery": "delivered to your door fast / fresh shipping",
+        "other": "none of the above clearly dominates",
+    },
+    "archetype": {
+        "product_hero": "the fruit itself is the star; polished product showcase",
+        "avatar_talking_head": "a person (avatar / creator / founder) talking to camera",
+        "ugc_testimonial": "customer-style review or reaction",
+        "listicle": "numbered reasons / list format",
+        "unboxing": "opening the box / delivery reveal",
+        "cutting_demo": "cutting, peeling, tasting demonstration",
+        "comparison": "side-by-side vs another fruit / store version",
+        "lifestyle": "fruit in a lifestyle moment (picnic, kitchen, brunch)",
+        "other": "none of the above clearly dominates",
+    },
+    "emotional_trigger": {
+        "craving": "appetite, mouth-watering desire",
+        "fomo_urgency": "fear of missing out, act now",
+        "curiosity": "wanting to know / try",
+        "trust": "reassurance, guarantee, credibility",
+        "delight_surprise": "wow, surprise, 'you won't believe'",
+        "nostalgia": "memories, childhood, travel",
+        "belonging": "joining others, social belonging",
+        "other": "none of the above clearly dominates",
+    },
+    "offer_style": {
+        "discount": "percent/dollar off or sale price",
+        "bundle_variety": "bundle, variety or mixed box offer",
+        "guarantee": "satisfaction / happiness / freshness guarantee",
+        "free_shipping": "free or fast shipping is the offer",
+        "no_offer": "no explicit offer",
+        "other": "some other offer",
+    },
 }
+TAG_TYPES = list(TAXONOMY)
 
-_SYSTEM_PROMPT = """You are an expert direct-response ad creative analyst.
-Classify the given ad creative according to the specified tag dimensions.
-Return ONLY a valid JSON object. No explanation. No markdown.
-Each value must be one of the allowed values listed for that dimension."""
+SYSTEM = f"""\
+You classify Meta ads for Good Hill Farms, a DTC shop that ships rare, tree-ripened and exotic fruit (cherimoya, Rainier cherries, pink pineapple, passion fruit, mangos, variety boxes…).
 
-_USER_PROMPT_TEMPLATE = """Ad creative copy:
----
-Ad name: {ad_name}
-Hook / opening: {hook_text}
-Primary text: {primary_text}
-Headline: {headline}
-CTA: {cta}
-Format: {format}
----
+For each ad, read its ad name (it often names the concept format, e.g. "Avatar", "Listicle", "Packaging"), headline and primary text, and choose the single DOMINANT value for each label — what the ad leads with, not everything it mentions. Use "other" only when nothing fits.
 
-Classify this creative. Return a JSON object with exactly these keys:
-{tag_types}
-
-Allowed values per key:
-{allowed_values}
+Labels and their values:
+{json.dumps(TAXONOMY, indent=1)}
 """
 
 
-def _call_openai(prompt: str, model: str) -> dict[str, Any]:
-    """Call OpenAI chat completions and return parsed JSON response."""
-    try:
-        import openai
-    except ImportError:
-        raise RuntimeError("openai package required for AI tagging. pip install openai")
+def _schema() -> dict[str, Any]:
+    props: dict[str, Any] = {"id": {"type": "string"}}
+    for t, vals in TAXONOMY.items():
+        props[t] = {"type": "string", "enum": list(vals)}
+    return {
+        "type": "object",
+        "properties": {"ads": {"type": "array", "items": {
+            "type": "object", "properties": props,
+            "required": ["id", *TAG_TYPES], "additionalProperties": False}}},
+        "required": ["ads"],
+        "additionalProperties": False,
+    }
 
-    client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user",   "content": prompt},
-        ],
-        temperature=0,
-        max_tokens=300,
-        response_format={"type": "json_object"},
+
+def is_catalog(rec: dict[str, Any]) -> bool:
+    return "{{" in (rec.get("headline") or "") or "{{" in (rec.get("primary_text") or "")
+
+
+def has_copy(rec: dict[str, Any]) -> bool:
+    return len(((rec.get("headline") or "") + (rec.get("primary_text") or "")).strip()) >= 15
+
+
+def copy_key(rec: dict[str, Any]) -> str:
+    raw = "\x1f".join([TAXONOMY_VERSION, rec.get("ad_name") or "", rec.get("headline") or "",
+                       rec.get("primary_text") or ""])
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def _client():
+    import anthropic
+    return anthropic.Anthropic()
+
+
+def classify_batch(records: list[dict[str, Any]], client: Any = None) -> dict[str, dict[str, str]]:
+    """{copy_key: {tag_type: value}} for one batch. Empty dict on refusal."""
+    client = client or _client()
+    keys = {f"a{i + 1}": copy_key(r) for i, r in enumerate(records)}   # short ids to echo
+    ads = [{"id": f"a{i + 1}", "ad_name": r.get("ad_name") or "",
+            "headline": r.get("headline") or "", "primary_text": r.get("primary_text") or ""}
+           for i, r in enumerate(records)]
+    resp = client.beta.messages.create(
+        model=MODEL,
+        max_tokens=16000,
+        betas=["server-side-fallback-2026-07-01"],
+        fallbacks="default",
+        system=SYSTEM,
+        output_config={"effort": "low", "format": {"type": "json_schema", "schema": _schema()}},
+        messages=[{"role": "user", "content":
+                   "Classify each of these ads. Return one entry per ad, echoing its id.\n\n"
+                   + json.dumps(ads, ensure_ascii=False)}],
     )
-    content = response.choices[0].message.content or "{}"
-    return json.loads(content)
-
-
-def _build_prompt(record: dict[str, Any]) -> str:
-    tag_types_str = json.dumps(_TAG_TYPES, indent=2)
-    allowed_str   = json.dumps(_VALID_VALUES, indent=2)
-    return _USER_PROMPT_TEMPLATE.format(
-        ad_name      = record.get("ad_name", ""),
-        hook_text    = record.get("hook_text", ""),
-        primary_text = record.get("primary_text", ""),
-        headline     = record.get("headline", ""),
-        cta          = record.get("cta", ""),
-        format       = record.get("format", ""),
-        tag_types    = tag_types_str,
-        allowed_values = allowed_str,
-    )
-
-
-def _has_meaningful_copy(record: dict[str, Any]) -> bool:
-    fields = ["hook_text", "primary_text", "headline", "ad_name"]
-    text = " ".join((record.get(f) or "") for f in fields).strip()
-    return len(text) >= 15
-
-
-def _validate_tags(raw: dict[str, Any]) -> dict[str, tuple[str, float]]:
-    """Return {tag_type: (tag_value, confidence)} with fallback for invalid values."""
-    result: dict[str, tuple[str, float]] = {}
-    for tag_type in _TAG_TYPES:
-        val = str(raw.get(tag_type, "unknown")).strip().lower().replace(" ", "_")
-        allowed = _VALID_VALUES.get(tag_type, [])
-        if val in allowed:
-            result[tag_type] = (val, 0.85)
-        else:
-            result[tag_type] = ("unknown", 0.0)
-    return result
-
-
-def tag_creative_ai(
-    record: dict[str, Any],
-    existing_tags: dict[str, str] | None = None,
-    model: str | None = None,
-) -> list[dict[str, Any]]:
-    """Tag a single creative using the LLM.
-
-    Args:
-        record: creative record dict
-        existing_tags: dict of {tag_type: tag_value} from rule tagger
-        model: OpenAI model to use (defaults to config.CI_LLM_MODEL)
-
-    Returns list of tag dicts (same format as rule_tagger.tag_all).
-    Only re-classifies tags where existing_tags has "unknown" or is missing.
-    """
-    if not config.AI_TAGGING_ENABLED:
-        return []
-    if not config.OPENAI_API_KEY:
-        return []
-    if not _has_meaningful_copy(record):
-        return []
-
-    # Only run for tags the rule tagger couldn't resolve.
-    unknown_types = [
-        t for t in _TAG_TYPES
-        if not existing_tags or existing_tags.get(t, "unknown") == "unknown"
-    ]
-    if not unknown_types:
-        return []
-
-    prompt = _build_prompt(record)
-    _model = model or config.CI_LLM_MODEL
-
+    if resp.stop_reason == "refusal":
+        return {}
+    text = next((b.text for b in resp.content if b.type == "text"), "")
     try:
-        raw_result = _call_openai(prompt, _model)
-    except Exception:
-        return []
-
-    validated = _validate_tags(raw_result)
-    cid = record.get("creative_id") or record.get("ad_id", "")
-
-    return [
-        {
-            "creative_id": cid,
-            "tag_type":    tag_type,
-            "tag_value":   val,
-            "confidence":  conf,
-            "source":      "ai",
-        }
-        for tag_type, (val, conf) in validated.items()
-        if tag_type in unknown_types and val != "unknown"
-    ]
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    out: dict[str, dict[str, str]] = {}
+    for a in data.get("ads", []):
+        if a.get("id") in keys:
+            out[keys[a["id"]]] = {t: a[t] for t in TAG_TYPES if a.get(t) in TAXONOMY[t]}
+    return out
 
 
-def tag_all_ai(
-    records: list[dict[str, Any]],
-    existing_tags_by_creative: dict[str, dict[str, str]] | None = None,
-    model: str | None = None,
-) -> list[dict[str, Any]]:
-    """AI-tag a batch of creative records.
+def _cache_get(db: sqlite3.Connection, keys: list[str]) -> dict[str, dict[str, str]]:
+    if not keys:
+        return {}
+    ph = ",".join("?" * len(keys))
+    return {r["key"]: json.loads(r["tags_json"]) for r in db.execute(
+        f"SELECT key, tags_json FROM ai_tag_cache WHERE key IN ({ph})", keys).fetchall()}
 
-    existing_tags_by_creative: {creative_id: {tag_type: tag_value}}
-    Only processes records with meaningful copy.
+
+def tag_with_ai(db: sqlite3.Connection, records: list[dict[str, Any]],
+                classify: Callable[[list[dict[str, Any]]], dict[str, dict[str, str]]] | None = None,
+                log: Callable[[str], None] = print) -> dict[str, int]:
     """
-    results = []
-    for rec in records:
-        cid = rec.get("creative_id") or rec.get("ad_id", "")
-        existing = (existing_tags_by_creative or {}).get(cid)
-        tags = tag_creative_ai(rec, existing, model)
-        results.extend(tags)
-    return results
+    AI-tag creatives (dicts with id, ad_name, headline, primary_text) and write
+    their tags to creative_tags, replacing rule tags for the same types.
+    Returns counts: tagged, from_cache, classified, skipped, failed.
+    """
+    classify = classify or (lambda batch: classify_batch(batch))
+    todo = [r for r in records if r.get("id") and has_copy(r) and not is_catalog(r)]
+    skipped = len(records) - len(todo)
+    by_key: dict[str, list[dict[str, Any]]] = {}
+    for r in todo:
+        by_key.setdefault(copy_key(r), []).append(r)
+
+    cached = _cache_get(db, list(by_key))
+    was_cached = set(cached)
+    missing = [rs[0] for k, rs in by_key.items() if k not in cached]
+    log(f"  AI tagging {len(todo)} ads: {len(by_key)} distinct copies, "
+        f"{len(cached)} cached, {len(missing)} to classify ({skipped} skipped: no copy / catalog)")
+    failed = 0
+    for i in range(0, len(missing), BATCH_SIZE):
+        batch = missing[i:i + BATCH_SIZE]
+        log(f"  batch {i // BATCH_SIZE + 1}/{(len(missing) + BATCH_SIZE - 1) // BATCH_SIZE}")
+        try:
+            got = classify(batch)
+        except Exception as exc:  # keep going; unclassified ads keep their rule tags
+            log(f"  [WARN] batch failed: {str(exc)[:200]}")
+            got = {}
+        failed += len([r for r in batch if copy_key(r) not in got])
+        with db:
+            for k, tags in got.items():
+                if len(tags) == len(TAG_TYPES):
+                    db.execute("INSERT OR REPLACE INTO ai_tag_cache (key, tags_json, model, taxonomy)"
+                               " VALUES (?,?,?,?)", (k, json.dumps(tags), MODEL, TAXONOMY_VERSION))
+                    cached[k] = tags
+
+    tagged = 0
+    with db:
+        for k, rs in by_key.items():
+            tags = cached.get(k)
+            if not tags:
+                continue
+            for r in rs:
+                for t, v in tags.items():
+                    db.execute("INSERT OR REPLACE INTO creative_tags (creative_id, tag_type, tag_value,"
+                               " confidence, source) VALUES (?,?,?,0.9,'ai')", (r["id"], t, v))
+                tagged += 1
+    return {"tagged": tagged,
+            "from_cache": sum(len(rs) for k, rs in by_key.items() if k in was_cached),
+            "classified": len(missing) - failed, "skipped": skipped, "failed": failed}

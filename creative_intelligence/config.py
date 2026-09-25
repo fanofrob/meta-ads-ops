@@ -90,8 +90,8 @@ CI_PRODUCT_KB_DIR: str = os.getenv(
 # Feature flags
 # ─────────────────────────────────────────────
 
-# Set CI_AI_TAGGING=1 to enable LLM-assisted tagging (costs tokens).
-AI_TAGGING_ENABLED: bool = os.getenv("CI_AI_TAGGING", "0") == "1"
+# AI tagging runs via `ci tag --ai` (Claude; see tagging/ai_tagger.py), which the
+# Meta sync passes.
 
 # Set CI_SHOPIFY_ENABLED=1 to enable Shopify product sync.
 SHOPIFY_ENABLED: bool = os.getenv("CI_SHOPIFY_ENABLED", "0") == "1"

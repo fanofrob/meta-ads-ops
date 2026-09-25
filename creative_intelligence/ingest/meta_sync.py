@@ -8,7 +8,8 @@ Chains the existing read-only pipeline:
       → data/raw/*.json                      (GET only, logged to outputs/api.log)
   src/fetch_creatives.py --window 90d → ad copy for ads that spent in the window
   ci ingest --skip-copy-fetch → creatives + creative_performance (from data/raw)
-  ci tag      → rule-based tags
+  ci tag --ai → rule-based tags, then Claude re-tags ads that spent in the window
+                (fruit taxonomy, cached per copy so only new ads cost tokens)
   ci extract-patterns --date-range 90d --weighted → spend-weighted creative_patterns
 
 Every step runs as a subprocess: the src/ scripts sys.exit() on API errors,
@@ -37,7 +38,8 @@ STEPS: list[tuple[str, list[str]]] = [
     ("Fetching 90-day results", ["src/fetch_insights.py", "--last90d"]),
     ("Fetching ad copy", ["src/fetch_creatives.py", "--window", DATE_RANGE]),
     ("Importing ads + copy", ["-m", "creative_intelligence.cli", "ingest", "--skip-copy-fetch"]),
-    ("Tagging ads", ["-m", "creative_intelligence.cli", "tag"]),
+    ("Tagging ads (keywords + Claude)", ["-m", "creative_intelligence.cli", "tag", "--ai",
+                                        "--ai-window", DATE_RANGE]),
     ("Finding winning patterns", ["-m", "creative_intelligence.cli", "extract-patterns",
                                   "--date-range", DATE_RANGE, "--weighted"]),
 ]

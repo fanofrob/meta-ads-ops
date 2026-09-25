@@ -315,6 +315,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
    WHERE product_type IS NULL OR product_type = ''""",
         # which winning pattern (creative_patterns.id) a hook was written from
         "ALTER TABLE adstudio_hooks ADD COLUMN pattern_id INTEGER",
+        # AI tagging cache: one Claude classification per distinct ad copy
+        """CREATE TABLE IF NOT EXISTS ai_tag_cache (
+    key         TEXT PRIMARY KEY,
+    tags_json   TEXT NOT NULL,
+    model       TEXT,
+    taxonomy    TEXT,
+    created_at  TEXT DEFAULT (datetime('now'))
+)""",
         # spend-weighted winning patterns (analysis.patterns.extract_weighted_patterns)
         "ALTER TABLE creative_patterns ADD COLUMN total_spend REAL",
         "ALTER TABLE creative_patterns ADD COLUMN total_purchases REAL",
@@ -322,6 +330,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "ALTER TABLE creative_patterns ADD COLUMN roas_lift REAL",
         "ALTER TABLE creative_patterns ADD COLUMN top_ad_share REAL",
         "ALTER TABLE creative_patterns ADD COLUMN date_range TEXT",
+        # which weighted-extraction run wrote the row; only the newest run is "current"
+        "ALTER TABLE creative_patterns ADD COLUMN extract_run TEXT",
         # Gallery review: approve / reject / ready-to-launch + notes (as in Render)
         "ALTER TABLE adstudio_composites ADD COLUMN review_status TEXT DEFAULT ''",
         "ALTER TABLE adstudio_composites ADD COLUMN is_ready INTEGER NOT NULL DEFAULT 0",

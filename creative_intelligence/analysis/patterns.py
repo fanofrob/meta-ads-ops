@@ -261,6 +261,7 @@ def extract_weighted_patterns(
         return []
     base_roas = total_rev / total_spend
     min_spend = max(250.0, 0.03 * total_spend) if min_spend is None else min_spend
+    run = datetime.utcnow().isoformat()
     tag_map = _get_tags_for_creatives([r["creative_id"] for r in rows], db)
 
     written: list[dict[str, Any]] = []
@@ -309,9 +310,9 @@ def extract_weighted_patterns(
             _upsert_pattern(pattern, db)
             db.execute(
                 "UPDATE creative_patterns SET total_spend=?, total_purchases=?, total_revenue=?,"
-                " roas_lift=?, top_ad_share=?, date_range=? WHERE pattern_name=?",
+                " roas_lift=?, top_ad_share=?, date_range=?, extract_run=? WHERE pattern_name=?",
                 (spend, purchases, revenue, pattern["roas_lift"], pattern["top_ad_share"],
-                 date_range, pattern["pattern_name"]))
+                 date_range, run, pattern["pattern_name"]))
             written.append(pattern)
     db.commit()
     return written

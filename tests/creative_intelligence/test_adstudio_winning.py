@@ -215,3 +215,21 @@ def test_weighted_patterns_pool_real_spend(db):
     st = winning.data_status(conn)
     assert st["date_range"] == "90d" and st["catalog_ads"] == 1 and st["catalog_spend"] == 30000
     assert round(st["creative_roas"], 3) == round(base, 3) and st["account_roas"] > 2
+
+
+def test_only_newest_extraction_run_is_current(db):
+    from creative_intelligence.analysis.patterns import extract_weighted_patterns
+    conn = db()
+    with conn:
+        _ad(conn, "big", 10000, 150, 25000, hook_type="quality_authenticity", angle="authenticity_quality")
+        _ad(conn, "q2", 1000, 10, 2500, hook_type="quality_authenticity", angle="authenticity_quality")
+        _ad(conn, "d1", 6000, 40, 6000, hook_type="direct_offer", angle="discount")
+        _ad(conn, "d2", 3000, 20, 3000, hook_type="direct_offer", angle="discount")
+    extract_weighted_patterns("90d", conn=conn)
+    # re-tag (as the AI tagger does), then re-extract: the old pattern must drop out
+    with conn:
+        conn.execute("UPDATE creative_tags SET tag_value='vs_supermarket' WHERE tag_type='hook_type'"
+                     " AND creative_id IN ('big','q2')")
+    extract_weighted_patterns("90d", conn=conn)
+    assert [p["label"] for p in winning.current_patterns(conn)] == [
+        "Vs supermarket hook · Authenticity angle"]

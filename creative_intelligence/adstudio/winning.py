@@ -23,6 +23,31 @@ TAG_LABELS = {
     "direct_response": "Direct response",
     "ugc": "UGC",
     "dco": "Dynamic creative",
+    # AI (fruit) taxonomy
+    "taste_sensory": "Taste / sensory",
+    "discovery_new_fruit": "New-fruit discovery",
+    "rarity_scarcity": "Rarity / scarcity",
+    "vs_supermarket": "Vs supermarket",
+    "offer_price": "Offer / price",
+    "curiosity_question": "Curiosity / question",
+    "story_pov": "Story / POV",
+    "gift_occasion": "Gift / occasion",
+    "flavor_experience": "Flavor experience",
+    "tree_ripened_quality": "Tree-ripened quality",
+    "seasonal_limited": "Seasonal / limited",
+    "farm_origin": "Farm origin",
+    "exotic_discovery": "Exotic discovery",
+    "variety_box": "Variety box",
+    "value_deal": "Value / deal",
+    "convenience_delivery": "Delivery convenience",
+    "avatar_talking_head": "Avatar / talking head",
+    "ugc_testimonial": "UGC testimonial",
+    "cutting_demo": "Cutting demo",
+    "fomo_urgency": "FOMO / urgency",
+    "delight_surprise": "Delight / surprise",
+    "bundle_variety": "Bundle / variety",
+    "free_shipping": "Free shipping",
+    "no_offer": "No offer",
 }
 DIM_LABELS = {
     "hook_type": "hook", "angle": "angle", "archetype": "creative",
@@ -117,15 +142,21 @@ def _strength(p: dict[str, Any]) -> float:
 
 def current_patterns(conn: Any, limit: int = 12, with_examples: bool = True) -> list[dict[str, Any]]:
     """
-    Patterns from the latest successful sync (all of them before the first
-    sync). Patterns backed by exactly the same winning ads are one finding
+    Patterns from the newest weighted-extraction run (else: from the latest
+    successful sync; before any sync, all of them). Patterns backed by exactly the same winning ads are one finding
     seen from two tag pairs — only the highest-ranked is kept.
     """
     from creative_intelligence.ingest.meta_sync import latest_run
     last_ok = latest_run(conn, "done")
     sql = "SELECT * FROM creative_patterns WHERE winner_count >= 1"
     params: list[Any] = []
-    if last_ok:
+    latest_run = conn.execute("SELECT MAX(extract_run) FROM creative_patterns").fetchone()[0]
+    if latest_run:
+        # weighted extraction: exactly the patterns its newest run wrote (a re-tag
+        # or re-extract otherwise leaves stale patterns with fresh timestamps)
+        sql += " AND extract_run = ?"
+        params.append(latest_run)
+    elif last_ok:
         sql += " AND updated_at >= ?"
         params.append(last_ok["started_at"])
     out, seen = [], set()

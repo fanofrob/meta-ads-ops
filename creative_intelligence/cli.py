@@ -157,7 +157,8 @@ def _tag(args: argparse.Namespace) -> None:
     from creative_intelligence import config
 
     conn = get_connection()
-    records = [dict(r) for r in conn.execute("SELECT * FROM creatives").fetchall()]
+    # legacy rows whose id was lost can't hold tags (creative_tags.creative_id is a FK)
+    records = [dict(r) for r in conn.execute("SELECT * FROM creatives WHERE id IS NOT NULL").fetchall()]
     print(f"Tagging {len(records)} creatives (rule-based)...")
 
     tag_rows = tag_all(records)
@@ -179,31 +180,16 @@ def _tag(args: argparse.Namespace) -> None:
                     print(f"         creative_id={t['creative_id']!r}")
     print(f"  {inserted} tags written")
 
-    if args.ai and config.AI_TAGGING_ENABLED:
-        from creative_intelligence.tagging.ai_tagger import tag_all_ai
-        existing_by_cid: dict = {}
-        for t in tag_rows:
-            existing_by_cid.setdefault(t["creative_id"], {})[t["tag_type"]] = t["tag_value"]
-
-        print("Running AI tagging on unknowns...")
-        ai_tags = tag_all_ai(records, existing_by_cid)
-        ai_inserted = 0
-        with conn:
-            for t in ai_tags:
-                try:
-                    conn.execute(
-                        """INSERT OR REPLACE INTO creative_tags
-                           (creative_id, tag_type, tag_value, confidence, source)
-                           VALUES (?,?,?,?,?)""",
-                        (t["creative_id"], t["tag_type"], t["tag_value"],
-                         t["confidence"], t["source"]),
-                    )
-                    ai_inserted += 1
-                except Exception:
-                    pass
-        print(f"  {ai_inserted} AI tags written")
-    elif args.ai:
-        print("  AI tagging skipped (set CI_AI_TAGGING=1 to enable)")
+    if args.ai:
+        # Claude re-tags ads that spent in the window (fruit taxonomy; cached per copy)
+        from creative_intelligence.tagging.ai_tagger import tag_with_ai
+        rows = [dict(r) for r in conn.execute(
+            "SELECT DISTINCT c.id, c.ad_name, c.headline, c.primary_text FROM creatives c"
+            " JOIN creative_performance p ON p.creative_id = c.id"
+            " WHERE p.date_range = ? AND p.spend > 0", (args.ai_window,)).fetchall()]
+        print(f"Running AI tagging (Claude) on {len(rows)} ads with {args.ai_window} spend...")
+        stats = tag_with_ai(conn, rows)
+        print(f"  {stats}")
 
     conn.close()
 
@@ -592,7 +578,9 @@ def main() -> None:
 
     # tag
     p_tag = sub.add_parser("tag", help="Tag creatives")
-    p_tag.add_argument("--ai", action="store_true", default=False, help="Also run AI tagging")
+    p_tag.add_argument("--ai", action="store_true", default=False,
+                       help="Also AI-tag (Claude, fruit taxonomy) ads that spent in --ai-window")
+    p_tag.add_argument("--ai-window", default="90d", choices=["7d", "30d", "90d"])
 
     # extract-patterns
     p_pat = sub.add_parser("extract-patterns", help="Extract winning patterns")
