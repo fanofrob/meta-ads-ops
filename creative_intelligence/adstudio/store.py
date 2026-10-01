@@ -57,9 +57,16 @@ def core_dir() -> Path:
     return d
 
 
-def save_generated_image(source: str, product_id: int, image_id: int) -> str:
-    """Persist a generated text-free image; return absolute path."""
-    dest = images_dir() / f"img{image_id}_p{product_id}_{int(time.time())}.png"
+def textads_dir() -> Path:
+    d = _base_dir() / "textads"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def save_generated_image(source: str, product_id: int, image_id: int,
+                         folder: Path | None = None) -> str:
+    """Persist a generated image (text-free by default); return absolute path."""
+    dest = (folder or images_dir()) / f"img{image_id}_p{product_id}_{int(time.time())}.png"
     if source.startswith("file://"):
         from urllib.request import url2pathname
         shutil.copy2(Path(url2pathname(source[7:])), dest)

@@ -80,9 +80,13 @@ def generate_concepts(product: dict[str, Any], n: int,
 
 
 def build_image_prompt(product: dict[str, Any], scene: str,
-                       aspect_ratio: str = "4:5", corrections: str = "") -> str:
+                       aspect_ratio: str = "4:5", corrections: str = "",
+                       ad_text: str = "") -> str:
     """
     Assemble a text-free Nano Banana prompt for one concept scene.
+
+    `ad_text` — an ON-IMAGE TEXT block (AI Ads). When given, the image is a
+    finished ad with that copy drawn in, instead of a text-free photograph.
 
     `corrections` — operator feedback from a retry (e.g. "the label is wrong;
     the cherries should be Rainier — blush-yellow, not red"). Placed at the very
@@ -94,7 +98,10 @@ def build_image_prompt(product: dict[str, Any], scene: str,
     scent = (product.get("scent_notes") or "").strip()
     subject = name + (f" ({scent})" if scent else "")
 
-    parts = [f"Create a premium {aspect_ratio} product photograph. {prof['reference_lock']}"]
+    kind = (f"finished {aspect_ratio} static social ad: a premium product photograph "
+            "with clean, designed ad typography" if ad_text
+            else f"premium {aspect_ratio} product photograph")
+    parts = [f"Create a {kind}. {prof['reference_lock']}"]
     if corrections.strip():
         parts.append(
             "CORRECTIONS — HIGHEST PRIORITY\n"
@@ -125,11 +132,11 @@ def build_image_prompt(product: dict[str, Any], scene: str,
         )
     parts.append(f"LIGHT & MOOD\n{F.LIGHT_MOOD}")
     parts.append(f"TECHNICAL\n{prof['technical']}")
-    parts.append(
+    parts.append(ad_text or (
         "NO TEXT of any kind anywhere in the image — no words, letters, numbers, "
         "logos, captions, or watermarks (the product's own printed label is fine). "
         "This is a clean photograph; ad copy is composited on later."
-    )
+    ))
     parts.append(prof["negative"])
     return "\n\n".join(parts)
 

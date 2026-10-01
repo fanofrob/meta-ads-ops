@@ -187,3 +187,16 @@ def validate() -> list[str]:
     if not META_AD_ACCOUNT_ID:
         missing.append("META_AD_ACCOUNT_ID")
     return missing
+
+
+# ─────────────────────────────────────────────
+# Google Drive — Ad Studio exports for outside agencies
+# OAuth client from Google Cloud (type "Web application"); the app signs in
+# as the Drive owner once via Ad Gallery → "Connect Google Drive".
+# ─────────────────────────────────────────────
+GOOGLE_OAUTH_CLIENT_ID: str = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
+GOOGLE_OAUTH_CLIENT_SECRET: str = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
+# Parent folder every export goes under ("Meta Ads").
+ADSTUDIO_DRIVE_FOLDER_ID: str = os.getenv("ADSTUDIO_DRIVE_FOLDER_ID", "1fx0vys7Gamdgr7mCQMwL-r7tnYA05bMI")
+# Only this Google account may be connected (the app itself has no login).
+ADSTUDIO_DRIVE_ACCOUNT: str = os.getenv("ADSTUDIO_DRIVE_ACCOUNT", "")

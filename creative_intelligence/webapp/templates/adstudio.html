@@ -97,13 +97,21 @@ textarea.f{min-height:52px;resize:vertical;}
 .ad .acts button.on{background:var(--accent);border-color:var(--accent);color:#fff;}
 .ad .note{font-size:11px;color:var(--gold);padding:0 9px 6px;white-space:pre-wrap;}
 .warn{color:var(--gold);}.err{color:var(--red);}
+.ad .imgwrap.ar{aspect-ratio:auto;}
+.vrow{display:grid;grid-template-columns:170px 1fr 1fr;gap:6px;align-items:center;padding:5px 0;border-top:1px solid var(--border);}
+.vrow .vn{font-size:12px;font-weight:600;}.vrow .vb{font-size:10.5px;color:var(--muted);}
+.vrow.off{opacity:.45;}
+.tc{color:var(--green);}
+.tagb.exp-b{color:#7dd3fc;border-color:#075985;text-decoration:none;}
+.drivebar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--text2);background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 10px;margin-bottom:10px;}
+.drivebar a{color:var(--accent2);}
 .hint{font-size:11.5px;color:var(--text2);background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:7px 10px;margin-top:8px;line-height:1.5;}
 </style>
 </head>
 <body>
 <header>
   <h1>🎬 Ad Studio</h1>
-  <span class="sub">Start here — pick a product, then Setup → Images → Compose → Gallery</span>
+  <span class="sub">Start here — pick a product, then Setup → Images → Compose → Gallery, or AI Ads → Ad Gallery</span>
   {% include "_nav.html" %}
 </header>
 
@@ -121,6 +129,9 @@ textarea.f{min-height:52px;resize:vertical;}
       <div class="tab" data-pane="pImages">Images</div>
       <div class="tab" data-pane="pCompose">Compose</div>
       <div class="tab" data-pane="pGal">Gallery</div>
+      <span class="muted" style="margin:0 4px">|</span>
+      <div class="tab" data-pane="pAds" title="Finished ads with the copy drawn in by the AI">🪄 AI Ads</div>
+      <div class="tab" data-pane="pAdGal">Ad Gallery</div>
       <span class="muted" id="ctxName" style="margin-left:auto"></span>
     </div>
 
@@ -164,6 +175,27 @@ textarea.f{min-height:52px;resize:vertical;}
       <div id="galBulk" class="bulkbar"></div>
       <div class="gal" id="galBody"></div>
     </div>
+
+    <!-- AI ADS: brief → the fixed formats → new scenes -->
+    <div class="pane" id="pAds"><div id="adsBody"></div></div>
+
+    <!-- AD GALLERY (AI ads) -->
+    <div class="pane" id="pAdGal">
+      <div class="row" style="margin-bottom:8px">
+        <div class="chips" id="agalFilter" style="margin:0"></div>
+        <label class="arch-toggle" style="margin-left:auto"><input type="checkbox" id="agalArch"> show archived</label>
+      </div>
+      <div class="row" style="margin-bottom:12px">
+        <button class="btn" id="btnRefreshAgal">↻ Refresh</button>
+        <a class="btn btn-p" id="btnAgalKit" href="#">🚀 Download launch kit</a>
+        <a class="btn" id="btnAgalAll" href="#">⬇ Download all (zip)</a>
+        <button class="btn" id="btnAgalDrive" title="Pick the ads that haven't been sent yet, then export them to a new Drive folder">☁ Export to Drive…</button>
+        <span class="muted">The AI drew the text — check spelling, prices and claims (<b>C</b>) before <b>T</b> ready. Hover: <b>A</b> approve · <b>R</b> reject · <b>F</b> favorite</span>
+      </div>
+      <div class="drivebar" id="agalDrive"></div>
+      <div id="agalBulk" class="bulkbar"></div>
+      <div class="gal" id="agalBody"></div>
+    </div>
   </div>
 </div>
 
@@ -189,10 +221,12 @@ let CFG=null, PID=null, DETAIL=null;
 let COMPOSE={imageId:null, layout:{position:'top',color:'auto',scrim:true}};
 
 /* ---------- multi-select (Images + Gallery) ---------- */
-const SEL={img:new Set(),gal:new Set()}, LAST={img:null,gal:null};
-let IMG_IDS=[], GAL_IDS=[];
+const SEL={img:new Set(),gal:new Set(),agal:new Set()}, LAST={img:null,gal:null,agal:null};
+let IMG_IDS=[], GAL_IDS=[], AGAL_IDS=[];
 function selCfg(kind){return kind==='img'
   ?{ids:()=>IMG_IDS, body:'imgBody', bar:'imgBulk', api:'/api/adstudio/images/bulk', reload:loadImages}
+  :kind==='agal'
+  ?{ids:()=>AGAL_IDS, body:'agalBody', bar:'agalBulk', api:'/api/adstudio/textads/bulk', reload:loadAdGallery}
   :{ids:()=>GAL_IDS, body:'galBody', bar:'galBulk', api:'/api/adstudio/composites/bulk', reload:loadGallery};}
 function selClick(kind,idx,e){
   const ids=selCfg(kind).ids(), set=SEL[kind], id=ids[idx];
@@ -207,10 +241,11 @@ function renderBulkBar(kind){
   if(!set.size){bar.style.display='none';bar.innerHTML='';return;}
   bar.style.display='flex';
   bar.innerHTML=`<b>${set.size} selected</b>
-    ${kind==='gal'?`<button class="btn sm" data-a="approve">👍 Approve</button>
+    ${kind!=='img'?`<button class="btn sm" data-a="approve">👍 Approve</button>
     <button class="btn sm" data-a="ready">🚀 Ready</button>
     <button class="btn sm" data-a="reject">👎 Reject</button>
     <button class="btn sm" data-a="clear">↺ Unreview</button>`:''}
+    ${kind==='agal'?agalBulkExtras():''}
     <button class="btn sm" data-a="favorite">★ Favorite</button>
     <button class="btn sm" data-a="unfavorite">☆ Unfavorite</button>
     <button class="btn sm" data-a="archive">🗄 Archive</button>
@@ -225,10 +260,14 @@ async function bulkAct(kind,action){
   const c=selCfg(kind),set=SEL[kind];
   if(action==='__all'){c.ids().forEach(id=>set.add(id));applySel(kind);renderBulkBar(kind);return;}
   if(action==='__clear'){set.clear();LAST[kind]=null;applySel(kind);renderBulkBar(kind);return;}
+  if(action==='__unexported'){agalSelectUnexported();return;}
+  if(action==='__dropexported'){AGAL_ITEMS.filter(a=>a.exports.length).forEach(a=>set.delete(a.id));applySel(kind);renderBulkBar(kind);return;}
+  if(action==='__drive'){exportToDrive();return;}
   if(!set.size)return;
   if(action==='delete'&&!confirm(`Delete ${set.size} item(s)? This can't be undone.`))return;
   const ids=[...set];
-  await fetch(c.api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,ids})});
+  const r=await (await fetch(c.api,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,ids})})).json();
+  if(kind==='agal'&&action==='ready'&&r.affected<ids.length)alert(`${ids.length-r.affected} ad(s) not marked ready — tick “text checked” on them first.`);
   set.clear();LAST[kind]=null;
   await c.reload();
 }
@@ -244,6 +283,8 @@ async function boot(){
     if(t.dataset.pane==='pImages')loadImages();
     if(t.dataset.pane==='pCompose')renderCompose();
     if(t.dataset.pane==='pGal')loadGallery();
+    if(t.dataset.pane==='pAds')renderAds();
+    if(t.dataset.pane==='pAdGal')loadAdGallery();
   });
   $('btnNewProd').onclick=openNewProduct;
   $('np_cancel').onclick=()=>$('newProdForm').style.display='none';
@@ -253,7 +294,12 @@ async function boot(){
   $('btnRunPending').onclick=runPending;
   $('imgArch').onchange=loadImages;
   $('galArch').onchange=loadGallery;
+  $('btnRefreshAgal').onclick=loadAdGallery;
+  $('agalArch').onchange=loadAdGallery;
+  $('btnAgalDrive').onclick=()=>SEL.agal.size?exportToDrive():agalSelectUnexported(true);
   const q=new URLSearchParams(location.search), want=+q.get('product_id');
+  if(q.get('drive')){DRIVE_MSG=q.get('drive')==='connected'?'✅ Google Drive connected.':'Google Drive sign-in was cancelled.';
+    if(want){await selectProduct(want);document.querySelector('.tab[data-pane="pAdGal"]').click();return;}}
   if(want){await selectProduct(want);
     if(q.get('compose_core')){COMPOSE.imageId='core:'+q.get('compose_core');document.querySelector('.tab[data-pane="pCompose"]').click();}}
 }
@@ -319,12 +365,14 @@ async function createProduct(){
   }finally{b.disabled=false;b.textContent='Create';}
 }
 async function selectProduct(id){
-  PID=id; COMPOSE.imageId=null;
+  PID=id; COMPOSE.imageId=null; ADS.briefId=null;
   document.querySelectorAll('.prod').forEach(el=>el.classList.toggle('active',+el.dataset.id===id));
   DETAIL=await (await fetch('/api/adstudio/product/'+id)).json();
   $('ctxName').textContent=TYPES[ptype(DETAIL.product)].icon+' '+DETAIL.product.name;
   history.replaceState(null,'','/adstudio?product_id='+id);
   renderImgMenu(); renderSetup();
+  if($('pAds').classList.contains('active'))renderAds();
+  if($('pAdGal').classList.contains('active'))loadAdGallery();
 }
 function renderImgMenu(){
   const t=ptype(DETAIL&&DETAIL.product), a=(CFG.product_types[t]||{}).archetypes||[];
@@ -661,6 +709,7 @@ async function galNote(id){
   loadGallery();
 }
 document.addEventListener('keydown',e=>{
+  if($('pAdGal').classList.contains('active'))return agalKey(e);
   if(!$('pGal').classList.contains('active')||GAL_HOT==null||e.metaKey||e.ctrlKey||e.altKey)return;
   if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName))return;
   const k=e.key.toLowerCase(), map={a:'approve',r:'reject',t:'ready'};
@@ -668,6 +717,283 @@ document.addEventListener('keydown',e=>{
   else if(k==='f'){e.preventDefault();fetch('/api/adstudio/composite/'+GAL_HOT+'/favorite',{method:'POST'}).then(loadGallery);}
 });
 
+/* ---------- AI ADS: brief → the fixed formats → new scenes (copy drawn in by the AI) ---------- */
+let ADS={briefId:null, brief:null, aspect:null};
+const VMAP=()=>Object.fromEntries((CFG.ad_variants||[]).map(v=>[v.key,v]));
+async function renderAds(){
+  if(!PID){$('adsBody').innerHTML='<div class="empty">Select a product.</div>';return;}
+  if(!PATS)PATS=await (await fetch('/api/adstudio/patterns')).json();
+  const briefs=(await (await fetch('/api/adstudio/product/'+PID+'/briefs')).json()).briefs;
+  if(ADS.briefId&&!briefs.some(b=>b.id===ADS.briefId))ADS.briefId=null;
+  if(!ADS.briefId&&briefs.length)ADS.briefId=briefs[0].id;
+  ADS.brief=ADS.briefId?await (await fetch('/api/adstudio/brief/'+ADS.briefId)).json():null;
+  const pats=PATS.patterns||[];
+  const aspect=ADS.aspect||CFG.ad_default_aspect;
+  $('adsBody').innerHTML=`
+    <div class="card"><div class="row" style="justify-content:space-between"><strong>1 · Brief</strong>
+      ${briefs.length?`<div class="row"><select class="f" id="adBrief" style="width:340px">${briefs.map(b=>`<option value="${b.id}" ${b.id===ADS.briefId?'selected':''}>#${b.id} · ${esc((b.angle||'(no angle)').slice(0,60))} · ${b.n_ads} ad${b.n_ads!==1?'s':''}</option>`).join('')}</select>
+        <button class="btn sm" id="adDelBrief" title="Delete this brief and its ads">🗑</button></div>`:''}</div>
+      <div class="muted" style="margin-top:4px">Claude writes one angle from your winning Meta patterns (and your idea), with a headline for each ad format. Edit anything, then generate.</div>
+      <details ${briefs.length?'':'open'} style="margin-top:8px"><summary class="muted" style="cursor:pointer">＋ Draft a new brief</summary>
+        <div class="row" style="align-items:flex-end">
+          <div style="flex:1;min-width:220px"><label class="fl">Build on</label><select class="f" id="adPattern">${(pats.length?'<option value="auto">📈 Top winning patterns (auto)</option>':'')+pats.map(p=>`<option value="${p.id}">📈 ${esc(p.label)}</option>`).join('')+'<option value="none">💡 No pattern — just my idea</option>'}</select></div>
+          <div style="flex:1.4;min-width:240px"><label class="fl">💡 Idea to test (optional)</label><input class="f" id="adIdea" placeholder="e.g. 'for people who think they hate kiwi'"></div></div>
+        <div class="row" style="align-items:flex-end">
+          <div style="flex:2;min-width:260px"><label class="fl">⭐ A real customer review (optional — enables the Social Proof ad; never invented)</label><input class="f" id="adReview" placeholder="Paste the customer's exact words"></div>
+          <div style="flex:1;min-width:140px"><label class="fl">Reviewer (optional)</label><input class="f" id="adAuthor" placeholder="e.g. Maya R."></div>
+          <button class="btn btn-p" id="adDraft">✨ Draft brief</button></div>
+      </details>
+      <div id="adBriefEdit"></div></div>
+    ${ADS.brief?`<div class="card"><strong>2 · Generate</strong>
+      <div class="row" style="margin-top:8px">
+        <label class="fl" style="margin:0">Aspect</label><select class="f" id="adAspect" style="width:90px">${CFG.aspect_ratios.map(a=>`<option ${a===aspect?'selected':''}>${a}</option>`).join('')}</select>
+        <button class="btn btn-p" id="adGenVariants">🎯 Make the formats</button>
+        <span class="muted">then</span>
+        <select class="f" id="adSceneN" style="width:64px"><option>2</option><option selected>4</option><option>6</option><option>8</option></select>
+        <button class="btn" id="adGenScenes">✨ New scenes (Claude)</button>
+        <button class="btn" id="adRunPending">↻ Run all pending</button>
+        <span class="muted" id="adStatus"></span></div>
+      <div class="muted" style="margin-top:6px">The formats are the fixed set (Minimal, Bold Type, Benefit Stack…), one ad each. New scenes are Claude-invented from the ${esc(TYPES[ptype(DETAIL.product)].label.toLowerCase())} image menu, each with new copy written for it, avoiding everything already made.</div></div>
+    <div class="gal" id="adGrid"></div>`:''}`;
+  if($('adBrief'))$('adBrief').onchange=e=>{ADS.briefId=+e.target.value;renderAds();};
+  if($('adDelBrief'))$('adDelBrief').onclick=async()=>{if(!confirm('Delete this brief and all its ads?'))return;await fetch('/api/adstudio/brief/'+ADS.briefId+'/delete',{method:'POST'});ADS.briefId=null;renderAds();};
+  $('adDraft').onclick=draftBrief;
+  if(!ADS.brief)return;
+  renderBriefEditor();
+  $('adAspect').onchange=e=>ADS.aspect=e.target.value;
+  $('adGenVariants').onclick=genVariants;
+  $('adGenScenes').onclick=genScenes;
+  $('adRunPending').onclick=()=>runAdsPending();
+  loadAdGrid();
+}
+async function draftBrief(){
+  const b=$('adDraft');b.disabled=true;b.innerHTML='<span class="spinner"></span> Claude is writing…';
+  try{
+    const d=await (await fetch('/api/adstudio/product/'+PID+'/brief/draft',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pattern:$('adPattern').value,idea:$('adIdea').value,review_text:$('adReview').value,review_author:$('adAuthor').value})})).json();
+    if(d.error){alert(d.error);return;}
+    ADS.briefId=d.id; await renderAds();
+  }finally{b.disabled=false;b.textContent='✨ Draft brief';}
+}
+function renderBriefEditor(){
+  const B=ADS.brief, br=B.brief, V=VMAP(), fruit=ptype(DETAIL.product)==='fruit';
+  const rows=(CFG.ad_variants||[]).map(v=>{
+    const off=(v.fruit_only&&!fruit)?'fruit only':(v.needs_review&&!B.review_text)?'needs a real review':'';
+    const c=(br.variants||{})[v.key]||{};
+    const inp=f=>v.fields.includes(f)?`<input class="f" data-v="${v.key}" data-f="${f}" value="${esc(c[f]||'')}" placeholder="${f==='sub'?'secondary line':'headline'}" ${off?'disabled':''}>`:'<span class="muted">—</span>';
+    return `<div class="vrow ${off?'off':''}"><div><div class="vn">${esc(v.name)}</div><div class="vb">${esc(off?'skipped — '+off:v.blurb)}</div></div>
+      ${v.fields.length?inp('headline')+inp('sub'):'<span class="muted" style="grid-column:span 2">no copy on this one</span>'}</div>`;}).join('');
+  $('adBriefEdit').innerHTML=`<div style="margin-top:10px">
+    ${br.pattern_label?`<span class="tagb pat-b">📈 ${esc(br.pattern_label)}</span>`:''}${B.idea?`<span class="tagb idea-b">💡 ${esc(B.idea)}</span>`:''}
+    <div class="two"><div><label class="fl">Angle</label><textarea class="f" id="bf_angle">${esc(br.angle)}</textarea></div>
+      <div><label class="fl">Hook</label><textarea class="f" id="bf_hook">${esc(br.hook)}</textarea></div></div>
+    <div class="two"><div><label class="fl">CTA button</label><input class="f" id="bf_cta" value="${esc(br.cta)}"></div>
+      <div><label class="fl">Visual direction</label><input class="f" id="bf_vis" value="${esc(br.visual_direction)}"></div></div>
+    <label class="fl">Meta primary text options (one per line — rotated across the ads, used in the launch kit)</label><textarea class="f" id="bf_pts" style="min-height:70px">${esc((br.primary_texts||[]).join('\n'))}</textarea>
+    <div class="two"><div><label class="fl">⭐ Real customer review (Social Proof)</label><input class="f" id="bf_rev" value="${esc(B.review_text||'')}" placeholder="exact words — leave empty to skip Social Proof"></div>
+      <div><label class="fl">Reviewer</label><input class="f" id="bf_author" value="${esc(B.review_author||'')}"></div></div>
+    <label class="fl">On-image copy per format</label>${rows}
+    <div class="row" style="margin-top:8px"><button class="btn sm" id="bf_save">Save brief</button><span class="muted">New ads use the saved brief; ads already made keep their own copy (edit those on the card).</span></div></div>`;
+  $('bf_save').onclick=saveBrief;
+}
+async function saveBrief(){
+  const variants={};
+  document.querySelectorAll('#adBriefEdit [data-v]').forEach(el=>{(variants[el.dataset.v]=variants[el.dataset.v]||{})[el.dataset.f]=el.value;});
+  const body={brief:{angle:$('bf_angle').value,hook:$('bf_hook').value,cta:$('bf_cta').value,visual_direction:$('bf_vis').value,
+    primary_texts:$('bf_pts').value.split('\n'),variants},review_text:$('bf_rev').value,review_author:$('bf_author').value};
+  const b=$('bf_save');b.textContent='…';
+  ADS.brief=await (await fetch('/api/adstudio/brief/'+ADS.briefId+'/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  renderBriefEditor();$('bf_save').textContent='Saved ✓';setTimeout(()=>{if($('bf_save'))$('bf_save').textContent='Save brief';},1500);
+}
+async function genVariants(){
+  if(!DETAIL.photos.length&&!confirm('No reference photo — the model will invent the product. Continue?'))return;
+  await saveBrief();
+  const made=(await (await fetch('/api/adstudio/textads?brief_id='+ADS.briefId)).json()).ads.filter(a=>a.kind==='variant').length;
+  if(made&&!confirm('This brief already has its formats. Make another full set?'))return;
+  const q=await (await fetch('/api/adstudio/brief/'+ADS.briefId+'/variants',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({aspect_ratio:$('adAspect').value})})).json();
+  if(q.error){alert(q.error);return;}
+  await runAdIds(q.queued.map(x=>x.id));
+}
+async function genScenes(){
+  await saveBrief();
+  const st=$('adStatus'),b=$('adGenScenes');b.disabled=true;st.innerHTML='<span class="spinner"></span> Claude inventing scenes + copy…';
+  try{
+    const q=await (await fetch('/api/adstudio/brief/'+ADS.briefId+'/scenes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({n:+$('adSceneN').value,aspect_ratio:$('adAspect').value})})).json();
+    if(q.error){st.textContent='⚠ '+q.error;return;}
+    await runAdIds(q.queued.map(x=>x.id));
+  }finally{b.disabled=false;}
+}
+async function runAdsPending(){
+  const all=(await (await fetch('/api/adstudio/textads?brief_id='+ADS.briefId)).json()).ads;
+  const ids=all.filter(x=>x.status==='failed'||x.status==='queued').map(x=>x.id);
+  if(!ids.length){$('adStatus').textContent='Nothing pending — all ads are done.';return;}
+  await runAdIds(ids);
+}
+async function runAdIds(ids){
+  const st=$('adStatus');await loadAdGrid();let done=0,failed=0;
+  for(let i=0;i<ids.length;i++){
+    st.innerHTML=`<span class="spinner"></span> rendering ${i+1}/${ids.length} (done ${done}${failed?', failed '+failed:''})`;
+    let ok=false;
+    for(let a=0;a<3&&!ok;a++){const r=await fetch('/api/adstudio/textad/'+ids[i]+'/run',{method:'POST'});if(r.status===429){st.innerHTML=`⏳ rate-limited, waiting… ${i+1}/${ids.length}`;await sleep(15000);continue;}const d=await r.json();ok=d.status==='done';if(!ok)break;}
+    ok?done++:failed++; if($('adGrid'))await loadAdGrid();
+  }
+  if($('adStatus'))$('adStatus').textContent=`✅ ${done} ad${done!==1?'s':''} made${failed?`, ${failed} failed (↻ to retry)`:''} — review them in Ad Gallery.`;
+}
+function adImg(a,extra=''){return `<div class="imgwrap ar" style="aspect-ratio:${(a.aspect_ratio||'9:16').replace(':','/')}">${extra}${a.has_image?`<img src="/api/adstudio/textad/${a.id}/image?t=${Date.now()}">`:`<span class="ph">${a.status==='failed'?'✕ '+esc((a.error_message||'failed').slice(0,60)):a.status}</span>`}</div>`;}
+function adCopy(a){return `<div style="font-weight:600;font-size:12px">${esc(a.headline||'')}</div>${a.subhead?`<div class="muted">${esc(a.subhead)}</div>`:''}${a.cta?`<div class="muted">[${esc(a.cta)}]</div>`:''}`;}
+async function loadAdGrid(){
+  if(!$('adGrid'))return;
+  const ads=(await (await fetch('/api/adstudio/textads?brief_id='+ADS.briefId+'&include_archived=1')).json()).ads;
+  $('adGrid').innerHTML=ads.map(a=>`<div class="ad" data-id="${a.id}">${adImg(a)}
+    <div class="meta"><span class="ttl">${esc(a.kind==='variant'?a.title:'✨ '+a.title)}</span> <span class="badge b-${a.status}">${a.status}</span>${a.kind==='scene'?`<div class="muted">${esc(a.variant)}</div>`:''}${adCopy(a)}${a.fix?`<div class="warn" style="font-size:10.5px;margin-top:3px">fix: ${esc(a.fix)}</div>`:''}</div>
+    <div class="acts"><button data-afix="${a.id}">↻ fix / retry</button><button data-aedit="${a.id}">✏️ text</button><button data-afav="${a.id}">${a.is_favorite?'★':'☆'}</button><button data-adel="${a.id}">🗑</button></div></div>`).join('')||'<div class="empty">No ads for this brief yet — “Make the formats” first.</div>';
+  const byId=Object.fromEntries(ads.map(a=>[a.id,a]));
+  document.querySelectorAll('[data-afix]').forEach(b=>b.onclick=async()=>{
+    const a=byId[b.dataset.afix];
+    const fix=prompt("What's wrong with this ad? e.g.\n\"the headline is misspelled\" · \"the kiwis should be smooth, not fuzzy\"\n\nThis note is kept for future retries. Clear it to retry as-is.",a.fix||'');
+    if(fix===null)return; b.textContent='…';
+    await fetch('/api/adstudio/textad/'+a.id+'/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fix})});
+    loadAdGrid();});
+  document.querySelectorAll('[data-aedit]').forEach(b=>b.onclick=()=>editAdText(byId[b.dataset.aedit],loadAdGrid));
+  document.querySelectorAll('#adGrid [data-afav]').forEach(b=>b.onclick=async()=>{await fetch('/api/adstudio/textad/'+b.dataset.afav+'/favorite',{method:'POST'});loadAdGrid();});
+  document.querySelectorAll('#adGrid [data-adel]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this ad?'))return;await fetch('/api/adstudio/textad/'+b.dataset.adel+'/delete',{method:'POST'});loadAdGrid();});
+}
+async function editAdText(a,reload){
+  const head=prompt('Headline (exactly as it should appear):',a.headline||''); if(head===null)return;
+  const sub=prompt('Secondary line (blank for none):',a.subhead||''); if(sub===null)return;
+  const cta=prompt('CTA button text (blank for no button):',a.cta||''); if(cta===null)return;
+  if(head===a.headline&&sub===a.subhead&&cta===a.cta)return;
+  await fetch('/api/adstudio/textad/'+a.id+'/regenerate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({headline:head,subhead:sub,cta})});
+  reload();
+}
+
+/* ---------- AD GALLERY (AI ads) ---------- */
+let AGAL_FILTER='all', AGAL_ITEMS=[], AGAL_HOT=null;
+async function loadAdGallery(){
+  if(!PID){$('agalBody').innerHTML='<div class="empty">Select a product.</div>';return;}
+  $('btnAgalAll').href='/api/adstudio/export-textads?product_id='+PID;
+  $('btnAgalKit').href='/api/adstudio/export-textads?ready=1&product_id='+PID;
+  const arch=$('agalArch').checked?'&include_archived=1':'';
+  const d=await (await fetch('/api/adstudio/textads?done=1&product_id='+PID+arch+'&review='+(AGAL_FILTER==='all'?'':AGAL_FILTER))).json();
+  AGAL_ITEMS=d.ads; AGAL_IDS=AGAL_ITEMS.map(x=>x.id);
+  $('agalFilter').innerHTML=AGAL_TABS.map(([k,l])=>`<button class="chip ${AGAL_FILTER===k?'on':''}" data-gf="${k}">${l} ${d.counts[k]||0}</button>`).join('');
+  $('agalFilter').querySelectorAll('[data-gf]').forEach(b=>b.onclick=()=>{AGAL_FILTER=b.dataset.gf;SEL.agal.clear();loadAdGallery();});
+  const nReady=d.counts.ready||0;
+  $('btnAgalKit').textContent=`🚀 Download launch kit (${nReady})`;
+  $('btnAgalKit').style.opacity=nReady?1:.5; $('btnAgalKit').style.pointerEvents=nReady?'':'none';
+  await renderDriveBar();
+  const empty={notexported:'Everything here has been exported ☁',all:'No AI ads yet — make some in 🪄 AI Ads.',unreviewed:'Nothing left to review 🎉',approved:'No approved ads yet.',ready:'Nothing ready yet — check the text (C), then press T.',rejected:'No rejected ads.'}[AGAL_FILTER];
+  $('agalBody').innerHTML=AGAL_ITEMS.map((a,i)=>agalCard(a,i)).join('')||`<div class="empty">${empty}</div>`;
+  document.querySelectorAll('#agalBody [data-rv]').forEach(b=>b.onclick=()=>agalReview(+b.dataset.id,{action:b.dataset.rv}));
+  document.querySelectorAll('#agalBody [data-tc]').forEach(b=>b.onclick=()=>agalToggleChecked(+b.dataset.tc));
+  document.querySelectorAll('#agalBody [data-note]').forEach(b=>b.onclick=()=>agalNote(+b.dataset.note));
+  document.querySelectorAll('#agalBody [data-afav]').forEach(b=>b.onclick=async()=>{await fetch('/api/adstudio/textad/'+b.dataset.afav+'/favorite',{method:'POST'});loadAdGallery();});
+  document.querySelectorAll('#agalBody [data-aedit]').forEach(b=>b.onclick=()=>editAdText(AGAL_ITEMS.find(x=>x.id===+b.dataset.aedit),loadAdGallery));
+  document.querySelectorAll('#agalBody [data-adel]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this ad?'))return;await fetch('/api/adstudio/textad/'+b.dataset.adel+'/delete',{method:'POST'});loadAdGallery();});
+  document.querySelectorAll('#agalBody .ad').forEach(el=>{el.onmouseenter=()=>{AGAL_HOT=+el.dataset.id;el.classList.add('hot');};el.onmouseleave=()=>{if(AGAL_HOT===+el.dataset.id)AGAL_HOT=null;el.classList.remove('hot');};});
+  bindSel('agal');
+}
+function agalCard(a,i){
+  const st=a.is_ready?'ready':(a.review_status||'');
+  const rv=st?`<span class="rv ${st}">${ {ready:'🚀 READY',approved:'👍 APPROVED',rejected:'👎 REJECTED'}[st] }</span>`:'';
+  const ex=a.exports||[];
+  const tags=(ex.length?`<a class="tagb exp-b" href="${esc(ex[0].folder_url)}" target="_blank" rel="noopener" title="Already exported to:\n${esc(ex.map(e=>e.folder_name).join('\n'))}">☁ exported ${shortDate(ex[0].at)}${ex.length>1?' ×'+ex.length:''}</a>`:'')
+    +(a.pattern_label?`<span class="tagb pat-b" title="${esc(a.angle)}">📈 ${esc(a.pattern_label)}</span>`:'')+`<span class="tagb">${esc(a.kind==='variant'?a.title:'✨ '+a.variant)}</span>`;
+  return `<div class="ad selectable ${st}" data-id="${a.id}" data-idx="${i}">${adImg(a,rv)}
+    <div class="meta">${adCopy(a)}<div style="margin-top:4px">${tags}</div></div>
+    ${a.review_notes?`<div class="note">📝 ${esc(a.review_notes)}</div>`:''}
+    <div class="acts">
+      <button data-tc="${a.id}" class="${a.text_checked?'on':''}" title="Text checked — spelling, prices, claims (C)">${a.text_checked?'✓ text checked':'☐ check text'}</button>
+      <button data-rv="approve" data-id="${a.id}" class="${st==='approved'?'on':''}" title="Approve (A)">👍</button>
+      <button data-rv="reject" data-id="${a.id}" class="${st==='rejected'?'on':''}" title="Reject (R)">👎</button>
+      <button data-rv="ready" data-id="${a.id}" class="${st==='ready'?'on':''}" title="Ready to launch (T) — needs text checked" ${a.text_checked?'':'style="opacity:.45"'}>🚀</button>
+      <button data-afav="${a.id}" title="Favorite (F)">${a.is_favorite?'★':'☆'}</button>
+      <button data-note="${a.id}" title="Review note">📝</button>
+      <button data-aedit="${a.id}" title="Edit the text and re-render">✏️</button>
+      <a href="/api/adstudio/textad/${a.id}/image" download="ai_ad${a.id}.png" title="Download">⬇</a>
+      <button data-adel="${a.id}" title="Delete">🗑</button></div></div>`;
+}
+async function agalReview(id,body){
+  const r=await fetch('/api/adstudio/textad/'+id+'/review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok){const d=await r.json();alert(d.error||'failed');return;}
+  await loadAdGallery();
+  if(AGAL_HOT===id){const el=document.querySelector(`#agalBody .ad[data-id="${id}"]`);if(el)el.classList.add('hot');else AGAL_HOT=null;}
+}
+function agalToggleChecked(id){const a=AGAL_ITEMS.find(x=>x.id===id);if(a)agalReview(id,{text_checked:!a.text_checked});}
+async function agalNote(id){
+  const a=AGAL_ITEMS.find(x=>x.id===id)||{};
+  const notes=prompt('Review note for this ad (clear to remove):',a.review_notes||'');
+  if(notes===null)return; agalReview(id,{notes});
+}
+function agalKey(e){
+  if(AGAL_HOT==null||e.metaKey||e.ctrlKey||e.altKey)return;
+  if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName))return;
+  const k=e.key.toLowerCase(), map={a:'approve',r:'reject',t:'ready'};
+  if(map[k]){e.preventDefault();agalReview(AGAL_HOT,{action:map[k]});}
+  else if(k==='c'){e.preventDefault();agalToggleChecked(AGAL_HOT);}
+  else if(k==='f'){e.preventDefault();fetch('/api/adstudio/textad/'+AGAL_HOT+'/favorite',{method:'POST'}).then(loadAdGallery);}
+}
+
+
+/* ---------- Export to Google Drive (Ad Gallery) ---------- */
+const AGAL_TABS=[...GAL_TABS,['notexported','☁ Not exported']];
+let DRIVE=null, DRIVE_MSG='';
+const shortDate=t=>t?new Date(t.replace(' ','T')+'Z').toLocaleDateString(undefined,{month:'numeric',day:'numeric'}):'';
+const exportable=a=>a.text_checked&&a.review_status!=='rejected';
+async function renderDriveBar(){
+  if(!DRIVE)DRIVE=await (await fetch('/api/drive/status')).json();
+  const D=DRIVE, bar=$('agalDrive');
+  bar.innerHTML=(DRIVE_MSG?`<b>${esc(DRIVE_MSG)}</b> · `:'')+(!D.configured
+    ?`☁ Google Drive export isn't set up yet — add <code>GOOGLE_OAUTH_CLIENT_ID</code> / <code>GOOGLE_OAUTH_CLIENT_SECRET</code> (redirect URI <code>${esc(D.redirect_uri)}</code>).`
+    :!D.connected?`☁ <a href="/drive/connect?product_id=${PID}">Connect Google Drive</a> to export ads for agencies.`
+    :`☁ Exports go to <a href="${esc(D.folder_url)}" target="_blank" rel="noopener">Meta Ads</a> → ${esc(DETAIL.product.name)} → a new dated folder · signed in as ${esc(D.email)} <button class="btn sm" id="driveOff">Disconnect</button>`)
+    +`<span id="driveStatus" style="margin-left:auto"></span>`;
+  DRIVE_MSG='';
+  if($('driveOff'))$('driveOff').onclick=async()=>{if(!confirm('Disconnect Google Drive?'))return;await fetch('/api/drive/disconnect',{method:'POST'});DRIVE=null;renderDriveBar();};
+}
+function agalBulkExtras(){
+  const sel=AGAL_ITEMS.filter(a=>SEL.agal.has(a.id)), done=sel.filter(a=>a.exports.length).length, blocked=sel.filter(a=>!exportable(a)).length;
+  return `<button class="btn sm btn-p" data-a="__drive">☁ Export ${sel.length} to Drive</button>
+    ${done?`<span class="warn">${done} already exported</span><button class="btn sm" data-a="__dropexported">Deselect them</button>`:''}
+    ${blocked?`<span class="err" title="Tick “text checked” first; rejected ads never go out">${blocked} can't go out yet</span>`:''}
+    <button class="btn sm" data-a="__unexported">Select not exported</button>`;
+}
+function agalSelectUnexported(fromToolbar){
+  const pick=AGAL_ITEMS.filter(a=>!a.exports.length&&exportable(a));
+  SEL.agal.clear(); pick.forEach(a=>SEL.agal.add(a.id)); LAST.agal=null; applySel('agal'); renderBulkBar('agal');
+  const skipped=AGAL_ITEMS.filter(a=>!a.exports.length&&!exportable(a)).length;
+  const st=$('driveStatus'); if(st)st.innerHTML=pick.length
+    ?`Selected <b>${pick.length}</b> ad${pick.length!==1?'s':''} not exported yet${skipped?` (${skipped} skipped — text not checked or rejected)`:''}. Adjust, then <b>☁ Export</b>.`
+    :`<span class="warn">Nothing new to export${skipped?` — ${skipped} ad${skipped!==1?'s need':' needs'} the text checked first`:''}.</span>`;
+}
+async function exportToDrive(){
+  if(!DRIVE)DRIVE=await (await fetch('/api/drive/status')).json();
+  if(!DRIVE.connected){alert(DRIVE.configured?'Connect Google Drive first (link above the ads).':'Google Drive export isn\'t set up yet — see the note above the ads.');return;}
+  const sel=AGAL_ITEMS.filter(a=>SEL.agal.has(a.id));
+  if(!sel.length)return agalSelectUnexported();
+  const blocked=sel.filter(a=>!exportable(a));
+  if(blocked.length){alert(`${blocked.length} selected ad(s) can't go to an agency yet — tick “text checked” (and don't send rejected ads). Deselect them or check them first.`);return;}
+  const again=sel.filter(a=>a.exports.length).length;
+  if(!confirm(`Export ${sel.length} ad${sel.length!==1?'s':''} to a NEW Drive folder under Meta Ads → ${DETAIL.product.name}?`+(again?`\n\n⚠ ${again} of them were already exported before — they'll be copied again. Cancel and use “Deselect them” to skip.`:'')))return;
+  const st=$('driveStatus'), btn=$('btnAgalDrive'); btn.disabled=true;
+  st.innerHTML='<span class="spinner"></span> creating folder…';
+  try{
+    const r=await fetch('/api/adstudio/drive-export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({product_id:PID,ids:sel.map(a=>a.id),date:new Date().toLocaleDateString('en-CA')})});
+    const x=await r.json(); if(!r.ok){st.innerHTML=`<span class="err">⚠ ${esc(x.error)}</span>`;return;}
+    let ok=0, fail=0;
+    for(let i=0;i<x.ids.length;i++){
+      st.innerHTML=`<span class="spinner"></span> uploading ${i+1}/${x.ids.length} to “${esc(x.folder_name)}”…`;
+      let done=false;
+      for(let a=0;a<2&&!done;a++){const u=await fetch(`/api/adstudio/drive-export/${x.export_id}/upload/${x.ids[i]}`,{method:'POST'});done=u.ok;if(!done)await sleep(2000);}
+      done?ok++:fail++;
+    }
+    st.innerHTML='<span class="spinner"></span> writing the ad copy sheet…';
+    const f=await (await fetch(`/api/adstudio/drive-export/${x.export_id}/finish`,{method:'POST'})).json();
+    SEL.agal.clear(); await loadAdGallery();
+    $('driveStatus').innerHTML=`✅ ${ok} ad${ok!==1?'s':''} → <a href="${esc(x.folder_url)}" target="_blank" rel="noopener">${esc(x.folder_name)}</a>`
+      +(f.sheet_url?` · <a href="${esc(f.sheet_url)}" target="_blank" rel="noopener">Ad copy sheet</a>`:'')
+      +(fail?` · <span class="err">${fail} failed — select them and export again</span>`:'')+(f.error?` · <span class="err">${esc(f.error)}</span>`:'');
+  }finally{btn.disabled=false;}
+}
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 boot();

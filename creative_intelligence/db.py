@@ -352,6 +352,88 @@ def _migrate(conn: sqlite3.Connection) -> None:
     spend        REAL,
     n_patterns   INTEGER
 )""",
+        # AI Ads — finished ads with the copy drawn in by the image model.
+        # A brief (Claude-drafted from winning patterns, operator-edited) feeds
+        # the 12 fixed variants, then Claude-invented scenes with their own copy.
+        """CREATE TABLE IF NOT EXISTS adstudio_briefs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id    INTEGER NOT NULL,
+    pattern_id    INTEGER,
+    pattern_ids   TEXT DEFAULT '[]',
+    idea          TEXT DEFAULT '',
+    review_text   TEXT DEFAULT '',
+    review_author TEXT DEFAULT '',
+    brief_json    TEXT NOT NULL DEFAULT '{}',
+    created_at    TEXT DEFAULT (datetime('now'))
+)""",
+        """CREATE INDEX IF NOT EXISTS idx_adstudio_briefs_product
+   ON adstudio_briefs(product_id, created_at DESC)""",
+        """CREATE TABLE IF NOT EXISTS adstudio_textads (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id    INTEGER NOT NULL,
+    brief_id      INTEGER NOT NULL,
+    kind          TEXT NOT NULL DEFAULT 'variant',
+    variant       TEXT DEFAULT '',
+    title         TEXT DEFAULT '',
+    concept       TEXT DEFAULT '',
+    text_layout   TEXT DEFAULT '',
+    headline      TEXT DEFAULT '',
+    subhead       TEXT DEFAULT '',
+    cta           TEXT DEFAULT '',
+    body          TEXT DEFAULT '',
+    style_seed    INTEGER NOT NULL DEFAULT 0,
+    fix           TEXT DEFAULT '',
+    prompt        TEXT DEFAULT '',
+    aspect_ratio  TEXT NOT NULL DEFAULT '9:16',
+    model         TEXT DEFAULT '',
+    status        TEXT NOT NULL DEFAULT 'queued',
+    image_path    TEXT,
+    error_message TEXT,
+    is_favorite   INTEGER NOT NULL DEFAULT 0,
+    archived      INTEGER NOT NULL DEFAULT 0,
+    review_status TEXT DEFAULT '',
+    is_ready      INTEGER NOT NULL DEFAULT 0,
+    text_checked  INTEGER NOT NULL DEFAULT 0,
+    review_notes  TEXT DEFAULT '',
+    reviewed_at   TEXT,
+    created_at    TEXT DEFAULT (datetime('now'))
+)""",
+        """CREATE INDEX IF NOT EXISTS idx_adstudio_textads_product
+   ON adstudio_textads(product_id, brief_id, created_at DESC)""",
+        # Google Drive exports for outside agencies: one folder per export,
+        # one item row per ad uploaded (an ad can be exported more than once).
+        """CREATE TABLE IF NOT EXISTS adstudio_drive_auth (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    email         TEXT NOT NULL,
+    refresh_token TEXT NOT NULL,
+    connected_at  TEXT DEFAULT (datetime('now'))
+)""",
+        "ALTER TABLE adstudio_products ADD COLUMN drive_folder_id TEXT",
+        """CREATE TABLE IF NOT EXISTS adstudio_drive_exports (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id   INTEGER NOT NULL,
+    folder_id    TEXT NOT NULL,
+    folder_name  TEXT NOT NULL,
+    folder_url   TEXT NOT NULL,
+    n_ads        INTEGER NOT NULL DEFAULT 0,
+    ad_ids       TEXT NOT NULL DEFAULT '[]',
+    sheet_url    TEXT,
+    status       TEXT NOT NULL DEFAULT 'uploading',
+    created_at   TEXT DEFAULT (datetime('now')),
+    finished_at  TEXT
+)""",
+        """CREATE TABLE IF NOT EXISTS adstudio_drive_export_items (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    export_id    INTEGER NOT NULL,
+    textad_id    INTEGER NOT NULL,
+    file_id      TEXT NOT NULL,
+    file_name    TEXT NOT NULL,
+    file_url     TEXT,
+    uploaded_at  TEXT DEFAULT (datetime('now')),
+    UNIQUE (export_id, textad_id)
+)""",
+        """CREATE INDEX IF NOT EXISTS idx_adstudio_drive_items_ad
+   ON adstudio_drive_export_items(textad_id)""",
     ]
     for stmt in migrations:
         try:
